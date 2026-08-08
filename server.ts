@@ -5,7 +5,6 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { onRequest } from "firebase-functions/v2/https";
 import { initializeApp as initFirebaseApp, getApps as getFirebaseApps, getApp as getFirebaseApp } from "firebase/app";
 import { initializeFirestore, doc, setDoc, getDoc } from "firebase/firestore";
 
@@ -1002,18 +1001,20 @@ app.post("/api/admin/verify", (req, res) => {
 
 // Export Cloud Function handler for Firebase Hosting / Cloud Functions deployments if in function environment
 let apiExport: any;
-if (process.env.FUNCTION_NAME || process.env.FUNCTION_TARGET || process.env.K_SERVICE) {
-  try {
-    apiExport = onRequest(
-      {
-        cors: true,
-        maxInstances: 10,
-      },
-      app
-    );
-  } catch (e) {
-    console.warn("Firebase onRequest export skipped:", e);
-  }
+if (process.env.FUNCTION_NAME || process.env.FUNCTION_TARGET) {
+  import("firebase-functions/v2/https")
+    .then(({ onRequest }) => {
+      apiExport = onRequest(
+        {
+          cors: true,
+          maxInstances: 10,
+        },
+        app
+      );
+    })
+    .catch((e) => {
+      console.warn("Firebase onRequest export skipped:", e);
+    });
 }
 
 export { apiExport as api, app };
