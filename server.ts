@@ -208,7 +208,7 @@ const getGeminiAi = () => {
 };
 
 // API Route: Health Check
-app.get("/api/health", (_req, res) => {
+app.get(["/health", "/api/health"], (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
@@ -1000,18 +1000,20 @@ app.post("/api/admin/verify", (req, res) => {
   return res.status(403).json({ valid: false, error: "Access Denied. Administrator privileges are required." });
 });
 
-// Export Cloud Function handler for Firebase Hosting / Cloud Functions deployments
+// Export Cloud Function handler for Firebase Hosting / Cloud Functions deployments if in function environment
 let apiExport: any;
-try {
-  apiExport = onRequest(
-    {
-      cors: true,
-      maxInstances: 10,
-    },
-    app
-  );
-} catch (e) {
-  console.warn("Firebase onRequest export skipped:", e);
+if (process.env.FUNCTION_NAME || process.env.FUNCTION_TARGET || process.env.K_SERVICE) {
+  try {
+    apiExport = onRequest(
+      {
+        cors: true,
+        maxInstances: 10,
+      },
+      app
+    );
+  } catch (e) {
+    console.warn("Firebase onRequest export skipped:", e);
+  }
 }
 
 export { apiExport as api, app };
@@ -1039,6 +1041,14 @@ async function startServer() {
     console.error("Failed to start server:", err);
   }
 }
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception thrown:", error);
+});
 
 if (!process.env.FUNCTION_NAME && !process.env.FUNCTION_TARGET) {
   startServer().catch((err) => {
