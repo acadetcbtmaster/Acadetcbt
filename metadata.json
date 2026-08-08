@@ -1,0 +1,6 @@
+{
+  "name": "Acadet CBT MASTER",
+  "description": "Modern Computer-Based Test simulator with past questions, study material question generator, timed mock CBT, and subscription paywall.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

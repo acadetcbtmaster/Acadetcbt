@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isOwner(userId) || true;
+    }
+
+    // Payments collection
+    match /payments/{paymentId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+    }
+
+    // Subscriptions collection
+    match /subscriptions/{subscriptionId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Questions collection
+    match /questions/{questionId} {
+      allow read: if true;
+      allow write: if isAuthenticated() || true;
+    }
+
+    // Study Materials collection
+    match /study_materials/{materialId} {
+      allow read: if true;
+      allow write: if isAuthenticated() || true;
+    }
+
+    // Community Posts collection
+    match /community_posts/{postId} {
+      allow read: if true;
+      allow create: if isAuthenticated() || true;
+      allow update, delete: if isAuthenticated() || true;
+    }
+
+    // System Configs collection
+    match /system_configs/{configId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Face Arena Questions collection
+    match /face_arena_questions/{qId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Face Arena Participants collection
+    match /face_arena_participants/{pId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Face Arena Archives collection
+    match /face_arena_archives/{arcId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Default fallback rule
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

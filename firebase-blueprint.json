@@ -1,0 +1,163 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account and free trial subscription profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "username": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "role": { "type": "string", "enum": ["student", "admin"] },
+        "universityName": { "type": "string", "maxLength": 150 },
+        "departmentName": { "type": "string", "maxLength": 150 },
+        "subscription": { "type": "object" },
+        "bookmarks": { "type": "array" },
+        "createdDate": { "type": "string" },
+        "referralCode": { "type": "string", "maxLength": 20 },
+        "successfulReferrals": { "type": "number", "minimum": 0 },
+        "referredBy": { "type": "string" },
+        "referredByCode": { "type": "string" }
+      },
+      "required": ["id", "email", "role"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "CBT practice question item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "questionText": { "type": "string" },
+        "options": { "type": "array" },
+        "correctAnswer": { "type": "string" },
+        "explanation": { "type": "string" },
+        "difficulty": { "type": "string" }
+      },
+      "required": ["id", "courseId", "questionText", "options", "correctAnswer"]
+    },
+    "University": {
+      "title": "University",
+      "description": "Partner university record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "abbreviation": { "type": "string" },
+        "location": { "type": "string" },
+        "isDisabled": { "type": "boolean" }
+      },
+      "required": ["id", "name", "abbreviation"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Academic course program",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "title": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "isDisabled": { "type": "boolean" }
+      },
+      "required": ["id", "code", "title"]
+    },
+    "TestResult": {
+      "title": "TestResult",
+      "description": "Completed CBT practice or mock exam result",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "courseCode": { "type": "string" },
+        "score": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "percentage": { "type": "number" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "userId", "score", "totalQuestions"]
+    },
+    "StudyMaterial": {
+      "title": "StudyMaterial",
+      "description": "Learning resource material or lecture note",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "universityId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "type": { "type": "string" },
+        "accessLevel": { "type": "string" },
+        "fileSize": { "type": "string" },
+        "totalDownloads": { "type": "number" },
+        "uploadedBy": { "type": "string" },
+        "uploadDate": { "type": "string" }
+      },
+      "required": ["id", "title", "type", "accessLevel"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment records for Squad Gateway transactions",
+      "type": "object",
+      "properties": {
+        "paymentId": { "type": "string" },
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "reference": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "success", "failed"] },
+        "createdAt": { "type": "string" },
+        "verifiedAt": { "type": "string" }
+      },
+      "required": ["paymentId", "userId", "amount", "reference", "status", "createdAt"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "User active subscription record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "plan": { "type": "string" },
+        "startDate": { "type": "string" },
+        "expiryDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "expired"] }
+      },
+      "required": ["userId", "plan", "startDate", "expiryDate", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile records containing subscription & free trial usage"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Squad payment transaction records"
+    },
+    "/subscriptions/{subscriptionId}": {
+      "schema": "Subscription",
+      "description": "Active user subscription records"
+    },
+    "/questions/{questionId}": {
+      "schema": "Question",
+      "description": "CBT practice questions bank"
+    },
+    "/universities/{universityId}": {
+      "schema": "University",
+      "description": "Partner university institutions"
+    },
+    "/courses/{courseId}": {
+      "schema": "Course",
+      "description": "Academic course programs"
+    },
+    "/materials/{materialId}": {
+      "schema": "StudyMaterial",
+      "description": "Study materials and lecture resources"
+    },
+    "/results/{resultId}": {
+      "schema": "TestResult",
+      "description": "Test exam session results"
+    }
+  }
+}
