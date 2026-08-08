@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import brandLogo from '../assets/images/exact_acadet_cbt_logo_1786225425882.jpg';
 import { UserProfile, UserRole, FUAHSE_DEPARTMENTS, FUL_DEPARTMENTS, COMMON_UNIVERSITY_DEPARTMENTS, University, FacultyGroup } from '../types';
 import { StorageService, safeStringify } from '../services/storage';
 import { generateUniqueReferralCode } from '../utils/referrals';
@@ -1296,11 +1297,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           
           {/* Header */}
           <div className="text-center mb-5 pt-1">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center mx-auto mb-3 shadow-inner">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center mx-auto mb-3 shadow-inner overflow-hidden">
               {mode === 'admin' ? (
                 <Shield className="w-6 h-6 text-amber-400" />
               ) : (
-                <GraduationCap className="w-6 h-6" />
+                <img 
+                  src={brandLogo} 
+                  alt="Acadet CBT Logo" 
+                  className="w-full h-full object-cover" 
+                  referrerPolicy="no-referrer" 
+                />
               )}
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">

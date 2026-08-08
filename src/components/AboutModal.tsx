@@ -1,4 +1,5 @@
 import React from 'react';
+import brandLogo from '../assets/images/exact_acadet_cbt_logo_1786225425882.jpg';
 import { X, GraduationCap, Target, Eye, Heart, MessageSquare, ExternalLink, Sparkles, Quote, Award } from 'lucide-react';
 
 interface AboutModalProps {
@@ -16,8 +17,8 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
         {/* Header */}
         <div className="p-6 bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-inner">
-              <GraduationCap className="w-6 h-6" />
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-inner overflow-hidden">
+              <img src={brandLogo} alt="Acadet CBT Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             </div>
             <div>
               <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
