@@ -41,7 +41,7 @@ import { MenCoreWidget } from './components/MenCoreWidget';
 import { FaceArenaView } from './components/FaceArenaView';
 import { InAppNotificationOverlay } from './components/InAppNotificationOverlay';
 import { NotificationCenterModal } from './components/NotificationCenterModal';
-import { PaymentResultView } from './components/PaymentResultView';
+import { PaymentSuccessView } from './components/PaymentSuccessView';
 
 export default function App() {
   const [isNotifCenterOpen, setIsNotifCenterOpen] = useState<boolean>(false);
@@ -497,12 +497,11 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'payment_result' && (
-          <PaymentResultView
+        {(activeTab === 'payment_result' || activeTab === 'payment_success') && (
+          <PaymentSuccessView
             currentUser={currentUser}
             onUpdateUser={handleUpdateUser}
             onNavigate={handleNavigate}
-            onOpenSubscribe={() => setSubModalOpen(true)}
           />
         )}
 

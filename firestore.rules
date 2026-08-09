@@ -21,57 +21,50 @@ service cloud.firestore {
     // Payments collection
     match /payments/{paymentId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      allow create: if true;
+      allow update: if true;
     }
 
     // Subscriptions collection
     match /subscriptions/{subscriptionId} {
       allow read: if true;
-      allow write: if isAuthenticated();
+      allow write: if true;
+    }
+
+    // Referrals collection
+    match /referrals/{referralId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Leaderboard collection
+    match /leaderboard/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Webhook logs collection
+    match /webhook_logs/{logId} {
+      allow read: if true;
+      allow write: if true;
     }
 
     // Questions collection
     match /questions/{questionId} {
       allow read: if true;
-      allow write: if isAuthenticated() || true;
+      allow write: if true;
     }
 
     // Study Materials collection
     match /study_materials/{materialId} {
       allow read: if true;
-      allow write: if isAuthenticated() || true;
+      allow write: if true;
     }
 
     // Community Posts collection
     match /community_posts/{postId} {
       allow read: if true;
-      allow create: if isAuthenticated() || true;
-      allow update, delete: if isAuthenticated() || true;
-    }
-
-    // System Configs collection
-    match /system_configs/{configId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Face Arena Questions collection
-    match /face_arena_questions/{qId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Face Arena Participants collection
-    match /face_arena_participants/{pId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // Face Arena Archives collection
-    match /face_arena_archives/{arcId} {
-      allow read: if true;
-      allow write: if true;
+      allow create, update, delete: if true;
     }
 
     // Default fallback rule

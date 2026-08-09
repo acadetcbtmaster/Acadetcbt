@@ -400,3 +400,5 @@ Return JSON format with:
     }
   },
 };
+
+export const apiClient = ApiClient;
