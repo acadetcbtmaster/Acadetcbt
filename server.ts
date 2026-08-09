@@ -190,7 +190,8 @@ const activateSubscriptionInFirestore = async (params: {
   squadResponse?: any;
 }) => {
   const paidAt = new Date().toISOString();
-  const expiryDate = new Date(Date.now() + params.durationDays * 86400000).toISOString();
+  const durationInDays = params.durationDays > 0 ? params.durationDays : 30;
+  const expiryDate = new Date(Date.now() + durationInDays * 86400000).toISOString();
   const gatewayRef = params.gatewayRef || params.reference;
 
   // 1. users/{uid} payload
@@ -198,7 +199,7 @@ const activateSubscriptionInFirestore = async (params: {
     fullName: params.userName || "Acadet Student",
     email: params.userEmail,
     role: "student",
-    subscriptionPlan: "premium",
+    subscriptionPlan: params.planName || "Premium Membership",
     subscriptionStatus: "active",
     updatedAt: paidAt,
   };
@@ -218,7 +219,7 @@ const activateSubscriptionInFirestore = async (params: {
 
   // 3. subscriptions/{uid} payload
   const subscriptionRecord = {
-    plan: "premium",
+    plan: params.planName || "Premium Membership",
     amount: params.amount,
     status: "active",
     startDate: paidAt,
@@ -720,6 +721,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         planId: planId || "premium",
         planName: planTitle,
         amount: amountInNaira,
+        durationDays: Number(req.body?.durationDays) || (knownPlan ? knownPlan.durationDays : 30),
       },
     };
 
@@ -855,13 +857,15 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
     const actualAmount = returnedAmt ? (returnedAmt > 10000 ? Math.round(returnedAmt / 100) : returnedAmt) : 800;
     const gatewayRef = verifyData.data?.gateway_ref || verifyData.data?.transaction_ref || reference;
 
-    const knownPlan = SUBSCRIPTION_PLANS[planId];
-    const durationDays = knownPlan ? knownPlan.durationDays : 30;
-    const planTitle = knownPlan ? knownPlan.name : "Premium Plan";
+    const meta = verifyData.data?.meta || verifyData.data?.metadata || {};
+    const reqPlanId = planId || meta.planId || "premium";
+    const knownPlan = SUBSCRIPTION_PLANS[reqPlanId];
+    const durationDays = Number(meta.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
+    const planTitle = req.body?.planName || meta.planName || (knownPlan ? knownPlan.name : "Premium Membership");
 
     const syncResult = await activateSubscriptionInFirestore({
       userId: effUserId,
-      userName: req.body?.userName || verifyData.data?.meta?.userName || "Acadet Student",
+      userName: req.body?.userName || meta.userName || "Acadet Student",
       userEmail: effEmail,
       reference,
       gatewayRef,
@@ -972,8 +976,8 @@ const handleSquadWebhook = async (req: express.Request, res: express.Response) =
           reference,
           gatewayRef,
           amount,
-          planName: metadata.planName || "Premium Plan",
-          durationDays: 30,
+          planName: metadata.planName || "Premium Membership",
+          durationDays: Number(metadata.durationDays) || 30,
           paymentMethod: bodyData.payment_type || "Squad Webhook",
           squadResponse: payload,
         });

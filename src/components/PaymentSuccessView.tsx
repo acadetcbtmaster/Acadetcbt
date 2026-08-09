@@ -60,30 +60,35 @@ export const PaymentSuccessView: React.FC<PaymentSuccessViewProps> = ({
         if (!isMounted) return;
 
         if (res && (res.success || res.status === 'success' || res.alreadyVerified)) {
+          const activatedPlanName = res.planName || res.subscription?.plan || res.user?.subscriptionPlan || 'Premium Membership';
+          const planAmount = res.amount || res.payment?.amount || 800;
+
           setVerified(true);
           setPaymentDetails({
             reference: ref,
-            amount: res.amount || 800,
-            planName: res.planName || 'Premium Plan',
+            amount: planAmount,
+            planName: activatedPlanName,
           });
 
           // Update local user profile
           const updatedUser: UserProfile = {
             ...(currentUser || StorageService.getUser() || {
               id: res.user?.userId || 'usr-student',
-              fullName: res.user?.fullName || 'Acadet Student',
+              name: res.user?.fullName || res.user?.name || 'Acadet Student',
               email: res.user?.email || 'student@acadet.cbt',
               role: 'student',
+              universityId: 'uni-1',
+              departmentId: 'dept-1',
               createdDate: new Date().toISOString(),
               bookmarks: [],
             }),
-            subscriptionPlan: 'premium',
+            subscriptionPlan: activatedPlanName,
             subscriptionStatus: 'active',
             subscription: {
               isPremium: true,
-              plan: res.planName || 'Premium Plan',
-              startDate: new Date().toISOString(),
-              expiryDate: new Date(Date.now() + 30 * 86400000).toISOString(),
+              plan: activatedPlanName,
+              startDate: res.subscription?.startDate || new Date().toISOString(),
+              expiryDate: res.subscription?.expiryDate || new Date(Date.now() + 30 * 86400000).toISOString(),
               questionsAttemptedCount: 0,
               freeLimit: 999999,
             },
@@ -91,8 +96,24 @@ export const PaymentSuccessView: React.FC<PaymentSuccessViewProps> = ({
 
           StorageService.saveUser(updatedUser);
           onUpdateUser(updatedUser);
+
+          // Save transaction to local storage history
+          StorageService.saveTransaction({
+            id: ref,
+            paymentId: ref,
+            userId: updatedUser.id,
+            userName: updatedUser.name || 'Acadet Student',
+            userEmail: updatedUser.email,
+            planName: activatedPlanName,
+            amount: planAmount,
+            date: new Date().toISOString(),
+            status: 'Successful',
+            reference: ref,
+            gateway: 'Squad',
+          });
         } else {
-          setErrorMsg(res?.error || 'Unable to verify payment with Squad Gateway. Please contact support.');
+          setVerified(false);
+          setErrorMsg(res?.error || 'Unable to verify payment with Squad Gateway. If payment was made, please contact support with your transaction reference.');
         }
       } catch (err: any) {
         if (isMounted) {
