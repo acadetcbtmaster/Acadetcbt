@@ -295,7 +295,7 @@ Return JSON format with:
     }
   },
 
-  async initiatePayment(payload: { planId: string; amount?: number; email: string; userId: string; userName?: string; userUsername?: string }): Promise<any> {
+  async initiatePayment(payload: { planId: string; planName?: string; amount?: number; email: string; userId: string; userName?: string; userUsername?: string }): Promise<any> {
     try {
       const res = await fetchApi<any>('/api/payments/initiate', {
         method: 'POST',

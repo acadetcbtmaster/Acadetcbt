@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile, SubscriptionPlan } from '../types';
 import {
   X,
@@ -12,6 +12,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { ApiClient } from '../services/apiClient';
+import { StorageService } from '../services/storage';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -26,24 +27,57 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   isOpen,
   onClose,
   user,
+  plans: propsPlans,
 }) => {
-  const [selectedPlan, setSelectedPlan] = useState<string>('premium');
+  const [allPlans, setAllPlans] = useState<SubscriptionPlan[]>(() => {
+    return (propsPlans && propsPlans.length > 0) ? propsPlans : StorageService.getSubscriptionPlans();
+  });
+
+  useEffect(() => {
+    if (propsPlans && propsPlans.length > 0) {
+      setAllPlans(propsPlans);
+    } else {
+      setAllPlans(StorageService.getSubscriptionPlans());
+    }
+  }, [propsPlans, isOpen]);
+
+  const activePlans = allPlans.filter((p) => p.status !== 'Inactive' && p.status !== 'Disabled');
+
+  const [selectedPlanId, setSelectedPlanId] = useState<string>(() => {
+    const popular = activePlans.find((p) => p.popular);
+    return popular ? popular.id : (activePlans[0]?.id || 'premium');
+  });
+
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (activePlans.length > 0 && !activePlans.some((p) => p.id === selectedPlanId)) {
+      const popular = activePlans.find((p) => p.popular);
+      setSelectedPlanId(popular ? popular.id : activePlans[0].id);
+    }
+  }, [allPlans]);
+
   if (!isOpen) return null;
+
+  const currentChosenPlan = activePlans.find((p) => p.id === selectedPlanId) || activePlans[0];
 
   const handleInitiatePayment = async () => {
     setLoading(true);
     setError(null);
 
+    const amount = currentChosenPlan ? currentChosenPlan.price : 800;
+    const planId = currentChosenPlan ? currentChosenPlan.id : 'premium';
+    const planName = currentChosenPlan ? currentChosenPlan.name : 'Premium Membership';
+
     try {
       const res = await ApiClient.initiatePayment({
-        planId: selectedPlan,
-        amount: selectedPlan === 'premium-plus' ? 1500 : selectedPlan === 'premium-pro' ? 3500 : 800,
+        planId,
+        planName,
+        amount,
         email: user.email || 'student@acadet.cbt',
         userId: user.id || 'usr-student',
-        userName: user.fullName || 'Acadet Student',
+        userName: user.fullName || user.name || 'Acadet Student',
       });
 
       if (res && res.success && (res.checkoutUrl || res.paymentLink)) {
@@ -98,69 +132,87 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
           </div>
 
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-snug">
-            Upgrade to AcadeCBT Premium
+            Upgrade to Premium Access
           </h2>
           <p className="text-xs text-slate-300 leading-relaxed max-w-md mx-auto">
             Unlock unlimited CBT practice exams, SMART step-by-step explanations, PDF lecture notes, and MenCore AI assistant.
           </p>
         </div>
 
-        {/* Plan Selectors */}
-        <div className="space-y-3 shrink-0">
-          <div
-            onClick={() => setSelectedPlan('premium')}
-            className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-              selectedPlan === 'premium'
-                ? 'bg-emerald-500/10 border-emerald-500 text-white shadow-md shadow-emerald-500/10'
-                : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-            }`}
-          >
-            <div>
-              <div className="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
-                <span>Premium Membership (30-Day)</span>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-black">POPULAR</span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">Unlimited CBT practice & AI exam generator</p>
+        {/* Dynamic Plan Selectors configured from Admin Panel */}
+        <div className="space-y-3 shrink-0 max-h-60 overflow-y-auto pr-1">
+          {activePlans.length === 0 ? (
+            <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl text-xs text-slate-400 text-center">
+              No subscription plans currently available.
             </div>
-            <div className="text-right shrink-0 ml-2">
-              <span className="text-lg font-black text-emerald-400">₦800</span>
-              <span className="text-[10px] text-slate-400 block">/ 30 days</span>
-            </div>
-          </div>
-
-          <div
-            onClick={() => setSelectedPlan('premium-plus')}
-            className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-              selectedPlan === 'premium-plus'
-                ? 'bg-emerald-500/10 border-emerald-500 text-white shadow-md shadow-emerald-500/10'
-                : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
-            }`}
-          >
-            <div>
-              <div className="text-sm font-bold text-white">Premium Plus (Semester)</div>
-              <p className="text-xs text-slate-400 mt-0.5">Full semester coverage with downloadable materials</p>
-            </div>
-            <div className="text-right shrink-0 ml-2">
-              <span className="text-lg font-black text-emerald-400">₦1,500</span>
-              <span className="text-[10px] text-slate-400 block">/ 60 days</span>
-            </div>
-          </div>
+          ) : (
+            activePlans.map((plan) => {
+              const isSelected = selectedPlanId === plan.id;
+              return (
+                <div
+                  key={plan.id}
+                  onClick={() => setSelectedPlanId(plan.id)}
+                  className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                    isSelected
+                      ? 'bg-emerald-500/10 border-emerald-500 text-white shadow-md shadow-emerald-500/10'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                  id={`plan-card-${plan.id}`}
+                >
+                  <div>
+                    <div className="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                      <span>{plan.name}</span>
+                      {plan.popular && (
+                        <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-black">
+                          POPULAR
+                        </span>
+                      )}
+                    </div>
+                    {plan.features && plan.features.length > 0 && (
+                      <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">
+                        {plan.features.slice(0, 2).join(' • ')}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0 ml-2">
+                    <span className="text-lg font-black text-emerald-400">
+                      ₦{plan.price.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">
+                      / {plan.durationDays} days
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
 
-        {/* Unlocked Benefits List */}
+        {/* Unlocked Benefits List for Selected Plan */}
         <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-2.5 text-xs text-slate-200 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span><strong>Unlimited CBT Exams:</strong> Practice as many courses as you want.</span>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span><strong>AI Exam Generator:</strong> Turn any PDF or lecture note into CBT questions.</span>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span><strong>Verified Solutions:</strong> Detailed step-by-step explanations.</span>
-          </div>
+          {currentChosenPlan && currentChosenPlan.features && currentChosenPlan.features.length > 0 ? (
+            currentChosenPlan.features.map((feat, idx) => (
+              <div key={idx} className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{feat}</span>
+              </div>
+            ))
+          ) : (
+            <>
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span><strong>Unlimited CBT Exams:</strong> Practice as many courses as you want.</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span><strong>AI Exam Generator:</strong> Turn any PDF or lecture note into CBT questions.</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span><strong>Verified Solutions:</strong> Detailed step-by-step explanations.</span>
+              </div>
+            </>
+          )}
         </div>
 
         {error && (
@@ -174,7 +226,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         <div className="space-y-2.5 pt-2 shrink-0">
           <button
             onClick={handleInitiatePayment}
-            disabled={loading}
+            disabled={loading || !currentChosenPlan}
             className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/30 disabled:opacity-50 active:scale-[0.98]"
             id="modal-pay-now-btn"
           >
@@ -186,7 +238,9 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
             ) : (
               <>
                 <CreditCard className="w-4 h-4 text-emerald-200" />
-                <span>Subscribe & Pay Now (Squad)</span>
+                <span>
+                  Pay ₦{currentChosenPlan ? currentChosenPlan.price.toLocaleString() : '800'} Now (Squad)
+                </span>
               </>
             )}
           </button>
@@ -215,3 +269,4 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     </div>
   );
 };
+

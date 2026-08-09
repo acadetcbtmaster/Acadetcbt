@@ -681,8 +681,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
 
     // Determine Plan and Amount
     const knownPlan = SUBSCRIPTION_PLANS[planId];
-    const amountInNaira = knownPlan ? knownPlan.price : (reqAmount || 800);
-    const planTitle = knownPlan ? knownPlan.name : (planId === "premium-plus" || planId === "plan-30d" ? "Premium Plus" : "Premium Basic");
+    const amountInNaira = (reqAmount && reqAmount > 0) ? reqAmount : (knownPlan ? knownPlan.price : 800);
+    const planTitle = req.body.planName || (knownPlan ? knownPlan.name : (planId === "premium-plus" || planId === "plan-30d" ? "Premium Plus" : "Premium Membership"));
     const amountInKobo = Math.round(amountInNaira * 100);
 
     // Prompt Requirement: ACADE_{timestamp}_{uid}
