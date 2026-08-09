@@ -1897,6 +1897,47 @@ export class StorageService {
     }
   }
 
+  static deleteTransaction(id: string): void {
+    const list = this.getTransactions();
+    const target = list.find((t) => t.id === id);
+    const updated = list.filter((t) => t.id !== id);
+    this.setItem(STORAGE_KEYS.TRANSACTIONS, updated);
+    deleteDoc(doc(db, 'transactions', id)).catch((err) =>
+      handleFirestoreError(err, OperationType.DELETE, `transactions/${id}`)
+    );
+    if (target?.reference) {
+      deleteDoc(doc(db, 'payments', target.reference)).catch((err) =>
+        handleFirestoreError(err, OperationType.DELETE, `payments/${target.reference}`)
+      );
+    }
+    // Trigger custom event for state sync across components
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('cbt_storage_change'));
+    }
+  }
+
+  static deleteTransactions(ids: string[]): void {
+    if (!ids || ids.length === 0) return;
+    const list = this.getTransactions();
+    const updated = list.filter((t) => !ids.includes(t.id));
+    this.setItem(STORAGE_KEYS.TRANSACTIONS, updated);
+    ids.forEach((id) => {
+      const target = list.find((t) => t.id === id);
+      deleteDoc(doc(db, 'transactions', id)).catch((err) =>
+        handleFirestoreError(err, OperationType.DELETE, `transactions/${id}`)
+      );
+      if (target?.reference) {
+        deleteDoc(doc(db, 'payments', target.reference)).catch((err) =>
+          handleFirestoreError(err, OperationType.DELETE, `payments/${target.reference}`)
+        );
+      }
+    });
+    // Trigger custom event for state sync across components
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('cbt_storage_change'));
+    }
+  }
+
   // Ranking History
   static getRankingHistory(): RankingHistoryRecord[] {
     const seedHistory: RankingHistoryRecord[] = [

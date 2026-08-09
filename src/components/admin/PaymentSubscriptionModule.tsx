@@ -76,8 +76,9 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
   const [selectedGatewayFilter, setSelectedGatewayFilter] = useState('all');
   const [selectedUniversityFilter, setSelectedUniversityFilter] = useState('all');
 
-  // Bulk Selection
+  // Bulk Selection & Delete Modal State
   const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
+  const [deleteConfirmModalTxIds, setDeleteConfirmModalTxIds] = useState<string[] | null>(null);
 
   // Modals & Active Selections
   const [viewProofTx, setViewProofTx] = useState<PaymentTransaction | null>(null);
@@ -223,6 +224,50 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
     const start = (currentPage - 1) * itemsPerPage;
     return filteredTransactions.slice(start, start + itemsPerPage);
   }, [filteredTransactions, currentPage]);
+
+  // --- SELECTION & DELETION HANDLERS ---
+  const handleToggleSelectTx = (txId: string) => {
+    setSelectedTxIds((prev) =>
+      prev.includes(txId) ? prev.filter((id) => id !== txId) : [...prev, txId]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    const visibleIds = paginatedTransactions.map((t) => t.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedTxIds.includes(id));
+    if (allSelected) {
+      setSelectedTxIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      const merged = Array.from(new Set([...selectedTxIds, ...visibleIds]));
+      setSelectedTxIds(merged);
+    }
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteConfirmModalTxIds || deleteConfirmModalTxIds.length === 0) return;
+    setIsProcessing(true);
+    const count = deleteConfirmModalTxIds.length;
+
+    setTimeout(() => {
+      StorageService.deleteTransactions(deleteConfirmModalTxIds);
+      const updatedList = StorageService.getTransactions();
+      setTransactions(updatedList);
+
+      // Remove deleted IDs from selection state
+      setSelectedTxIds((prev) => prev.filter((id) => !deleteConfirmModalTxIds.includes(id)));
+
+      StorageService.logActivity(
+        'System Admin',
+        `Deleted ${count} Payment History Record(s)`,
+        'Payment Management',
+        `Removed payment history transaction IDs: ${deleteConfirmModalTxIds.join(', ')}`
+      );
+
+      setIsProcessing(false);
+      setDeleteConfirmModalTxIds(null);
+      showToast(`🗑️ ${count} payment record(s) permanently deleted.`);
+    }, 300);
+  };
 
   // --- PAYMENT VERIFICATION & APPROVAL HANDLER ---
   const handleApprovePayment = (tx: PaymentTransaction) => {
@@ -680,9 +725,44 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
             </div>
           </div>
 
+          {/* Bulk Selection Delete Toolbar */}
+          {selectedTxIds.length > 0 && (
+            <div className="bg-rose-950/40 border border-rose-500/40 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xl animate-in fade-in" id="bulk-delete-payment-bar">
+              <div className="flex items-center gap-3 text-xs text-rose-200 font-bold">
+                <span className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0 font-black text-sm shadow-inner">
+                  {selectedTxIds.length}
+                </span>
+                <div>
+                  <p className="text-white font-extrabold text-xs">
+                    {selectedTxIds.length === 1 ? '1 Payment Record Selected' : `${selectedTxIds.length} Payment Records Selected`}
+                  </p>
+                  <p className="text-[10px] text-rose-300 font-medium">Select and bulk delete payment transaction logs permanently.</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedTxIds([])}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer"
+                >
+                  Deselect All
+                </button>
+                <button
+                  onClick={() => setDeleteConfirmModalTxIds(selectedTxIds)}
+                  disabled={isProcessing}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-rose-600/30 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  id="bulk-delete-selected-btn"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Selected ({selectedTxIds.length})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Transactions Table */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-            <div className="p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center flex-wrap gap-2">
               <h3 className="font-extrabold text-white text-xs uppercase tracking-wider flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-emerald-400" />
                 <span>
@@ -691,15 +771,35 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
                     : 'Payment History & Subscriptions Log'}
                 </span>
               </h3>
-              <span className="text-xs text-slate-400">
-                Total Records: <strong>{filteredTransactions.length}</strong>
-              </span>
+              <div className="flex items-center gap-3">
+                {selectedTxIds.length > 0 && (
+                  <span className="text-xs text-rose-400 font-bold bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/20">
+                    {selectedTxIds.length} Selected
+                  </span>
+                )}
+                <span className="text-xs text-slate-400">
+                  Total Records: <strong>{filteredTransactions.length}</strong>
+                </span>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-950/80 text-slate-400 font-bold uppercase text-[10px] tracking-wider border-b border-slate-800">
                   <tr>
+                    <th className="p-4 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        id="select-all-transactions-checkbox"
+                        checked={
+                          paginatedTransactions.length > 0 &&
+                          paginatedTransactions.every((tx) => selectedTxIds.includes(tx.id))
+                        }
+                        onChange={handleToggleSelectAll}
+                        className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-rose-500 focus:ring-rose-500 focus:ring-offset-slate-950 cursor-pointer accent-rose-500"
+                        title="Select / Deselect All Visible Records"
+                      />
+                    </th>
                     <th className="p-4">Reference & Payment ID</th>
                     <th className="p-4">Student Details</th>
                     <th className="p-4">Plan & Amount</th>
@@ -713,95 +813,126 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
                 <tbody className="divide-y divide-slate-800/60">
                   {paginatedTransactions.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-slate-500 text-xs">
+                      <td colSpan={8} className="p-8 text-center text-slate-500 text-xs">
                         No transaction records match the active filter criteria.
                       </td>
                     </tr>
                   ) : (
-                    paginatedTransactions.map((tx) => (
-                      <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="p-4">
-                          <p className="font-mono font-bold text-white text-xs">{tx.reference}</p>
-                          <p className="text-[10px] text-slate-500 font-mono">{tx.paymentId || tx.id}</p>
-                        </td>
+                    paginatedTransactions.map((tx) => {
+                      const isSelected = selectedTxIds.includes(tx.id);
+                      return (
+                        <tr
+                          key={tx.id}
+                          className={`transition-colors ${
+                            isSelected
+                              ? 'bg-rose-950/20 border-l-2 border-rose-500'
+                              : 'hover:bg-slate-800/40'
+                          }`}
+                        >
+                          <td className="p-4 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectTx(tx.id)}
+                              className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-rose-500 focus:ring-rose-500 focus:ring-offset-slate-950 cursor-pointer accent-rose-500"
+                              id={`select-tx-checkbox-${tx.id}`}
+                            />
+                          </td>
 
-                        <td className="p-4">
-                          <p className="font-bold text-white text-xs">{tx.userName}</p>
-                          <p className="text-[11px] text-slate-400">{tx.userEmail}</p>
-                          <p className="text-[10px] text-indigo-400 font-medium">
-                            {tx.universityName || 'Federal University Lokoja'}
-                          </p>
-                        </td>
+                          <td className="p-4">
+                            <p className="font-mono font-bold text-white text-xs">{tx.reference}</p>
+                            <p className="text-[10px] text-slate-500 font-mono">{tx.paymentId || tx.id}</p>
+                          </td>
 
-                        <td className="p-4">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 block w-fit">
-                            {tx.planName}
-                          </span>
-                          <p className="font-black text-emerald-400 text-sm mt-1">₦{tx.amount.toLocaleString()}</p>
-                        </td>
+                          <td className="p-4">
+                            <p className="font-bold text-white text-xs">{tx.userName}</p>
+                            <p className="text-[11px] text-slate-400">{tx.userEmail}</p>
+                            <p className="text-[10px] text-indigo-400 font-medium">
+                              {tx.universityName || 'Federal University Lokoja'}
+                            </p>
+                          </td>
 
-                        <td className="p-4">
-                          <span className="px-2 py-1 rounded bg-slate-950 border border-slate-800 text-slate-300 font-bold text-[10px]">
-                            {tx.gateway}
-                          </span>
-                        </td>
+                          <td className="p-4">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 block w-fit">
+                              {tx.planName}
+                            </span>
+                            <p className="font-black text-emerald-400 text-sm mt-1">₦{tx.amount.toLocaleString()}</p>
+                          </td>
 
-                        <td className="p-4">
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${
-                              tx.status === 'Successful'
-                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                : tx.status === 'Pending'
-                                ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20 animate-pulse'
-                                : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                            }`}
-                          >
-                            {tx.status === 'Successful' && <CheckCircle2 className="w-3 h-3" />}
-                            {tx.status === 'Pending' && <Clock className="w-3 h-3" />}
-                            {tx.status === 'Failed' && <XCircle className="w-3 h-3" />}
-                            {tx.status}
-                          </span>
-                        </td>
+                          <td className="p-4">
+                            <span className="px-2 py-1 rounded bg-slate-950 border border-slate-800 text-slate-300 font-bold text-[10px]">
+                              {tx.gateway}
+                            </span>
+                          </td>
 
-                        <td className="p-4 text-slate-400 font-mono text-[11px]">
-                          {new Date(tx.date).toLocaleDateString()}
-                        </td>
-
-                        <td className="p-4 text-right space-x-2">
-                          {tx.proofUrl && (
-                            <button
-                              onClick={() => {
-                                setViewProofTx(tx);
-                                setProofZoom(1);
-                              }}
-                              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl border border-slate-700 cursor-pointer"
+                          <td className="p-4">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${
+                                tx.status === 'Successful'
+                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                  : tx.status === 'Pending'
+                                  ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20 animate-pulse'
+                                  : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                              }`}
                             >
-                              View Proof
-                            </button>
-                          )}
+                              {tx.status === 'Successful' && <CheckCircle2 className="w-3 h-3" />}
+                              {tx.status === 'Pending' && <Clock className="w-3 h-3" />}
+                              {tx.status === 'Failed' && <XCircle className="w-3 h-3" />}
+                              {tx.status}
+                            </span>
+                          </td>
 
-                          {tx.status === 'Pending' && (
+                          <td className="p-4 text-slate-400 font-mono text-[11px]">
+                            {new Date(tx.date).toLocaleDateString()}
+                          </td>
+
+                          <td className="p-4 text-right space-x-2">
+                            {tx.proofUrl && (
+                              <button
+                                onClick={() => {
+                                  setViewProofTx(tx);
+                                  setProofZoom(1);
+                                }}
+                                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl border border-slate-700 cursor-pointer"
+                              >
+                                View Proof
+                              </button>
+                            )}
+
+                            {tx.status === 'Pending' && (
+                              <button
+                                onClick={() => handleApprovePayment(tx)}
+                                disabled={isProcessing}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer disabled:opacity-50"
+                              >
+                                Verify & Activate
+                              </button>
+                            )}
+
+                            {tx.status === 'Pending' && (
+                              <button
+                                onClick={() => setRejectTx(tx)}
+                                disabled={isProcessing}
+                                className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 cursor-pointer"
+                              >
+                                Decline
+                              </button>
+                            )}
+
                             <button
-                              onClick={() => handleApprovePayment(tx)}
+                              onClick={() => setDeleteConfirmModalTxIds([tx.id])}
                               disabled={isProcessing}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer disabled:opacity-50"
+                              className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white font-bold text-xs rounded-xl border border-rose-500/20 hover:border-rose-600 transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm"
+                              title="Delete Payment Record"
+                              id={`delete-single-tx-btn-${tx.id}`}
                             >
-                              Verify & Activate
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Delete</span>
                             </button>
-                          )}
-
-                          {tx.status === 'Pending' && (
-                            <button
-                              onClick={() => setRejectTx(tx)}
-                              disabled={isProcessing}
-                              className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 cursor-pointer"
-                            >
-                              Decline
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1245,6 +1376,73 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* --- DELETE PAYMENT HISTORY CONFIRMATION MODAL --- */}
+      {deleteConfirmModalTxIds && deleteConfirmModalTxIds.length > 0 && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in" id="delete-payment-modal-wrapper">
+          <div className="bg-slate-900 border border-rose-500/40 w-full max-w-lg rounded-3xl p-6 space-y-5 shadow-2xl relative text-left">
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
+              <div className="p-3 bg-rose-500/20 text-rose-400 border border-rose-500/40 rounded-2xl shrink-0">
+                <AlertTriangle className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-white text-base sm:text-lg">
+                  Delete {deleteConfirmModalTxIds.length === 1 ? 'Payment Record' : `${deleteConfirmModalTxIds.length} Payment Records`}
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Are you sure you want to permanently remove {deleteConfirmModalTxIds.length === 1 ? 'this transaction' : 'these selected transactions'} from payment history?
+                </p>
+              </div>
+            </div>
+
+            {/* Selected Transactions Preview List */}
+            <div className="max-h-48 overflow-y-auto space-y-2 p-3 bg-slate-950 rounded-2xl border border-slate-800 text-xs">
+              {deleteConfirmModalTxIds.map((id) => {
+                const target = transactions.find((t) => t.id === id);
+                if (!target) return null;
+                return (
+                  <div key={id} className="flex justify-between items-center p-2.5 bg-slate-900/80 rounded-xl border border-slate-800/80 text-slate-300">
+                    <div>
+                      <span className="font-mono font-bold text-white block">{target.reference}</span>
+                      <span className="text-[11px] text-slate-400">{target.userName} ({target.userEmail})</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-emerald-400 block">₦{target.amount.toLocaleString()}</span>
+                      <span className="text-[10px] text-slate-500">{target.planName}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-300 font-medium flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>This action will purge the history logs from local storage and Cloud Firestore.</span>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmModalTxIds(null)}
+                disabled={isProcessing}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                id="cancel-delete-payment-btn"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isProcessing}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-rose-600/30 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                id="confirm-delete-payment-btn"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Permanently Delete</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
