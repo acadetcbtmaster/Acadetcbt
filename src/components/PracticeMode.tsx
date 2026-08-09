@@ -155,7 +155,7 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
       await ApiClient.validatePracticeSession({
         userId: user?.id || 'anonymous',
         requestedLimit: questionLimit,
-        isPremium: true,
+        isPremium: isPremium,
         userRole: user?.role || 'student',
       });
     } catch (e) {

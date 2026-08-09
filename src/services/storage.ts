@@ -806,12 +806,12 @@ const DEFAULT_USER: UserProfile = {
   universityId: 'uni-1',
   departmentId: 'dept-1',
   subscription: {
-    isPremium: true,
-    plan: 'Unlimited Free Access',
+    isPremium: false,
+    plan: '30-Question Free Tier',
     startDate: new Date().toISOString(),
     expiryDate: null,
     questionsAttemptedCount: 12,
-    freeLimit: 999999,
+    freeLimit: 30,
   },
   bookmarks: ['q-1', 'q-4'],
   createdDate: new Date().toISOString(),
@@ -1356,18 +1356,71 @@ export class StorageService {
     }
   }
 
-  // Helper to check and enforce subscription status (All users have unlimited free access)
+  // Helper to check and enforce subscription status (30-question limit for non-subscribed, unlimited for active premium)
   private static enforceSubscriptionExpiry(user: UserProfile): UserProfile {
     if (!user) return user;
+
+    // Admins retain unrestricted access
+    if (user.role === 'admin') {
+      return {
+        ...user,
+        subscription: {
+          isPremium: true,
+          plan: user.subscription?.plan || 'Administrator Pass',
+          startDate: user.subscription?.startDate || new Date().toISOString(),
+          expiryDate: null,
+          questionsAttemptedCount: user.subscription?.questionsAttemptedCount || 0,
+          freeLimit: 999999,
+        },
+      };
+    }
+
+    const sub = user.subscription;
+    const now = new Date();
+
+    // Verify if account has an active, valid paid premium subscription
+    let isCurrentlyPremium = false;
+    if (sub && sub.isPremium) {
+      if (sub.expiryDate) {
+        const expiry = new Date(sub.expiryDate);
+        if (!isNaN(expiry.getTime()) && expiry > now) {
+          isCurrentlyPremium = true;
+        }
+      } else {
+        // If expiryDate is null, check if plan is an explicit active paid plan
+        if (
+          sub.plan &&
+          sub.plan !== 'Unlimited Free Access' &&
+          sub.plan !== 'Free Trial' &&
+          sub.plan !== '30-Question Free Tier' &&
+          sub.plan !== 'Cancelled'
+        ) {
+          isCurrentlyPremium = true;
+        }
+      }
+    }
+
+    if (isCurrentlyPremium) {
+      return {
+        ...user,
+        subscription: {
+          ...sub!,
+          isPremium: true,
+          freeLimit: 999999,
+        },
+      };
+    }
+
+    // Non-subscribed or expired accounts are placed on the 30-question free limit
     return {
       ...user,
       subscription: {
-        isPremium: true,
-        plan: 'Unlimited Free Access',
-        startDate: user.subscription?.startDate || new Date().toISOString(),
-        expiryDate: null,
-        questionsAttemptedCount: user.subscription?.questionsAttemptedCount || 0,
-        freeLimit: 999999,
+        isPremium: false,
+        plan: sub?.plan === 'Cancelled' ? 'Cancelled (Free Tier)' : '30-Question Free Tier',
+        startDate: sub?.startDate || new Date().toISOString(),
+        expiryDate: sub?.expiryDate || null,
+        questionsAttemptedCount: sub?.questionsAttemptedCount || 0,
+        freeLimit: 30,
       },
     };
   }
