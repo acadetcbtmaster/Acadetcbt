@@ -197,10 +197,19 @@ const activateSubscriptionInFirestore = async (params: {
   // 1. users/{uid} payload
   const userPayload = {
     fullName: params.userName || "Acadet Student",
+    name: params.userName || "Acadet Student",
     email: params.userEmail,
     role: "student",
     subscriptionPlan: params.planName || "Premium Membership",
     subscriptionStatus: "active",
+    subscription: {
+      isPremium: true,
+      plan: params.planName || "Premium Membership",
+      startDate: paidAt,
+      expiryDate: expiryDate,
+      questionsAttemptedCount: 0,
+      freeLimit: 999999,
+    },
     updatedAt: paidAt,
   };
 

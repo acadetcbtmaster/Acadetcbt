@@ -26,6 +26,8 @@ export interface UserProfile {
   departmentId: string;
   departmentName?: string;
   subscription: Subscription;
+  subscriptionPlan?: string;
+  subscriptionStatus?: string;
   bookmarks: string[]; // Question IDs
   purchasedMaterialIds?: string[]; // Material IDs user paid 500 NGN for
   seenQuestionIds?: string[]; // Question IDs user has practiced

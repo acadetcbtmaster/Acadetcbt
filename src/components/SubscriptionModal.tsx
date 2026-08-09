@@ -29,38 +29,19 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   user,
   plans: propsPlans,
 }) => {
-  const [allPlans, setAllPlans] = useState<SubscriptionPlan[]>(() => {
-    return (propsPlans && propsPlans.length > 0) ? propsPlans : StorageService.getSubscriptionPlans();
-  });
-
-  useEffect(() => {
-    if (propsPlans && propsPlans.length > 0) {
-      setAllPlans(propsPlans);
-    } else {
-      setAllPlans(StorageService.getSubscriptionPlans());
-    }
-  }, [propsPlans, isOpen]);
-
+  const allPlans = (propsPlans && propsPlans.length > 0) ? propsPlans : StorageService.getSubscriptionPlans();
   const activePlans = allPlans.filter((p) => p.status !== 'Inactive' && p.status !== 'Disabled');
 
-  const [selectedPlanId, setSelectedPlanId] = useState<string>(() => {
-    const popular = activePlans.find((p) => p.popular);
-    return popular ? popular.id : (activePlans[0]?.id || 'premium');
-  });
-
+  const [selectedPlanId, setSelectedPlanId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (activePlans.length > 0 && !activePlans.some((p) => p.id === selectedPlanId)) {
-      const popular = activePlans.find((p) => p.popular);
-      setSelectedPlanId(popular ? popular.id : activePlans[0].id);
-    }
-  }, [allPlans]);
-
   if (!isOpen) return null;
 
-  const currentChosenPlan = activePlans.find((p) => p.id === selectedPlanId) || activePlans[0];
+  const currentChosenPlan =
+    activePlans.find((p) => p.id === selectedPlanId) ||
+    activePlans.find((p) => p.popular) ||
+    activePlans[0];
 
   const handleInitiatePayment = async () => {
     setLoading(true);

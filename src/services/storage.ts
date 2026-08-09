@@ -1380,23 +1380,33 @@ export class StorageService {
 
     // Verify if account has an active, valid paid premium subscription
     let isCurrentlyPremium = false;
-    if (sub && sub.isPremium) {
-      if (sub.expiryDate) {
-        const expiry = new Date(sub.expiryDate);
-        if (!isNaN(expiry.getTime()) && expiry > now) {
+    const planName = user.subscriptionPlan || sub?.plan || '';
+    const status = user.subscriptionStatus;
+
+    const isNonPaidPlanName = (p: string) => {
+      const lower = p.toLowerCase();
+      return (
+        !p ||
+        lower.includes('free tier') ||
+        lower.includes('free trial') ||
+        lower === '30-question free tier' ||
+        lower === 'cancelled'
+      );
+    };
+
+    if (status === 'active' || (sub && sub.isPremium) || (!isNonPaidPlanName(planName) && planName !== '')) {
+      const expDateStr = sub?.expiryDate;
+      if (expDateStr) {
+        const expiry = new Date(expDateStr);
+        if (!isNaN(expiry.getTime())) {
+          if (expiry > now) {
+            isCurrentlyPremium = true;
+          }
+        } else {
           isCurrentlyPremium = true;
         }
       } else {
-        // If expiryDate is null, check if plan is an explicit active paid plan
-        if (
-          sub.plan &&
-          sub.plan !== 'Unlimited Free Access' &&
-          sub.plan !== 'Free Trial' &&
-          sub.plan !== '30-Question Free Tier' &&
-          sub.plan !== 'Cancelled'
-        ) {
-          isCurrentlyPremium = true;
-        }
+        isCurrentlyPremium = true;
       }
     }
 

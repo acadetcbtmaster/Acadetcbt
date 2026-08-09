@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { CheckCircle2, ArrowRight, ShieldCheck, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { ApiClient } from '../services/apiClient';
@@ -25,7 +25,12 @@ export const PaymentResultView: React.FC<PaymentResultViewProps> = ({
     planName?: string;
   } | null>(null);
 
+  const hasVerified = useRef<boolean>(false);
+
   useEffect(() => {
+    if (hasVerified.current) return;
+    hasVerified.current = true;
+
     const searchParams = new URLSearchParams(window.location.search);
     const reference =
       searchParams.get('reference') ||
@@ -57,7 +62,7 @@ export const PaymentResultView: React.FC<PaymentResultViewProps> = ({
           if (currentUser) {
             const updated: UserProfile = {
               ...currentUser,
-              subscriptionPlan: 'premium',
+              subscriptionPlan: res.planName || 'Premium Membership',
               subscriptionStatus: 'active',
               subscription: {
                 ...(currentUser.subscription || {
@@ -66,7 +71,7 @@ export const PaymentResultView: React.FC<PaymentResultViewProps> = ({
                   startDate: new Date().toISOString(),
                 }),
                 isPremium: true,
-                plan: res.planName || 'Premium Plan',
+                plan: res.planName || 'Premium Membership',
                 expiryDate: new Date(Date.now() + 30 * 86400000).toISOString(),
               },
             };
@@ -83,7 +88,7 @@ export const PaymentResultView: React.FC<PaymentResultViewProps> = ({
     };
 
     verifyTransaction();
-  }, [currentUser?.id]);
+  }, []);
 
   if (loading) {
     return (
