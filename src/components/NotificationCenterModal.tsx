@@ -14,7 +14,8 @@ import {
   FileText,
   ExternalLink,
   Sparkles,
-  Inbox
+  Inbox,
+  ArrowLeft
 } from 'lucide-react';
 
 interface NotificationCenterModalProps {
@@ -123,21 +124,31 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
       <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-scale-up">
         
         {/* Modal Header */}
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl text-indigo-400">
-              <Bell className="w-6 h-6" />
+        <div className="p-4 sm:p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-slate-700 shadow-sm shrink-0 mr-2"
+            id="notif-header-back-btn"
+            title="Go Back"
+          >
+            <ArrowLeft className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>Back</span>
+          </button>
+
+          <div className="flex items-center gap-3 mx-auto sm:mx-0">
+            <div className="p-2.5 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl text-indigo-400 shrink-0">
+              <Bell className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-black text-white">Notification Center</h3>
+                <h3 className="text-base sm:text-lg font-black text-white">Notification Center</h3>
                 {unreadCount > 0 && (
                   <span className="px-2.5 py-0.5 bg-indigo-600 text-white font-black text-xs rounded-full">
                     {unreadCount} New
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-400 mt-0.5 hidden sm:block">
                 Stay updated with official announcements, FaceArena challenges, and system notices.
               </p>
             </div>
@@ -145,9 +156,12 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
 
           <button
             onClick={onClose}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-colors cursor-pointer"
+            className="px-3 py-1.5 text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-slate-700 shadow-sm shrink-0 ml-2"
+            id="notif-header-cancel-btn"
+            title="Cancel / Close"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>Cancel</span>
           </button>
         </div>
 
@@ -268,16 +282,28 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex justify-between items-center text-xs">
+        <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex flex-wrap justify-between items-center gap-2 text-xs">
           <span className="text-slate-400 font-bold">
             Total Notifications: {notifications.length}
           </span>
-          <button
-            onClick={onClose}
-            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-md cursor-pointer"
-          >
-            Close Center
-          </button>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={onClose}
+              className="py-2 px-3 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              id="notif-footer-back-btn"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>Back</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="py-2 px-3 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              id="notif-footer-cancel-btn"
+            >
+              <X className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <span>Cancel</span>
+            </button>
+          </div>
         </div>
 
       </div>

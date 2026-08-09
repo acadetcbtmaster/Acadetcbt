@@ -24,20 +24,21 @@ export const TrialAlertModal: React.FC<TrialAlertModalProps> = ({
   const remaining = Math.max(0, freeLimit - questionsUsed);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in overflow-y-auto">
       <div
         className={`bg-slate-900 border ${
           is80 ? 'border-amber-500/50' : 'border-rose-500/50'
-        } rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative text-center space-y-5`}
+        } rounded-3xl p-5 sm:p-8 max-w-md w-full max-h-[90vh] shadow-2xl relative text-center space-y-5 overflow-y-auto my-auto`}
       >
-        {/* Top Header Navigation Bar */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        {/* Top Header Navigation Bar with Back & Cancel */}
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
           <button
             onClick={onClose}
-            className="p-2 text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-slate-700 shadow-sm"
-            title="Back"
+            className="px-3 py-1.5 text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-slate-700 shadow-sm active:scale-95"
+            title="Go Back"
+            id="trial-alert-header-back-btn"
           >
-            <ArrowLeft className="w-4 h-4 text-indigo-400" />
+            <ArrowLeft className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>Back</span>
           </button>
 
@@ -47,26 +48,27 @@ export const TrialAlertModal: React.FC<TrialAlertModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2 text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold border border-slate-700 shadow-sm"
+            className="px-3 py-1.5 text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-slate-700 shadow-sm active:scale-95"
             title="Cancel / Close"
+            id="trial-alert-header-cancel-btn"
           >
+            <X className="w-4 h-4 text-rose-400 shrink-0" />
             <span>Cancel</span>
-            <X className="w-4 h-4 text-rose-400" />
           </button>
         </div>
 
         {/* Icon Badge */}
         <div
-          className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center border shadow-xl ${
+          className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl mx-auto flex items-center justify-center border shadow-xl shrink-0 ${
             is80
               ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
               : 'bg-rose-500/20 text-rose-400 border-rose-500/40 animate-bounce'
           }`}
         >
           {is80 ? (
-            <AlertTriangle className="w-8 h-8" />
+            <AlertTriangle className="w-7 h-7 sm:w-8 sm:h-8" />
           ) : (
-            <AlertCircle className="w-8 h-8" />
+            <AlertCircle className="w-7 h-7 sm:w-8 sm:h-8" />
           )}
         </div>
 
@@ -129,37 +131,38 @@ export const TrialAlertModal: React.FC<TrialAlertModalProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="pt-2 flex flex-col gap-2.5">
+        <div className="pt-2 flex flex-col gap-2.5 shrink-0">
           <button
             onClick={() => {
               onClose();
               onOpenSubscribe();
             }}
-            className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-indigo-600 to-indigo-700 hover:from-amber-400 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-indigo-600 to-indigo-700 hover:from-amber-400 hover:to-indigo-500 text-white font-black text-xs sm:text-sm rounded-xl shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
             id="trial-alert-upgrade-btn"
           >
-            <Crown className="w-4 h-4 text-amber-200" />
+            <Crown className="w-4 h-4 text-amber-200 shrink-0" />
             <span>Upgrade to Premium</span>
-            <ArrowRight className="w-4 h-4 ml-1" />
+            <ArrowRight className="w-4 h-4 ml-1 shrink-0" />
           </button>
 
-          {is80 ? (
+          <div className="grid grid-cols-2 gap-2 pt-1">
             <button
               onClick={onClose}
-              className="w-full py-2.5 text-xs text-slate-400 hover:text-white font-semibold cursor-pointer bg-slate-800/80 hover:bg-slate-800 rounded-xl"
-              id="trial-alert-dismiss-btn"
+              className="py-2.5 px-3 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              id="trial-alert-footer-back-btn"
             >
-              Continue Free Trial ({remaining} questions left)
+              <ArrowLeft className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>Back</span>
             </button>
-          ) : (
             <button
               onClick={onClose}
-              className="w-full py-2.5 text-xs text-slate-400 hover:text-white font-semibold cursor-pointer"
-              id="trial-alert-close-btn"
+              className="py-2.5 px-3 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              id="trial-alert-footer-cancel-btn"
             >
-              Close
+              <X className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <span>Cancel</span>
             </button>
-          )}
+          </div>
         </div>
       </div>
     </div>

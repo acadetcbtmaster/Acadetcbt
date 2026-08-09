@@ -22,6 +22,7 @@ import {
   Layers,
   Lock,
   Loader2,
+  ArrowLeft,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -174,36 +175,54 @@ export const FeaturesPdfModal: React.FC<FeaturesPdfModalProps> = ({
       <div className="bg-slate-900 border border-slate-800 text-slate-100 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden my-auto">
         
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/90 backdrop-blur flex items-center justify-between shrink-0 print:hidden">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/90 backdrop-blur flex flex-wrap items-center justify-between gap-3 shrink-0 print:hidden">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-slate-700 shadow-sm shrink-0"
+              id="pdf-header-back-btn"
+              title="Go Back"
+            >
+              <ArrowLeft className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Back</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-slate-700 shadow-sm shrink-0"
+              id="pdf-header-cancel-btn"
+              title="Cancel / Exit"
+            >
+              <X className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>Cancel</span>
+            </button>
+          </div>
+
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400">
+            <div className="p-2 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400 shrink-0 hidden sm:block">
               <FileText className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                <span>Acadet CBT Master — Platform Feature Catalog</span>
-                <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-xs font-mono rounded-full">PDF Document</span>
+              <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                <span>Acadet CBT Master — Feature Catalog</span>
+                <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-mono rounded-full hidden sm:inline-block">PDF</span>
               </h2>
-              <p className="text-xs text-slate-400">
-                Official specifications, capabilities, and system features overview
-              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-auto">
             <button
               onClick={handleDownloadPdf}
               disabled={isGenerating}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg shadow-indigo-600/20 transition-all cursor-pointer"
+              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-600/20 transition-all cursor-pointer"
             >
               {isGenerating ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>{downloadProgress || 'Generating PDF...'}</span>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                  <span className="text-[11px]">{downloadProgress || 'Generating...'}</span>
                 </>
               ) : (
                 <>
-                  <Download className="w-4 h-4" />
+                  <Download className="w-3.5 h-3.5" />
                   <span>Download PDF</span>
                 </>
               )}
@@ -211,18 +230,10 @@ export const FeaturesPdfModal: React.FC<FeaturesPdfModalProps> = ({
 
             <button
               onClick={handleNativePrint}
-              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-2 border border-slate-700 transition-all cursor-pointer"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-all cursor-pointer"
             >
-              <Printer className="w-4 h-4 text-slate-300" />
-              <span className="hidden sm:inline">Print / Save PDF</span>
-            </button>
-
-            <button
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer ml-2"
-              title="Close Modal"
-            >
-              <X className="w-5 h-5" />
+              <Printer className="w-3.5 h-3.5 text-slate-300" />
+              <span className="hidden sm:inline">Print</span>
             </button>
           </div>
         </div>
@@ -530,17 +541,26 @@ export const FeaturesPdfModal: React.FC<FeaturesPdfModalProps> = ({
         </div>
 
         {/* Modal Footer Actions */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900 flex items-center justify-between shrink-0 print:hidden">
-          <p className="text-xs text-slate-400 hidden sm:block">
-            Click <strong>Download PDF</strong> to export this complete feature catalog directly to your device.
-          </p>
-          <div className="flex items-center gap-3 ml-auto">
+        <div className="px-4 sm:px-6 py-4 border-t border-slate-800 bg-slate-900 flex flex-wrap items-center justify-between gap-2 shrink-0 print:hidden">
+          <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl cursor-pointer transition-colors"
+              className="py-2 px-3 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              id="pdf-footer-back-btn"
             >
-              Close
+              <ArrowLeft className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>Back</span>
             </button>
+            <button
+              onClick={onClose}
+              className="py-2 px-3 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              id="pdf-footer-cancel-btn"
+            >
+              <X className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <span>Cancel</span>
+            </button>
+          </div>
+          <div className="flex items-center gap-3 ml-auto">
             <button
               onClick={handleDownloadPdf}
               disabled={isGenerating}

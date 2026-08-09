@@ -1,6 +1,6 @@
 import React from 'react';
 import brandLogo from '../assets/images/exact_acadet_cbt_logo_1786225425882.jpg';
-import { X, GraduationCap, Target, Eye, Heart, MessageSquare, ExternalLink, Sparkles, Quote, Award } from 'lucide-react';
+import { X, GraduationCap, Target, Eye, Heart, MessageSquare, ExternalLink, Sparkles, Quote, Award, ArrowLeft } from 'lucide-react';
 
 interface AboutModalProps {
   isOpen: boolean;
@@ -15,15 +15,25 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
       <div className="bg-slate-900 border border-indigo-500/30 max-w-2xl w-full rounded-3xl shadow-2xl overflow-hidden relative my-8 flex flex-col max-h-[90vh]">
         
         {/* Header */}
-        <div className="p-6 bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-inner overflow-hidden">
+        <div className="p-4 sm:p-6 bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-slate-700 shadow-sm shrink-0 mr-2"
+            id="about-header-back-btn"
+            title="Go Back"
+          >
+            <ArrowLeft className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>Back</span>
+          </button>
+
+          <div className="flex items-center gap-3 mx-auto sm:mx-0">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-inner overflow-hidden shrink-0">
               <img src={brandLogo} alt="Acadet CBT Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             </div>
             <div>
-              <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+              <h2 className="text-base sm:text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
                 Acadet CBT MASTER
-                <span className="px-2 py-0.5 text-[10px] font-bold bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/30">
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-indigo-500/20 text-indigo-300 rounded-full border border-indigo-500/30 hidden sm:inline-block">
                   Official
                 </span>
               </h2>
@@ -33,11 +43,12 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
 
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+            className="px-3 py-1.5 text-slate-200 hover:text-white bg-slate-800/90 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-slate-700 shadow-sm shrink-0 ml-2"
             id="close-about-modal-btn"
-            title="Close Modal"
+            title="Cancel / Close"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>Cancel</span>
           </button>
         </div>
 

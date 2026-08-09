@@ -56,8 +56,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-      <div className="bg-slate-900 border border-indigo-500/40 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative space-y-6">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in overflow-y-auto">
+      <div className="bg-slate-900 border border-indigo-500/40 rounded-3xl p-5 sm:p-8 max-w-lg w-full max-h-[90vh] shadow-2xl relative space-y-5 overflow-y-auto my-auto">
         
         {/* Header Navigation Bar */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-2">
@@ -186,21 +186,32 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-end gap-3">
+            <div className="pt-2 flex flex-wrap items-center justify-end gap-2.5">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 border border-slate-700"
+                id="profile-footer-back-btn"
               >
-                Cancel
+                <ArrowLeft className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Back</span>
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 border border-slate-700"
+                id="profile-footer-cancel-btn"
+              >
+                <X className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                <span>Cancel</span>
               </button>
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5 cursor-pointer ml-auto sm:ml-0"
                 id="save-profile-btn"
               >
                 <Save className="w-4 h-4" />
-                Save Changes
+                <span>Save Changes</span>
               </button>
             </div>
           </form>
