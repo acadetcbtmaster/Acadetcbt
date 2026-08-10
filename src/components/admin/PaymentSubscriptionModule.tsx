@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import {
   DollarSign,
   CreditCard,
@@ -64,7 +66,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
   onUpdatePlans,
 }) => {
   // Navigation Subtabs
-  const [activeSubTab, setActiveSubTab] = useState<'transactions' | 'pending_verifications' | 'plans' | 'analytics'>('transactions');
+  const [activeSubTab, setActiveSubTab] = useState<'transactions' | 'subscriptions' | 'pending_verifications' | 'plans' | 'analytics'>('transactions');
 
   // Transactions State
   const [transactions, setTransactions] = useState<PaymentTransaction[]>(() => StorageService.getTransactions());
@@ -91,6 +93,8 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
   const [extensionDays, setExtensionDays] = useState(30);
   const [extensionPlanName, setExtensionPlanName] = useState('30-Day Premium');
 
+  const [viewSubDetailStudent, setViewSubDetailStudent] = useState<UserProfile | null>(null);
+
   // Plan Management Modal
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
@@ -111,13 +115,88 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Sync state with storage events
+  // Sync state with storage events and real-time Firestore
   useEffect(() => {
     const handleStorageChange = () => {
       setTransactions(StorageService.getTransactions());
     };
     window.addEventListener('cbt_storage_change', handleStorageChange);
-    return () => window.removeEventListener('cbt_storage_change', handleStorageChange);
+
+    let unsubPayments: (() => void) | null = null;
+    let unsubUsers: (() => void) | null = null;
+
+    try {
+      unsubPayments = onSnapshot(collection(db, 'payments'), (snapshot) => {
+        if (!snapshot.empty) {
+          const liveList: PaymentTransaction[] = [];
+          snapshot.forEach((docSnap) => {
+            const d = docSnap.data();
+            let st: 'Successful' | 'Pending' | 'Failed' = 'Pending';
+            if (d.status === 'success' || d.status === 'Successful') st = 'Successful';
+            else if (d.status === 'failed' || d.status === 'Failed') st = 'Failed';
+
+            liveList.push({
+              id: docSnap.id,
+              paymentId: d.paymentId || docSnap.id,
+              userId: d.userId || '',
+              userName: d.fullName || d.userName || d.email?.split('@')[0] || 'Acadet Student',
+              userEmail: d.email || '',
+              reference: d.transactionRef || d.reference || docSnap.id,
+              gateway: d.provider === 'squad' ? 'Squad' : (d.gateway || 'Squad Payment'),
+              amount: d.amount || 0,
+              planName: d.plan || d.planName || 'Premium Membership',
+              date: d.createdAt || new Date().toISOString(),
+              paymentDate: d.updatedAt || d.createdAt || new Date().toISOString(),
+              status: st,
+              handledByAdmin: st === 'Successful' ? 'Squad Auto-Activate' : undefined,
+            });
+          });
+
+          setTransactions((prev) => {
+            const map = new Map<string, PaymentTransaction>();
+            prev.forEach((t) => map.set(t.reference || t.id, t));
+            liveList.forEach((t) => map.set(t.reference || t.id, t));
+            return Array.from(map.values()).sort(
+              (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+            );
+          });
+        }
+      });
+
+      unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+        if (!snapshot.empty) {
+          const liveUsers: UserProfile[] = [];
+          snapshot.forEach((docSnap) => {
+            const d = docSnap.data();
+            liveUsers.push(({
+              id: docSnap.id,
+              name: d.fullName || d.name || 'Student',
+              email: d.email || '',
+              role: d.role || 'student',
+              universityName: d.universityName || '',
+              departmentName: d.departmentName || '',
+              subscription: d.subscription,
+              subscriptionStatus: d.subscriptionStatus,
+              subscriptionPlan: d.subscriptionPlan,
+              subscriptionStartDate: d.subscriptionStartDate,
+              subscriptionExpiryDate: d.subscriptionExpiryDate,
+              ...d,
+            } as unknown) as UserProfile);
+          });
+          if (liveUsers.length > 0) {
+            onUpdateStudents(liveUsers);
+          }
+        }
+      });
+    } catch (err) {
+      console.warn('Firestore live listener in PaymentSubscriptionModule:', err);
+    }
+
+    return () => {
+      window.removeEventListener('cbt_storage_change', handleStorageChange);
+      if (unsubPayments) unsubPayments();
+      if (unsubUsers) unsubUsers();
+    };
   }, []);
 
   const showToast = (msg: string) => {
@@ -137,10 +216,25 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
     const failedCount = transactions.filter((t) => t.status === 'Failed').length;
     const refundedCount = transactions.filter((t) => t.status === 'Refunded').length;
 
-    const premiumSubsCount = students.filter((s) => s.subscription?.isPremium).length;
-    const freeTrialCount = students.length - premiumSubsCount;
-
     const now = new Date();
+    const activeSubscribersCount = students.filter((s) => {
+      if (s.subscription?.isPremium || s.subscriptionStatus === 'active') {
+        const exp = s.subscription?.expiryDate || s.subscriptionExpiryDate;
+        return !exp || new Date(exp).getTime() >= now.getTime();
+      }
+      return false;
+    }).length;
+
+    const expiredSubscribersCount = students.filter((s) => {
+      const exp = s.subscription?.expiryDate || s.subscriptionExpiryDate;
+      if (exp && new Date(exp).getTime() < now.getTime()) {
+        return true;
+      }
+      return s.subscriptionStatus === 'expired';
+    }).length;
+
+    const freeTrialCount = Math.max(0, students.length - activeSubscribersCount - expiredSubscribersCount);
+
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const weekStart = now.getTime() - 86400000 * 7;
     const monthStart = now.getTime() - 86400000 * 30;
@@ -164,13 +258,76 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
       pendingCount,
       failedCount,
       refundedCount,
-      premiumSubsCount,
+      activeSubscribersCount,
+      expiredSubscribersCount,
       freeTrialCount,
       todayRev,
       weekRev,
       monthRev,
     };
   }, [transactions, students]);
+
+  // --- FILTERED SUBSCRIPTIONS MEMO ---
+  const filteredSubscriptions = useMemo(() => {
+    return students
+      .map((std) => {
+        const isPremium = std.subscription?.isPremium || std.subscriptionStatus === 'active';
+        const planName = std.subscription?.plan || std.subscriptionPlan || 'Free Trial';
+        const startDate = std.subscription?.startDate || std.subscriptionStartDate || std.createdDate || '';
+        const expiryDate = std.subscription?.expiryDate || std.subscriptionExpiryDate || null;
+
+        let daysRemaining = 0;
+        let status: 'Active' | 'Expired' | 'Free Trial' = 'Free Trial';
+
+        if (isPremium && expiryDate) {
+          const diffMs = new Date(expiryDate).getTime() - Date.now();
+          daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+          if (diffMs > 0) {
+            status = 'Active';
+          } else {
+            status = 'Expired';
+          }
+        } else if (isPremium) {
+          status = 'Active';
+          daysRemaining = 999;
+        } else if (std.subscriptionStatus === 'expired') {
+          status = 'Expired';
+        }
+
+        return {
+          student: std,
+          id: std.id,
+          name: std.name || std.fullName || 'Student',
+          email: std.email || '',
+          plan: planName,
+          status,
+          startDate,
+          expiryDate,
+          daysRemaining,
+          universityName: std.universityName || 'Federal University Lokoja',
+          departmentName: std.departmentName || '',
+        };
+      })
+      .filter((sub) => {
+        const searchLower = searchTerm.toLowerCase();
+        const matchesSearch =
+          !searchTerm ||
+          sub.name.toLowerCase().includes(searchLower) ||
+          sub.email.toLowerCase().includes(searchLower) ||
+          sub.plan.toLowerCase().includes(searchLower) ||
+          sub.universityName.toLowerCase().includes(searchLower);
+
+        const matchesStatus =
+          selectedStatusFilter === 'all' ||
+          (selectedStatusFilter === 'active' && sub.status === 'Active') ||
+          (selectedStatusFilter === 'expired' && sub.status === 'Expired') ||
+          (selectedStatusFilter === 'free' && sub.status === 'Free Trial');
+
+        const matchesPlan = selectedPlanFilter === 'all' || sub.plan === selectedPlanFilter;
+
+        return matchesSearch && matchesStatus && matchesPlan;
+      });
+  }, [students, searchTerm, selectedStatusFilter, selectedPlanFilter]);
 
   // --- FILTERED TRANSACTIONS ---
   const filteredTransactions = useMemo(() => {
@@ -592,29 +749,11 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
       </div>
 
       {/* --- 1. Real-Time Revenue Summary Cards --- */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3" id="revenue-summary-cards">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" id="revenue-summary-cards">
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md">
           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Revenue</span>
           <p className="text-xl font-black text-emerald-400 mt-1">₦{metrics.totalRev.toLocaleString()}</p>
-          <span className="text-[9px] text-slate-500 font-medium mt-0.5 block">All-time platform earnings</span>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md">
-          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Today's Revenue</span>
-          <p className="text-xl font-black text-white mt-1">₦{metrics.todayRev.toLocaleString()}</p>
-          <span className="text-[9px] text-emerald-400 font-bold mt-0.5 block">↑ Live Daily Earnings</span>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md">
-          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Premium Subscribers</span>
-          <p className="text-xl font-black text-indigo-300 mt-1">{metrics.premiumSubsCount}</p>
-          <span className="text-[9px] text-indigo-400 font-medium mt-0.5 block">Active paying students</span>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md">
-          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Pending Review</span>
-          <p className="text-xl font-black text-amber-400 mt-1">{metrics.pendingCount}</p>
-          <span className="text-[9px] text-amber-300 font-bold mt-0.5 block">Awaiting verification</span>
+          <span className="text-[9px] text-slate-500 font-medium mt-0.5 block">All-time earnings</span>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md">
@@ -624,9 +763,21 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md">
-          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Free Trial Users</span>
-          <p className="text-xl font-black text-slate-400 mt-1">{metrics.freeTrialCount}</p>
-          <span className="text-[9px] text-slate-500 font-medium mt-0.5 block">Standard access users</span>
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Active Subscribers</span>
+          <p className="text-xl font-black text-indigo-300 mt-1">{metrics.activeSubscribersCount}</p>
+          <span className="text-[9px] text-indigo-400 font-medium mt-0.5 block">Active paying students</span>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md">
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Expired Subscribers</span>
+          <p className="text-xl font-black text-rose-400 mt-1">{metrics.expiredSubscribersCount}</p>
+          <span className="text-[9px] text-rose-300 font-medium mt-0.5 block">Requires renewal</span>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-md">
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Pending Payments</span>
+          <p className="text-xl font-black text-amber-400 mt-1">{metrics.pendingCount}</p>
+          <span className="text-[9px] text-amber-300 font-bold mt-0.5 block">Awaiting confirmation</span>
         </div>
       </div>
 
@@ -641,6 +792,16 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
           >
             <CreditCard className="w-4 h-4" />
             <span>All Transactions ({transactions.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('subscriptions')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-2 ${
+              activeSubTab === 'subscriptions' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Admin Subscriptions ({students.length})</span>
           </button>
 
           <button
@@ -720,6 +881,21 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
                   <option value="successful">Successful</option>
                   <option value="pending">Pending Review</option>
                   <option value="failed">Failed / Declined</option>
+                </select>
+              </div>
+
+              <div>
+                <select
+                  value={selectedGatewayFilter}
+                  onChange={(e) => setSelectedGatewayFilter(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-medium"
+                  id="filter-gateway-select"
+                >
+                  <option value="all">All Payment Gateways</option>
+                  <option value="squad">Squad</option>
+                  <option value="korapay">KoraPay</option>
+                  <option value="bank transfer">Bank Transfer</option>
+                  <option value="free access">Free Access</option>
                 </select>
               </div>
             </div>
@@ -1104,46 +1280,67 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
       )}
 
       {/* SUBTAB 4: REVENUE ANALYTICS */}
-      {activeSubTab === 'analytics' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
-              <h3 className="font-bold text-white text-base flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-emerald-400" />
-                <span>Revenue Gateway Distribution</span>
-              </h3>
-              <div className="space-y-3 pt-2 text-xs">
-                <div>
-                  <div className="flex justify-between text-slate-300 mb-1 font-bold">
-                    <span>Paystack Online Payments</span>
-                    <span className="text-emerald-400">65% (₦{(metrics.totalRev * 0.65).toLocaleString()})</span>
-                  </div>
-                  <div className="w-full bg-slate-950 h-3 rounded-full border border-slate-800 overflow-hidden">
-                    <div className="bg-emerald-500 h-full rounded-full" style={{ width: '65%' }}></div>
-                  </div>
-                </div>
+      {activeSubTab === 'analytics' && (() => {
+        let squadRev = 0;
+        let korapayRev = 0;
+        let otherRev = 0;
 
-                <div>
-                  <div className="flex justify-between text-slate-300 mb-1 font-bold">
-                    <span>Bank Transfer Verification</span>
-                    <span className="text-indigo-400">25% (₦{(metrics.totalRev * 0.25).toLocaleString()})</span>
-                  </div>
-                  <div className="w-full bg-slate-950 h-3 rounded-full border border-slate-800 overflow-hidden">
-                    <div className="bg-indigo-500 h-full rounded-full" style={{ width: '25%' }}></div>
-                  </div>
-                </div>
+        transactions.filter((t) => t.status === 'Successful').forEach((t) => {
+          const g = (t.gateway || '').toLowerCase();
+          if (g.includes('squad')) {
+            squadRev += t.amount;
+          } else if (g.includes('kora')) {
+            korapayRev += t.amount;
+          } else {
+            otherRev += t.amount;
+          }
+        });
 
-                <div>
-                  <div className="flex justify-between text-slate-300 mb-1 font-bold">
-                    <span>Flutterwave Integration</span>
-                    <span className="text-purple-400">10% (₦{(metrics.totalRev * 0.10).toLocaleString()})</span>
+        const grandTotal = squadRev + korapayRev + otherRev || 1;
+        const squadPct = Math.round((squadRev / grandTotal) * 100);
+        const korapayPct = Math.round((korapayRev / grandTotal) * 100);
+        const otherPct = Math.max(0, 100 - squadPct - korapayPct);
+
+        return (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
+                <h3 className="font-bold text-white text-base flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-emerald-400" />
+                  <span>Revenue Gateway Distribution</span>
+                </h3>
+                <div className="space-y-4 pt-2 text-xs">
+                  <div>
+                    <div className="flex justify-between text-slate-300 mb-1 font-bold">
+                      <span>Squad Gateway</span>
+                      <span className="text-emerald-400">{squadPct}% (₦{squadRev.toLocaleString()})</span>
+                    </div>
+                    <div className="w-full bg-slate-950 h-3 rounded-full border border-slate-800 overflow-hidden">
+                      <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${squadPct}%` }}></div>
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-950 h-3 rounded-full border border-slate-800 overflow-hidden">
-                    <div className="bg-purple-500 h-full rounded-full" style={{ width: '10%' }}></div>
+
+                  <div>
+                    <div className="flex justify-between text-slate-300 mb-1 font-bold">
+                      <span>KoraPay Gateway</span>
+                      <span className="text-purple-400">{korapayPct}% (₦{korapayRev.toLocaleString()})</span>
+                    </div>
+                    <div className="w-full bg-slate-950 h-3 rounded-full border border-slate-800 overflow-hidden">
+                      <div className="bg-purple-500 h-full rounded-full transition-all duration-500" style={{ width: `${korapayPct}%` }}></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-slate-300 mb-1 font-bold">
+                      <span>Bank Transfer / Manual Access</span>
+                      <span className="text-indigo-400">{otherPct}% (₦{otherRev.toLocaleString()})</span>
+                    </div>
+                    <div className="w-full bg-slate-950 h-3 rounded-full border border-slate-800 overflow-hidden">
+                      <div className="bg-indigo-500 h-full rounded-full transition-all duration-500" style={{ width: `${otherPct}%` }}></div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
@@ -1167,6 +1364,160 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
                   <span className="text-emerald-400 font-extrabold text-sm">₦340,000</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* SUBTAB: ADMIN SUBSCRIPTIONS */}
+      {activeSubTab === 'subscriptions' && (
+        <div className="space-y-6">
+          {/* Subscriptions Filter Toolbar */}
+          <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3 shadow-xl">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
+                <input
+                  type="text"
+                  placeholder="Search user name or user email..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <select
+                  value={selectedStatusFilter}
+                  onChange={(e) => {
+                    setSelectedStatusFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
+                >
+                  <option value="all">All Subscription Statuses</option>
+                  <option value="active">Active Subscribers</option>
+                  <option value="expired">Expired Subscribers</option>
+                  <option value="free">Free / Non-Subscribed</option>
+                </select>
+              </div>
+
+              <div>
+                <select
+                  value={selectedPlanFilter}
+                  onChange={(e) => {
+                    setSelectedPlanFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
+                >
+                  <option value="all">All Plans</option>
+                  {plans.map((p) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Subscriptions Table */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[11px] font-black uppercase tracking-wider text-slate-400 bg-slate-950/80">
+                    <th className="p-4">User Name & Email</th>
+                    <th className="p-4">Plan Purchased</th>
+                    <th className="p-4">Status</th>
+                    <th className="p-4">Start Date</th>
+                    <th className="p-4">Expiry Date</th>
+                    <th className="p-4">Days Remaining</th>
+                    <th className="p-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-xs">
+                  {filteredSubscriptions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-slate-500">
+                        No student subscriptions match the search and filter criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSubscriptions.map((row) => (
+                      <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="p-4">
+                          <p className="font-bold text-white">{row.name}</p>
+                          <p className="text-[11px] text-slate-400">{row.email}</p>
+                          <p className="text-[10px] text-indigo-400 font-medium">{row.universityName}</p>
+                        </td>
+                        <td className="p-4">
+                          <span className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 inline-block">
+                            {row.plan}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold inline-flex items-center gap-1.5 ${
+                              row.status === 'Active'
+                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                                : row.status === 'Expired'
+                                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
+                                : 'bg-slate-800 text-slate-400 border border-slate-700'
+                            }`}
+                          >
+                            {row.status === 'Active' && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                            {row.status === 'Expired' && <XCircle className="w-3 h-3 text-rose-400" />}
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className="p-4 text-slate-300 font-mono text-[11px]">
+                          {row.startDate ? new Date(row.startDate).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="p-4 text-slate-300 font-mono text-[11px]">
+                          {row.expiryDate ? new Date(row.expiryDate).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="p-4 font-bold">
+                          {row.status === 'Active' ? (
+                            <span className="text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2 py-0.5 rounded text-[11px]">
+                              {row.daysRemaining} Days Remaining
+                            </span>
+                          ) : row.status === 'Expired' ? (
+                            <span className="text-rose-400 bg-rose-950/40 border border-rose-500/30 px-2 py-0.5 rounded text-[11px]">
+                              Expired
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">Free Access</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-right space-x-2">
+                          <button
+                            onClick={() => setViewSubDetailStudent(row.student)}
+                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded-xl border border-slate-700 transition-all cursor-pointer inline-flex items-center gap-1"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> View Details
+                          </button>
+                          <button
+                            onClick={() => {
+                              setExtendStudent(row.student);
+                              setExtensionDays(30);
+                              setExtensionPlanName(row.plan !== 'Free Trial' ? row.plan : '30-Day Premium');
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
+                          >
+                            + Extend
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1441,6 +1792,105 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
               >
                 <Trash2 className="w-4 h-4" />
                 <span>Permanently Delete</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- SUBSCRIPTION DETAILS MODAL --- */}
+      {viewSubDetailStudent && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-3xl p-6 space-y-6 shadow-2xl relative text-left">
+            <button
+              onClick={() => setViewSubDetailStudent(null)}
+              className="absolute top-5 right-5 p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-full transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
+              <div className="p-3 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-2xl">
+                <Users className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-white text-lg">{viewSubDetailStudent.name}</h3>
+                <p className="text-xs text-slate-400">{viewSubDetailStudent.email}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-1">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">University</span>
+                <p className="font-bold text-white">{viewSubDetailStudent.universityName || 'Federal University Lokoja'}</p>
+                <p className="text-[11px] text-slate-400">{viewSubDetailStudent.departmentName || 'Computer Science'}</p>
+              </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-1">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Subscription Status</span>
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold inline-block ${
+                  viewSubDetailStudent.subscription?.isPremium || viewSubDetailStudent.subscriptionStatus === 'active'
+                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                }`}>
+                  {viewSubDetailStudent.subscription?.isPremium || viewSubDetailStudent.subscriptionStatus === 'active' ? 'Active Subscription' : 'Free Access'}
+                </span>
+              </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-1">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Plan Name</span>
+                <p className="font-extrabold text-indigo-300">{viewSubDetailStudent.subscription?.plan || viewSubDetailStudent.subscriptionPlan || 'Free Trial'}</p>
+              </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-1">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Start Date</span>
+                <p className="font-mono text-slate-300">
+                  {(viewSubDetailStudent.subscription?.startDate || viewSubDetailStudent.subscriptionStartDate)
+                    ? new Date(viewSubDetailStudent.subscription?.startDate || viewSubDetailStudent.subscriptionStartDate!).toLocaleDateString()
+                    : 'N/A'}
+                </p>
+              </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-1">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Expiry Date</span>
+                <p className="font-mono text-slate-300">
+                  {(viewSubDetailStudent.subscription?.expiryDate || viewSubDetailStudent.subscriptionExpiryDate)
+                    ? new Date(viewSubDetailStudent.subscription?.expiryDate || viewSubDetailStudent.subscriptionExpiryDate!).toLocaleDateString()
+                    : 'N/A'}
+                </p>
+              </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-1">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Days Remaining</span>
+                <p className="font-bold text-emerald-400">
+                  {(() => {
+                    const exp = viewSubDetailStudent.subscription?.expiryDate || viewSubDetailStudent.subscriptionExpiryDate;
+                    if (!exp) return '0 Days';
+                    const diff = new Date(exp).getTime() - Date.now();
+                    return diff > 0 ? `${Math.ceil(diff / (1000 * 3600 * 24))} Days Left` : 'Expired';
+                  })()}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setViewSubDetailStudent(null)}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  const target = viewSubDetailStudent;
+                  setViewSubDetailStudent(null);
+                  setExtendStudent(target);
+                  setExtensionDays(30);
+                  setExtensionPlanName(target.subscription?.plan && target.subscription.plan !== 'Free Trial' ? target.subscription.plan : '30-Day Premium');
+                }}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+              >
+                + Extend Access Duration
               </button>
             </div>
           </div>

@@ -61,6 +61,20 @@ const getSquadBaseUrl = (): string => {
   return "https://api-d.squadco.com";
 };
 
+// Official KoraPay Payment Gateway Credentials
+const getKorapaySecretKey = (): string => process.env.KORAPAY_SECRET_KEY || "";
+const getKorapayPublicKey = (): string => process.env.KORAPAY_PUBLIC_KEY || "";
+const getKorapayWebhookSecret = (): string => process.env.KORAPAY_WEBHOOK_SECRET || process.env.KORAPAY_SECRET_KEY || "";
+const getKorapayBaseUrl = (): string => (process.env.KORAPAY_BASE_URL || "https://api.korapay.com").replace(/\/+$/, "");
+
+const isKorapayConfigured = (): boolean => {
+  const secretKey = getKorapaySecretKey();
+  const publicKey = getKorapayPublicKey();
+  return secretKey !== "" || publicKey !== "";
+};
+
+const processedKorapayReferences = new Set<string>();
+
 // Official Subscription Plans Configuration
 const SUBSCRIPTION_PLANS: Record<string, { id: string; name: string; price: number; durationDays: number }> = {
   "premium": { id: "premium", name: "Premium Plan", price: 800, durationDays: 30 },
@@ -76,28 +90,35 @@ const SUBSCRIPTION_PLANS: Record<string, { id: string; name: string; price: numb
 const createPendingPaymentInFirestore = async (params: {
   userId: string;
   email: string;
+  fullName?: string;
   reference: string;
   amount: number;
+  plan?: string;
+  provider?: string;
 }) => {
   if (!dbServer) return;
   try {
+    const provider = params.provider || (params.reference.includes("_KORA_") ? "korapay" : "squad");
     const paymentRef = doc(dbServer, "payments", params.reference);
     await setDoc(
       paymentRef,
       {
         userId: params.userId,
+        fullName: params.fullName || "Acadet Student",
         email: params.email,
         amount: params.amount,
+        plan: params.plan || "Premium Membership",
+        provider,
         transactionRef: params.reference,
-        gatewayRef: null,
-        provider: "squad",
+        squadTransactionId: null,
+        gatewayTransactionId: null,
         status: "pending",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
       { merge: true }
     );
-    console.log(`[Firestore Server] Created pending payment record: ${params.reference}`);
+    console.log(`[Firestore Server] Created pending payment record: ${params.reference} (Provider: ${provider})`);
   } catch (err) {
     console.error("[Firestore Server] Failed to create pending payment record:", err);
   }
@@ -183,16 +204,20 @@ const activateSubscriptionInFirestore = async (params: {
   userEmail: string;
   reference: string;
   gatewayRef?: string;
+  squadTransactionId?: string;
   amount: number;
   planName: string;
   durationDays: number;
   paymentMethod?: string;
+  provider?: string;
   squadResponse?: any;
 }) => {
   const paidAt = new Date().toISOString();
   const durationInDays = params.durationDays > 0 ? params.durationDays : 30;
   const expiryDate = new Date(Date.now() + durationInDays * 86400000).toISOString();
-  const gatewayRef = params.gatewayRef || params.reference;
+  const txId = params.squadTransactionId || params.gatewayRef || params.reference;
+  const provider = params.provider || (params.reference.includes("_KORA_") ? "korapay" : "squad");
+  const gatewayDisplayName = provider === "korapay" ? "KoraPay" : "Squad";
 
   // 1. users/{uid} payload
   const userPayload = {
@@ -202,11 +227,15 @@ const activateSubscriptionInFirestore = async (params: {
     role: "student",
     subscriptionPlan: params.planName || "Premium Membership",
     subscriptionStatus: "active",
+    subscriptionStartDate: paidAt,
+    subscriptionExpiryDate: expiryDate,
     subscription: {
       isPremium: true,
       plan: params.planName || "Premium Membership",
       startDate: paidAt,
       expiryDate: expiryDate,
+      gateway: gatewayDisplayName,
+      reference: params.reference,
       questionsAttemptedCount: 0,
       freeLimit: 999999,
     },
@@ -216,11 +245,15 @@ const activateSubscriptionInFirestore = async (params: {
   // 2. payments/{paymentId} payload
   const paymentRecord = {
     userId: params.userId,
+    fullName: params.userName || "Acadet Student",
     email: params.userEmail,
     amount: params.amount,
+    plan: params.planName || "Premium Membership",
+    provider,
     transactionRef: params.reference,
-    gatewayRef: gatewayRef,
-    provider: "squad",
+    squadTransactionId: txId,
+    gatewayTransactionId: txId,
+    paymentMethod: params.paymentMethod || gatewayDisplayName,
     status: "success",
     createdAt: paidAt,
     updatedAt: paidAt,
@@ -228,11 +261,14 @@ const activateSubscriptionInFirestore = async (params: {
 
   // 3. subscriptions/{uid} payload
   const subscriptionRecord = {
+    userId: params.userId,
     plan: params.planName || "Premium Membership",
+    provider,
     amount: params.amount,
     status: "active",
     startDate: paidAt,
-    expiryDate,
+    expiryDate: expiryDate,
+    paymentReference: params.reference,
   };
 
   if (dbServer) {
@@ -252,7 +288,7 @@ const activateSubscriptionInFirestore = async (params: {
       // 4. Trigger referral system check
       await processReferralReward(params.userId);
 
-      console.log(`[Firestore Server] Verified & Activated Squad Subscription for User ${params.userId} (${params.reference})`);
+      console.log(`[Firestore Server] Verified & Activated ${gatewayDisplayName} Subscription for User ${params.userId} (${params.reference})`);
     } catch (err) {
       console.error("[Firestore Server] Failed to write subscription/payment records:", err);
     }
@@ -670,6 +706,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
   try {
     const { planId, email, userEmail, userId, uid, userName, userUsername } = req.body;
     const reqAmount = Number(req.body.amount);
+    const provider = String(req.body.provider || req.body.gateway || "").toLowerCase();
 
     const effUserId = userId || uid || email || userEmail || "usr-student";
     const effEmail = email || userEmail || (userUsername ? `${userUsername}@acadet.cbt` : "student@acadet.cbt");
@@ -677,15 +714,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     if (!effEmail || !effEmail.includes("@")) {
       return res.status(400).json({
         success: false,
-        error: "A valid customer email address is required to initiate Squad payment.",
-      });
-    }
-
-    const secretKey = getSquadSecretKey();
-    if (!secretKey || secretKey.includes("placeholder")) {
-      return res.status(400).json({
-        success: false,
-        error: "SQUAD_SECRET_KEY is missing or invalid in server environment. Please configure SQUAD_SECRET_KEY.",
+        error: "A valid customer email address is required to initiate payment.",
       });
     }
 
@@ -695,23 +724,125 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     const planTitle = req.body.planName || (knownPlan ? knownPlan.name : (planId === "premium-plus" || planId === "plan-30d" ? "Premium Plus" : "Premium Membership"));
     const amountInKobo = Math.round(amountInNaira * 100);
 
-    // Prompt Requirement: ACADE_{timestamp}_{uid}
     const timestamp = Date.now();
     const cleanUid = String(effUserId).replace(/[^a-zA-Z0-9_]/g, '');
-    const reference = req.body.reference || req.body.transactionRef || `ACADE_${timestamp}_${cleanUid}`;
-    const baseUrl = getSquadBaseUrl();
 
     // Determine base App URL
     const reqHostUrl = `${req.protocol}://${req.get('host')}`;
     const appUrl = (process.env.APP_URL || reqHostUrl).replace(/\/+$/, "");
     const callbackUrl = `${appUrl}/payment-success`;
 
+    // ------------------- KORAPAY INITIALIZATION -------------------
+    if (provider === "korapay") {
+      const secretKey = getKorapaySecretKey();
+      if (!secretKey || secretKey.includes("placeholder")) {
+        return res.status(400).json({
+          success: false,
+          error: "KORAPAY_SECRET_KEY is missing or invalid in server environment. Please configure KORAPAY_SECRET_KEY.",
+        });
+      }
+
+      const reference = req.body.reference || req.body.transactionRef || `ACADE_KORA_${timestamp}_${cleanUid}`;
+
+      await createPendingPaymentInFirestore({
+        userId: effUserId,
+        fullName: userName || "Acadet Student",
+        email: effEmail,
+        reference,
+        amount: amountInNaira,
+        plan: planTitle,
+        provider: "korapay",
+      });
+
+      const korapayPayload = {
+        amount: amountInNaira,
+        currency: "NGN",
+        reference,
+        customer: {
+          name: userName || "Acadet Student",
+          email: effEmail,
+        },
+        notification_url: `${appUrl}/api/webhooks/korapay`,
+        redirect_url: callbackUrl,
+        description: planTitle,
+        metadata: {
+          userId: effUserId,
+          userEmail: effEmail,
+          fullName: userName || "Acadet Student",
+          planId: planId || "premium",
+          planName: planTitle,
+          amount: amountInNaira,
+          durationDays: Number(req.body?.durationDays) || (knownPlan ? knownPlan.durationDays : 30),
+        },
+      };
+
+      console.log(`[KoraPay Initiate] Initiating NGN ${amountInNaira} for ${effEmail} (Ref: ${reference})`);
+
+      const korapayRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${secretKey}`,
+        },
+        body: JSON.stringify(korapayPayload),
+      });
+
+      const korapayData = await korapayRes.json();
+
+      if ((korapayData.status === true || korapayData.status === "true" || korapayData.status === 200) && korapayData.data) {
+        const checkoutUrl = korapayData.data.checkout_url || korapayData.data.authorization_url;
+        if (!checkoutUrl) {
+          return res.status(400).json({
+            success: false,
+            error: "KoraPay API did not return a valid checkout URL.",
+            korapayResponse: korapayData,
+          });
+        }
+
+        return res.json({
+          success: true,
+          provider: "korapay",
+          paymentId: reference,
+          transactionRef: reference,
+          reference,
+          checkoutUrl,
+          paymentLink: checkoutUrl,
+          amount: amountInNaira,
+          planId: planId || "premium",
+          planName: planTitle,
+          korapayData: korapayData.data,
+        });
+      } else {
+        console.error("[KoraPay Initiate Error]", korapayData);
+        return res.status(400).json({
+          success: false,
+          error: korapayData.message || korapayData.error || "Failed to initialize payment with KoraPay Gateway.",
+          korapayResponse: korapayData,
+        });
+      }
+    }
+
+    // ------------------- SQUAD INITIALIZATION (DEFAULT) -------------------
+    const secretKey = getSquadSecretKey();
+    if (!secretKey || secretKey.includes("placeholder")) {
+      return res.status(400).json({
+        success: false,
+        error: "SQUAD_SECRET_KEY is missing or invalid in server environment. Please configure SQUAD_SECRET_KEY.",
+      });
+    }
+
+    const reference = req.body.reference || req.body.transactionRef || `ACADE_${timestamp}_${cleanUid}`;
+    const baseUrl = getSquadBaseUrl();
+
     // Step 1: Create initial pending record in Firestore (payments/{paymentId})
     await createPendingPaymentInFirestore({
       userId: effUserId,
+      fullName: userName || "Acadet Student",
       email: effEmail,
       reference,
       amount: amountInNaira,
+      plan: planTitle,
+      provider: "squad",
     });
 
     const squadPayload = {
@@ -759,6 +890,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
 
       return res.json({
         success: true,
+        provider: "squad",
         paymentId: reference,
         transactionRef: reference,
         reference,
@@ -778,10 +910,10 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       });
     }
   } catch (err: any) {
-    console.error("[Squad Initiate Exception]", err);
+    console.error("[Payment Initiate Exception]", err);
     return res.status(500).json({
       success: false,
-      error: err.message || "Server error while contacting Squad Payment Gateway.",
+      error: err.message || "Server error while contacting Payment Gateway.",
     });
   }
 };
@@ -789,6 +921,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
 app.post("/api/payments/initiate", handlePaymentInitiation);
 app.post("/api/create-payment-link", handlePaymentInitiation);
 app.post("/api/squad/initialize", handlePaymentInitiation);
+app.post("/api/korapay/initialize", handlePaymentInitiation);
 
 // 3. Payment Verification (GET & POST /api/payments/verify/:reference)
 const handlePaymentVerification = async (req: express.Request, res: express.Response) => {
@@ -806,6 +939,112 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       });
     }
 
+    let isKorapay = String(reference).startsWith("ACADE_KORA_") || String(req.body?.provider || req.query?.provider || "").toLowerCase() === "korapay";
+
+    if (!isKorapay && dbServer) {
+      try {
+        const existingDoc = await getDoc(doc(dbServer, "payments", reference));
+        if (existingDoc.exists() && existingDoc.data()?.provider === "korapay") {
+          isKorapay = true;
+        }
+      } catch (e) {
+        // fallback
+      }
+    }
+
+    if (isKorapay) {
+      const secretKey = getKorapaySecretKey();
+      if (!secretKey || secretKey.includes("placeholder")) {
+        return res.status(400).json({
+          success: false,
+          status: "failed",
+          error: "KORAPAY_SECRET_KEY is missing or invalid in server environment.",
+        });
+      }
+
+      console.log(`[KoraPay Verify] Querying KoraPay API for reference: ${reference}`);
+      const verifyRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/${encodeURIComponent(reference)}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+        },
+      });
+
+      const verifyData = await verifyRes.json();
+      const statusStr = String(verifyData?.data?.status || verifyData?.status || "").toLowerCase();
+      const isSuccess = (
+        (verifyData.status === true || verifyData.status === "true" || verifyData.status === 200 || verifyData.status === "success") &&
+        verifyData.data &&
+        (statusStr === "success" || statusStr === "successful")
+      );
+
+      const meta = verifyData.data?.metadata || {};
+      const effUserId = userId || meta.userId || verifyData.data?.customer?.userId || email || "usr-student";
+      const effEmail = email || meta.userEmail || verifyData.data?.customer?.email || "student@acadet.cbt";
+
+      if (!isSuccess) {
+        if (dbServer) {
+          setDoc(
+            doc(dbServer, "payments", reference),
+            {
+              userId: effUserId,
+              email: effEmail,
+              transactionRef: reference,
+              provider: "korapay",
+              status: "failed",
+              updatedAt: new Date().toISOString(),
+              korapayResponse: verifyData,
+            },
+            { merge: true }
+          ).catch((err) => console.error("Failed to set payment failed status:", err));
+        }
+
+        return res.status(400).json({
+          success: false,
+          status: statusStr || "failed",
+          error: verifyData.message || "KoraPay payment verification failed: Payment was not confirmed on KoraPay Gateway.",
+          korapayResponse: verifyData,
+        });
+      }
+
+      processedKorapayReferences.add(reference);
+
+      const actualAmount = verifyData.data?.amount || meta.amount || 800;
+      const reqPlanId = planId || meta.planId || "premium";
+      const knownPlan = SUBSCRIPTION_PLANS[reqPlanId];
+      const durationDays = Number(meta.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
+      const planTitle = req.body?.planName || meta.planName || (knownPlan ? knownPlan.name : "Premium Membership");
+
+      const syncResult = await activateSubscriptionInFirestore({
+        userId: effUserId,
+        userName: req.body?.userName || meta.fullName || meta.userName || "Acadet Student",
+        userEmail: effEmail,
+        reference,
+        gatewayRef: verifyData.data?.reference || reference,
+        squadTransactionId: verifyData.data?.reference || reference,
+        amount: actualAmount,
+        planName: planTitle,
+        durationDays,
+        paymentMethod: "KoraPay Checkout",
+        provider: "korapay",
+        squadResponse: verifyData,
+      });
+
+      return res.json({
+        success: true,
+        status: "success",
+        provider: "korapay",
+        message: "KoraPay payment successfully verified on server! Premium subscription activated.",
+        reference,
+        amount: actualAmount,
+        planName: planTitle,
+        user: syncResult?.userPayload,
+        subscription: syncResult?.subscriptionRecord,
+        payment: syncResult?.paymentRecord,
+      });
+    }
+
+    // ------------------- SQUAD VERIFICATION -------------------
     const secretKey = getSquadSecretKey();
     if (!secretKey || secretKey.includes("placeholder")) {
       return res.status(400).json({
@@ -844,6 +1083,7 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
             userId: effUserId,
             email: effEmail,
             transactionRef: reference,
+            provider: "squad",
             status: "failed",
             updatedAt: new Date().toISOString(),
             squadResponse: verifyData,
@@ -882,12 +1122,14 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       planName: planTitle,
       durationDays,
       paymentMethod: verifyData.data?.payment_method || "Squad Checkout",
+      provider: "squad",
       squadResponse: verifyData,
     });
 
     return res.json({
       success: true,
       status: "success",
+      provider: "squad",
       message: "Squad payment successfully verified on server! Premium subscription activated.",
       reference,
       amount: actualAmount,
@@ -897,11 +1139,11 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       payment: syncResult?.paymentRecord,
     });
   } catch (err: any) {
-    console.error("[Squad Verify Exception]", err);
+    console.error("[Payment Verify Exception]", err);
     return res.status(500).json({
       success: false,
       status: "failed",
-      error: err.message || "Failed to verify payment with Squad API.",
+      error: err.message || "Failed to verify payment with Gateway API.",
     });
   }
 };
@@ -912,6 +1154,7 @@ app.get("/api/payments/verify", handlePaymentVerification);
 app.post("/api/payments/verify", handlePaymentVerification);
 app.post("/api/verify-payment", handlePaymentVerification);
 app.post("/api/squad/verify", handlePaymentVerification);
+app.post("/api/korapay/verify", handlePaymentVerification);
 
 // 4. Squad Webhook (POST /api/webhooks/squad & POST /api/payments/webhook & POST /api/squad/webhook)
 const handleSquadWebhook = async (req: express.Request, res: express.Response) => {
@@ -1004,6 +1247,110 @@ const handleSquadWebhook = async (req: express.Request, res: express.Response) =
 app.post("/api/webhooks/squad", handleSquadWebhook);
 app.post("/api/payments/webhook", handleSquadWebhook);
 app.post("/api/squad/webhook", handleSquadWebhook);
+
+// 5. KoraPay Webhook (POST /api/webhooks/korapay & POST /api/korapay/webhook)
+const handleKorapayWebhook = async (req: express.Request, res: express.Response) => {
+  try {
+    const signature = (req.headers["x-korapay-signature"] as string) || (req.headers["x-signature"] as string);
+    const webhookSecret = getKorapayWebhookSecret();
+
+    if (signature && webhookSecret && !webhookSecret.includes("placeholder")) {
+      const computedHash = crypto
+        .createHmac("sha256", webhookSecret)
+        .update(typeof req.body === "string" ? req.body : JSON.stringify(req.body))
+        .digest("hex");
+
+      if (computedHash.toLowerCase() !== signature.toLowerCase()) {
+        console.warn("[KoraPay Webhook] Invalid signature. Rejecting request.");
+        return res.status(401).json({ status: "error", error: "Invalid KoraPay webhook signature" });
+      }
+    }
+
+    const payload = req.body || {};
+    const event = String(payload.event || payload.action || "").toLowerCase();
+    const data = payload.data || payload;
+
+    console.log(`[KoraPay Webhook Received] Event: ${event}`);
+
+    const reference = data.reference || data.transaction_ref;
+    const status = String(data.status || "").toLowerCase();
+    const isSuccess = event === "charge.success" || status === "success" || status === "successful";
+
+    if (reference && isSuccess) {
+      if (processedKorapayReferences.has(reference)) {
+        console.log(`[KoraPay Webhook] Reference ${reference} already processed.`);
+        return res.status(200).json({ status: "success", message: "Already processed" });
+      }
+
+      processedKorapayReferences.add(reference);
+
+      // Verify transaction directly with KoraPay API for security
+      const secretKey = getKorapaySecretKey();
+      if (secretKey && !secretKey.includes("placeholder")) {
+        try {
+          const verifyRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/${encodeURIComponent(reference)}`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${secretKey}` },
+          });
+          const verifyData = await verifyRes.json();
+          const vStatus = String(verifyData?.data?.status || "").toLowerCase();
+          if (vStatus !== "success" && vStatus !== "successful") {
+            console.warn(`[KoraPay Webhook] Server verification check failed for ${reference}`);
+            return res.status(400).json({ status: "error", error: "KoraPay verification failed on server check" });
+          }
+        } catch (vErr) {
+          console.error("[KoraPay Webhook] Direct verify exception:", vErr);
+        }
+      }
+
+      const meta = data.metadata || {};
+      const userId = meta.userId || data.customer?.userId || "usr-student";
+      const userEmail = meta.userEmail || data.customer?.email || "student@acadet.cbt";
+      const userName = meta.fullName || meta.userName || data.customer?.name || "Acadet Student";
+      const amount = data.amount || meta.amount || 800;
+
+      if (dbServer) {
+        const logId = `kora_log_${Date.now()}_${reference}`;
+        setDoc(doc(dbServer, "webhook_logs", logId), {
+          event: event || "charge.success",
+          transactionRef: reference,
+          provider: "korapay",
+          userId,
+          email: userEmail,
+          amount,
+          korapayResponse: payload,
+          createdAt: new Date().toISOString(),
+        }, { merge: true }).catch((err) => console.error("Failed to store KoraPay webhook log:", err));
+      }
+
+      if (userId) {
+        await activateSubscriptionInFirestore({
+          userId,
+          userName,
+          userEmail,
+          reference,
+          gatewayRef: reference,
+          squadTransactionId: reference,
+          amount,
+          planName: meta.planName || "Premium Membership",
+          durationDays: Number(meta.durationDays) || 30,
+          paymentMethod: "KoraPay Webhook",
+          provider: "korapay",
+          squadResponse: payload,
+        });
+        console.log(`[KoraPay Webhook] Successfully activated subscription for User ${userId}`);
+      }
+    }
+
+    return res.status(200).json({ status: "success", message: "KoraPay webhook processed successfully" });
+  } catch (err: any) {
+    console.error("[KoraPay Webhook Exception]", err);
+    return res.status(200).json({ status: "success", message: "Webhook acknowledged" });
+  }
+};
+
+app.post("/api/webhooks/korapay", handleKorapayWebhook);
+app.post("/api/korapay/webhook", handleKorapayWebhook);
 
 // Admin Authentication & Rate Limiting Store
 const failedAdminAttempts = new Map<string, { count: number; lockUntil: number }>();

@@ -315,7 +315,7 @@ export interface PaymentTransaction {
   departmentName?: string;
   courseName?: string;
   reference: string;
-  gateway: 'Squad' | 'Squad Payment Gateway' | 'Paystack' | 'Flutterwave' | 'Bank Transfer' | 'Free Access' | string;
+  gateway: 'Squad' | 'Squad Payment Gateway' | 'KoraPay' | 'KoraPay Gateway' | 'Paystack' | 'Flutterwave' | 'Bank Transfer' | 'Free Access' | string;
   amount: number;
   planName: string;
   date: string;

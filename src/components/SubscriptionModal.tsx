@@ -33,6 +33,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const activePlans = allPlans.filter((p) => p.status !== 'Inactive' && p.status !== 'Disabled');
 
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+  const [selectedGateway, setSelectedGateway] = useState<'squad' | 'korapay'>('squad');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +54,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
     try {
       const res = await ApiClient.initiatePayment({
+        provider: selectedGateway,
+        gateway: selectedGateway,
         planId,
         planName,
         amount,
@@ -65,10 +68,10 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         const redirectUrl = res.checkoutUrl || res.paymentLink;
         window.location.href = redirectUrl;
       } else {
-        setError(res?.error || 'Failed to initialize Squad payment. Please try again.');
+        setError(res?.error || `Failed to initialize ${selectedGateway === 'korapay' ? 'KoraPay' : 'Squad'} payment. Please try again.`);
       }
     } catch (err: any) {
-      setError(err?.message || 'Server error while contacting Squad Payment Gateway.');
+      setError(err?.message || `Server error while contacting ${selectedGateway === 'korapay' ? 'KoraPay' : 'Squad'} Payment Gateway.`);
     } finally {
       setLoading(false);
     }
@@ -196,6 +199,52 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
           )}
         </div>
 
+        {/* Payment Gateway Selection */}
+        <div className="space-y-2 shrink-0">
+          <label className="text-xs font-bold text-slate-300 block">
+            Select Payment Gateway:
+          </label>
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => setSelectedGateway('squad')}
+              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                selectedGateway === 'squad'
+                  ? 'bg-emerald-500/15 border-emerald-500 text-white shadow-md shadow-emerald-500/10'
+                  : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
+              }`}
+              id="gateway-select-squad"
+            >
+              <div className="flex items-center justify-between w-full">
+                <span className="text-xs font-black text-white">Pay with Squad</span>
+                {selectedGateway === 'squad' && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                )}
+              </div>
+              <span className="text-[10px] text-slate-400 mt-1">Cards, Bank Transfer, USSD</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedGateway('korapay')}
+              className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                selectedGateway === 'korapay'
+                  ? 'bg-purple-500/15 border-purple-500 text-white shadow-md shadow-purple-500/10'
+                  : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
+              }`}
+              id="gateway-select-korapay"
+            >
+              <div className="flex items-center justify-between w-full">
+                <span className="text-xs font-black text-white">Pay with KoraPay</span>
+                {selectedGateway === 'korapay' && (
+                  <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
+                )}
+              </div>
+              <span className="text-[10px] text-slate-400 mt-1">Cards, Virtual Account, Mobile Money</span>
+            </button>
+          </div>
+        </div>
+
         {error && (
           <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex items-center gap-2 shrink-0">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
@@ -208,19 +257,23 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
           <button
             onClick={handleInitiatePayment}
             disabled={loading || !currentChosenPlan}
-            className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/30 disabled:opacity-50 active:scale-[0.98]"
+            className={`w-full py-3.5 ${
+              selectedGateway === 'korapay'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-600/20 border-purple-400/30'
+                : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-600/20 border-emerald-400/30'
+            } text-white font-extrabold text-sm rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer border disabled:opacity-50 active:scale-[0.98]`}
             id="modal-pay-now-btn"
           >
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 text-white animate-spin" />
-                <span>Initiating Squad Payment...</span>
+                <span>Initiating {selectedGateway === 'korapay' ? 'KoraPay' : 'Squad'} Payment...</span>
               </>
             ) : (
               <>
-                <CreditCard className="w-4 h-4 text-emerald-200" />
+                <CreditCard className="w-4 h-4 text-white/80" />
                 <span>
-                  Pay ₦{currentChosenPlan ? currentChosenPlan.price.toLocaleString() : '800'} Now (Squad)
+                  Pay ₦{currentChosenPlan ? currentChosenPlan.price.toLocaleString() : '800'} Now ({selectedGateway === 'korapay' ? 'KoraPay' : 'Squad'})
                 </span>
               </>
             )}

@@ -295,7 +295,7 @@ Return JSON format with:
     }
   },
 
-  async initiatePayment(payload: { planId: string; planName?: string; amount?: number; email: string; userId: string; userName?: string; userUsername?: string }): Promise<any> {
+  async initiatePayment(payload: { planId: string; planName?: string; amount?: number; email: string; userId: string; userName?: string; userUsername?: string; provider?: string; gateway?: string }): Promise<any> {
     try {
       const res = await fetchApi<any>('/api/payments/initiate', {
         method: 'POST',
@@ -306,7 +306,7 @@ Return JSON format with:
     } catch (err: any) {
       return {
         success: false,
-        error: err?.message || 'Failed to initialize Squad payment. Please check your internet connection or SQUAD_SECRET_KEY settings.',
+        error: err?.message || 'Failed to initialize payment. Please check your internet connection or server API key settings.',
       };
     }
   },
