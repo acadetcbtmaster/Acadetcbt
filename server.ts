@@ -11,6 +11,7 @@ import { initializeFirestore, doc, setDoc, getDoc } from "firebase/firestore";
 dotenv.config();
 
 const app = express();
+app.set("trust proxy", true);
 const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: "10mb" }));
@@ -62,10 +63,10 @@ const getSquadBaseUrl = (): string => {
 };
 
 // Official KoraPay Payment Gateway Credentials
-const getKorapaySecretKey = (): string => process.env.KORAPAY_SECRET_KEY || "";
-const getKorapayPublicKey = (): string => process.env.KORAPAY_PUBLIC_KEY || "";
-const getKorapayWebhookSecret = (): string => process.env.KORAPAY_WEBHOOK_SECRET || process.env.KORAPAY_SECRET_KEY || "";
-const getKorapayBaseUrl = (): string => (process.env.KORAPAY_BASE_URL || "https://api.korapay.com").replace(/\/+$/, "");
+const getKorapaySecretKey = (): string => (process.env.KORAPAY_SECRET_KEY || "").trim();
+const getKorapayPublicKey = (): string => (process.env.KORAPAY_PUBLIC_KEY || "").trim();
+const getKorapayWebhookSecret = (): string => (process.env.KORAPAY_WEBHOOK_SECRET || process.env.KORAPAY_SECRET_KEY || "").trim();
+const getKorapayBaseUrl = (): string => (process.env.KORAPAY_BASE_URL || "https://api.korapay.com").replace(/\/+$/, "").trim();
 
 const isKorapayConfigured = (): boolean => {
   const secretKey = getKorapaySecretKey();
@@ -728,7 +729,11 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     const cleanUid = String(effUserId).replace(/[^a-zA-Z0-9_]/g, '');
 
     // Determine base App URL
-    const reqHostUrl = `${req.protocol}://${req.get('host')}`;
+    const rawHost = req.get('host') || 'cadetcbt.website';
+    const rawProto = req.get('x-forwarded-proto') || req.protocol || 'https';
+    const isLocalhost = rawHost.includes('localhost') || rawHost.includes('127.0.0.1');
+    const secureProto = isLocalhost ? rawProto : 'https';
+    const reqHostUrl = `${secureProto}://${rawHost}`;
     const appUrl = (process.env.APP_URL || reqHostUrl).replace(/\/+$/, "");
     const callbackUrl = `${appUrl}/payment-success`;
 
@@ -742,41 +747,61 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         });
       }
 
-      const reference = req.body.reference || req.body.transactionRef || `ACADE_KORA_${timestamp}_${cleanUid}`;
+      // Ensure reference is unique and valid for Korapay (>= 8 chars, alphanumeric + _ -)
+      const baseRef = req.body.reference || req.body.transactionRef || `ACADE_KORA_${timestamp}_${cleanUid}`;
+      const uniqueSuffix = Math.random().toString(36).substring(2, 7);
+      const cleanRef = `${baseRef.replace(/[^a-zA-Z0-9_\-]/g, '')}_${uniqueSuffix}`.substring(0, 50);
 
       await createPendingPaymentInFirestore({
         userId: effUserId,
         fullName: userName || "Acadet Student",
         email: effEmail,
-        reference,
+        reference: cleanRef,
         amount: amountInNaira,
         plan: planTitle,
         provider: "korapay",
       });
 
+      const customerName = (userName || "Acadet Student").trim();
+      const userEmailStr = String(effEmail).trim().toLowerCase();
+
+      // Korapay requires valid public HTTPS URLs for redirect and webhooks
+      let publicAppUrl = appUrl.startsWith('http://') ? appUrl.replace('http://', 'https://') : appUrl;
+      if (!publicAppUrl.startsWith('https://')) {
+        publicAppUrl = `https://${publicAppUrl}`;
+      }
+
+      const validRedirectUrl = `${publicAppUrl}/payment-success`;
+      const validNotificationUrl = publicAppUrl.includes('localhost') || publicAppUrl.includes('127.0.0.1')
+        ? 'https://cadetcbt.website/api/webhooks/korapay'
+        : `${publicAppUrl}/api/webhooks/korapay`;
+
+      // Korapay charges/initialize payload (standard)
       const korapayPayload = {
-        amount: amountInKobo,
+        amount: Number(amountInKobo),
         currency: "NGN",
-        reference,
-        narration: planTitle,
-        notification_url: `${appUrl}/api/webhooks/korapay`,
-        redirect_url: callbackUrl,
+        reference: cleanRef,
+        narration: String(planTitle).substring(0, 100),
+        notification_url: validNotificationUrl,
+        redirect_url: validRedirectUrl,
+        customer_name: customerName,
+        customer_email: userEmailStr,
         customer: {
-          name: userName || "Acadet Student",
-          email: effEmail,
+          name: customerName,
+          email: userEmailStr,
         },
         metadata: {
-          userId: effUserId,
-          userEmail: effEmail,
-          planId: planId || "premium",
-          planName: planTitle,
-          durationDays: String(Number(req.body?.durationDays) || (knownPlan ? knownPlan.durationDays : 30)),
+          user_id: String(effUserId).substring(0, 50),
+          user_email: userEmailStr.substring(0, 50),
+          plan_id: String(planId || "premium").substring(0, 20),
+          plan_name: String(planTitle).substring(0, 50),
         },
       };
 
-      console.log(`[KoraPay Initiate] Initiating NGN ${amountInNaira} (${amountInKobo} Kobo) for ${effEmail} (Ref: ${reference})`);
+      console.log(`[KoraPay Initiate] Initiating NGN ${amountInNaira} (${amountInKobo} Kobo) for ${userEmailStr} (Ref: ${cleanRef})`);
 
-      const korapayRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
+      // Primary attempt: charges/initialize
+      let korapayRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -785,7 +810,88 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         body: JSON.stringify(korapayPayload),
       });
 
-      const korapayData = await korapayRes.json();
+      let korapayData = await korapayRes.json();
+
+      // Fallback 1: Try /merchant/api/v1/checkout/initialize if charges/initialize returned error
+      if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
+        console.warn("[KoraPay Initiate] /charges/initialize failed. Retrying with /checkout/initialize...");
+        const checkoutPayload = {
+          amount: Number(amountInKobo),
+          currency: "NGN",
+          reference: cleanRef,
+          redirect_url: validRedirectUrl,
+          notification_url: validNotificationUrl,
+          customer_name: customerName,
+          customer_email: userEmailStr,
+          customer: {
+            name: customerName,
+            email: userEmailStr,
+          },
+        };
+
+        const checkoutRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/checkout/initialize`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${secretKey}`,
+          },
+          body: JSON.stringify(checkoutPayload),
+        });
+        const checkoutData = await checkoutRes.json();
+        if (checkoutData.status === true || checkoutData.status === "true" || checkoutData.status === 200) {
+          korapayData = checkoutData;
+        }
+      }
+
+      // Fallback 2: If validation error, try with amount in Naira (in case Korapay account uses Naira directly)
+      if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
+        console.warn("[KoraPay Initiate] Validation error received with Kobo amount. Retrying with Naira amount...");
+        const nairaPayload = {
+          ...korapayPayload,
+          amount: Number(amountInNaira),
+        };
+
+        const fbRes1 = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${secretKey}`,
+          },
+          body: JSON.stringify(nairaPayload),
+        });
+        const fbData1 = await fbRes1.json();
+        if (fbData1.status === true || fbData1.status === "true" || fbData1.status === 200) {
+          korapayData = fbData1;
+        }
+      }
+
+      // Fallback 2: If still validation error, try minimal payload without metadata or extra fields
+      if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
+        console.warn("[KoraPay Initiate] Retrying with minimal Korapay payload...");
+        const minimalPayload = {
+          amount: Number(amountInKobo),
+          currency: "NGN",
+          reference: cleanRef,
+          redirect_url: validRedirectUrl,
+          customer: {
+            name: customerName,
+            email: userEmailStr,
+          },
+        };
+
+        const fbRes2 = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${secretKey}`,
+          },
+          body: JSON.stringify(minimalPayload),
+        });
+        const fbData2 = await fbRes2.json();
+        if (fbData2.status === true || fbData2.status === "true" || fbData2.status === 200) {
+          korapayData = fbData2;
+        }
+      }
 
       if ((korapayData.status === true || korapayData.status === "true" || korapayData.status === 200) && korapayData.data) {
         const checkoutUrl = korapayData.data.checkout_url || korapayData.data.authorization_url;
@@ -800,9 +906,9 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         return res.json({
           success: true,
           provider: "korapay",
-          paymentId: reference,
-          transactionRef: reference,
-          reference,
+          paymentId: cleanRef,
+          transactionRef: cleanRef,
+          reference: cleanRef,
           checkoutUrl,
           paymentLink: checkoutUrl,
           amount: amountInNaira,
