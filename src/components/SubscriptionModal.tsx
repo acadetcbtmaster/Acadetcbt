@@ -30,7 +30,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   plans: propsPlans,
 }) => {
   const allPlans = (propsPlans && propsPlans.length > 0) ? propsPlans : StorageService.getSubscriptionPlans();
-  const activePlans = allPlans.filter((p) => p.status !== 'Inactive' && p.status !== 'Disabled');
+  const activePlans = allPlans.filter((p) => p.active !== false && p.status !== 'Inactive' && p.status !== 'Disabled');
 
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
   const [selectedGateway, setSelectedGateway] = useState<'squad' | 'korapay'>('squad');
@@ -52,6 +52,12 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     const planId = currentChosenPlan ? currentChosenPlan.id : 'premium';
     const planName = currentChosenPlan ? currentChosenPlan.name : 'Premium Membership';
 
+    console.log(`[Payment Debug Log - Frontend]`);
+    console.log(`- Selected Plan Price: ₦${amount}`);
+    console.log(`- Gateway Name: ${selectedGateway.toUpperCase()}`);
+    console.log(`- Amount Sent To Gateway: ₦${amount}`);
+    console.log(`- Plan ID: ${planId} (${planName})`);
+
     try {
       const res = await ApiClient.initiatePayment({
         provider: selectedGateway,
@@ -59,7 +65,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         planId,
         planName,
         amount,
-        email: user.email || 'student@acadet.cbt',
+        email: (user.email && user.email.includes('@') && !user.email.endsWith('.cbt')) ? user.email : 'student@gmail.com',
         userId: user.id || 'usr-student',
         userName: user.fullName || user.name || 'Acadet Student',
       });
@@ -202,6 +208,28 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
             </>
           )}
         </div>
+
+        {/* Payment Summary */}
+        {currentChosenPlan && (
+          <div className="bg-slate-950 border border-emerald-500/40 rounded-2xl p-4 flex items-center justify-between shrink-0 shadow-lg shadow-emerald-500/5">
+            <div>
+              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider block">
+                Payment Summary
+              </span>
+              <h4 className="text-sm sm:text-base font-extrabold text-white mt-0.5">
+                {currentChosenPlan.name}
+              </h4>
+              <span className="text-xs text-slate-400 font-medium">
+                {currentChosenPlan.durationDays} Days Access
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="text-xl sm:text-2xl font-black text-emerald-400">
+                ₦{currentChosenPlan.price.toLocaleString()}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Payment Gateway Selection */}
         <div className="space-y-2 shrink-0">

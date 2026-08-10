@@ -296,11 +296,15 @@ export interface SubscriptionPlan {
   id: string;
   name: string;
   price: number;
-  currency: string;
+  currency?: string;
   durationDays: number;
-  features: string[];
+  description?: string;
+  active: boolean;
+  status?: 'Active' | 'Disabled' | 'Inactive' | string;
+  features?: string[];
   popular?: boolean;
-  status?: 'Active' | 'Disabled';
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface PaymentTransaction {
@@ -1104,46 +1108,49 @@ export const SEED_QUESTIONS: Question[] = [
 
 export const DEFAULT_PLANS: SubscriptionPlan[] = [
   {
-    id: 'plan-free',
-    name: 'Free Trial',
-    price: 0,
+    id: 'basic',
+    name: 'Basic',
+    price: 150,
     currency: 'NGN',
-    durationDays: 0,
+    durationDays: 2,
+    description: '2-Day Starter Pass',
+    active: true,
     features: [
-      '30 Free CBT practice questions',
-      'Instant SMART scoring & explanations',
-      'Department & Course selection',
-      'No credit card required',
+      '2-Day full CBT practice access',
+      'Unlimited practice questions & explanations',
+      'Instant AI CBT simulation',
     ],
   },
   {
-    id: 'plan-14d',
-    name: '14-Day Premium',
+    id: 'standard',
+    name: 'Standard',
     price: 800,
     currency: 'NGN',
     durationDays: 14,
+    description: '14-Day Premium Access',
+    active: true,
     features: [
-      'Unlimited practice questions',
+      '14-Day unlimited practice questions',
       'Unlimited CBT simulations',
       'Extracted study questions',
-      'Detailed explanations',
+      'Detailed AI explanations',
       'Performance analytics',
-      'Unlimited bookmarks',
     ],
   },
   {
-    id: 'plan-30d',
-    name: '30-Day Premium',
+    id: 'premium',
+    name: 'Premium',
     price: 1500,
     currency: 'NGN',
     durationDays: 30,
+    description: '30-Day Full Access',
+    active: true,
     popular: true,
     features: [
-      'Includes ALL 14-Day Premium features',
-      'Full 30-Day uninterrupted access',
-      'Priority material question generation',
-      'Downloadable CBT performance reports',
-      '24/7 Academic support access',
+      '30-Day full CBT & AI access',
+      'SMART Diagnostic Analysis',
+      'Downloadable PDF summaries',
+      'Priority academic support',
     ],
   },
 ];

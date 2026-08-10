@@ -99,11 +99,14 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [planForm, setPlanForm] = useState({
+    id: '',
     name: '',
     price: 1500,
     currency: 'NGN',
     durationDays: 30,
-    features: ['Unlimited CBT Practice Tests', 'SMART Diagnostic Analysis', 'Downloadable PDF Summaries'],
+    description: '',
+    active: true,
+    features: ['Unlimited CBT Practice Tests', 'SMART Diagnostic Analysis'],
     popular: false,
   });
 
@@ -636,25 +639,73 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
     e.preventDefault();
     let updatedPlans: SubscriptionPlan[];
 
+    const cleanPrice = Number(planForm.price) || 0;
+    const cleanDuration = Number(planForm.durationDays) || 30;
+    const isActive = planForm.active !== false;
+
     if (editingPlan) {
-      updatedPlans = plans.map((p) =>
-        p.id === editingPlan.id ? { ...p, ...planForm } : p
-      );
-      showToast(`Subscription Plan "${planForm.name}" updated successfully.`);
+      const updatedPlan: SubscriptionPlan = {
+        ...editingPlan,
+        name: planForm.name.trim(),
+        price: cleanPrice,
+        currency: 'NGN',
+        durationDays: cleanDuration,
+        description: planForm.description,
+        active: isActive,
+        status: isActive ? 'Active' : 'Disabled',
+        features: planForm.features,
+        popular: planForm.popular,
+        updatedAt: new Date().toISOString(),
+      };
+      updatedPlans = plans.map((p) => (p.id === editingPlan.id ? updatedPlan : p));
+      showToast(`Subscription Plan "${planForm.name}" updated successfully in Firestore.`);
     } else {
+      const planIdToUse = planForm.id ? planForm.id.toLowerCase().replace(/\s+/g, '-') : `plan-${Date.now()}`;
       const newPlan: SubscriptionPlan = {
-        id: `plan-${Date.now()}`,
-        ...planForm,
-        status: 'Active',
+        id: planIdToUse,
+        name: planForm.name.trim(),
+        price: cleanPrice,
+        currency: 'NGN',
+        durationDays: cleanDuration,
+        description: planForm.description,
+        active: isActive,
+        status: isActive ? 'Active' : 'Disabled',
+        features: planForm.features || ['Unlimited CBT Practice Tests', 'SMART Diagnostic Analysis'],
+        popular: planForm.popular,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
       updatedPlans = [...plans, newPlan];
-      showToast(`New Subscription Plan "${planForm.name}" created!`);
+      showToast(`New Subscription Plan "${planForm.name}" created in Firestore!`);
     }
 
     onUpdatePlans(updatedPlans);
     StorageService.saveSubscriptionPlans(updatedPlans);
     setIsPlanModalOpen(false);
     setEditingPlan(null);
+  };
+
+  const handleDeletePlan = (planId: string, planName: string) => {
+    if (confirm(`Are you sure you want to permanently delete the plan "${planName}"?`)) {
+      StorageService.deleteSubscriptionPlan(planId);
+      const updated = plans.filter((p) => p.id !== planId);
+      onUpdatePlans(updated);
+      showToast(`Plan "${planName}" permanently deleted from Firestore.`);
+    }
+  };
+
+  const handleTogglePlanActive = (plan: SubscriptionPlan) => {
+    const newActive = plan.active === false;
+    const updatedPlan: SubscriptionPlan = {
+      ...plan,
+      active: newActive,
+      status: newActive ? 'Active' : 'Disabled',
+      updatedAt: new Date().toISOString(),
+    };
+    const updatedPlans = plans.map((p) => (p.id === plan.id ? updatedPlan : p));
+    onUpdatePlans(updatedPlans);
+    StorageService.saveSubscriptionPlans(updatedPlans);
+    showToast(`Plan "${plan.name}" is now ${newActive ? 'Enabled' : 'Disabled'}.`);
   };
 
   // CSV Export
@@ -1196,27 +1247,31 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
 
       {/* SUBTAB 3: SUBSCRIPTION PLANS MANAGEMENT */}
       {activeSubTab === 'plans' && (
-        <div className="space-y-6">
-          <div className="flex justify-between items-center">
+        <div className="space-y-6" id="subscription-plans-admin-section">
+          <div className="flex justify-between items-center flex-wrap gap-3">
             <div>
               <h3 className="text-base font-bold text-white">Configured Subscription Plans</h3>
-              <p className="text-xs text-slate-400">Set pricing tiers, features, and durations for student passes.</p>
+              <p className="text-xs text-slate-400">Set pricing tiers, features, and durations for student passes. Changes sync immediately to Firestore.</p>
             </div>
 
             <button
               onClick={() => {
                 setEditingPlan(null);
                 setPlanForm({
+                  id: '',
                   name: '',
                   price: 1500,
                   currency: 'NGN',
                   durationDays: 30,
-                  features: ['Unlimited CBT Practice Tests', 'SMART Diagnostic Analysis', 'Downloadable Summaries'],
+                  description: '',
+                  active: true,
+                  features: ['Unlimited CBT Practice Tests', 'SMART Diagnostic Analysis'],
                   popular: false,
                 });
                 setIsPlanModalOpen(true);
               }}
-              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-lg"
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-lg active:scale-95 transition-all"
+              id="admin-create-plan-btn"
             >
               <Plus className="w-4 h-4" />
               <span>Create New Plan</span>
@@ -1224,57 +1279,98 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {plans.map((p) => (
-              <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl relative overflow-hidden flex flex-col justify-between">
-                {p.popular && (
-                  <span className="absolute top-4 right-4 px-2.5 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase rounded-full">
-                    Popular Tag
-                  </span>
-                )}
+            {plans.map((p) => {
+              const isActive = p.active !== false && p.status !== 'Disabled' && p.status !== 'Inactive';
+              return (
+                <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl relative overflow-hidden flex flex-col justify-between" id={`admin-plan-card-${p.id}`}>
+                  {p.popular && (
+                    <span className="absolute top-4 right-4 px-2.5 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase rounded-full">
+                      Popular Tag
+                    </span>
+                  )}
 
-                <div>
-                  <h4 className="text-lg font-black text-white">{p.name}</h4>
-                  <div className="mt-2 flex items-baseline gap-1">
-                    <span className="text-2xl font-black text-emerald-400">₦{p.price.toLocaleString()}</span>
-                    <span className="text-xs text-slate-400 font-medium">/ {p.durationDays} Days</span>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-lg font-black text-white">{p.name}</h4>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}>
+                        {isActive ? 'Active' : 'Disabled'}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex items-baseline gap-1">
+                      <span className="text-2xl font-black text-emerald-400">₦{p.price.toLocaleString()}</span>
+                      <span className="text-xs text-slate-400 font-medium">/ {p.durationDays} Days</span>
+                    </div>
+
+                    {p.description && (
+                      <p className="text-xs text-slate-400 mt-2 line-clamp-2">{p.description}</p>
+                    )}
+
+                    <div className="mt-4 space-y-2 border-t border-slate-800 pt-3">
+                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Included Features:</span>
+                      {p.features && p.features.length > 0 ? (
+                        p.features.map((feat, i) => (
+                          <p key={i} className="text-xs text-slate-300 flex items-center gap-2">
+                            <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <span>{feat}</span>
+                          </p>
+                        ))
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">Full Unlimited CBT Practice Access</p>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="mt-4 space-y-2 border-t border-slate-800 pt-3">
-                    <span className="text-[10px] text-slate-500 uppercase font-bold block">Included Features:</span>
-                    {p.features.map((feat, i) => (
-                      <p key={i} className="text-xs text-slate-300 flex items-center gap-2">
-                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span>{feat}</span>
-                      </p>
-                    ))}
+                  <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+                    <button
+                      onClick={() => handleTogglePlanActive(p)}
+                      className={`px-2.5 py-1.5 text-xs font-bold rounded-xl border transition-all cursor-pointer flex items-center gap-1 ${
+                        isActive
+                          ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                          : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      }`}
+                      title={isActive ? 'Disable Plan' : 'Enable Plan'}
+                    >
+                      <span>{isActive ? 'Disable' : 'Enable'}</span>
+                    </button>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setEditingPlan(p);
+                          setPlanForm({
+                            id: p.id,
+                            name: p.name,
+                            price: p.price,
+                            currency: p.currency || 'NGN',
+                            durationDays: p.durationDays,
+                            description: p.description || '',
+                            active: p.active !== false,
+                            features: p.features || [],
+                            popular: !!p.popular,
+                          });
+                          setIsPlanModalOpen(true);
+                        }}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Edit</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleDeletePlan(p.id, p.name)}
+                        className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl border border-rose-500/20 cursor-pointer"
+                        title="Delete Plan"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-
-                <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
-                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded">
-                    Active Plan
-                  </span>
-                  <button
-                    onClick={() => {
-                      setEditingPlan(p);
-                      setPlanForm({
-                        name: p.name,
-                        price: p.price,
-                        currency: p.currency,
-                        durationDays: p.durationDays,
-                        features: p.features,
-                        popular: !!p.popular,
-                      });
-                      setIsPlanModalOpen(true);
-                    }}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Edit Plan</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1670,29 +1766,53 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
       {isPlanModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 space-y-4 shadow-2xl">
-            <h3 className="font-bold text-white text-base">
-              {editingPlan ? 'Edit Subscription Plan' : 'Create New Subscription Plan'}
-            </h3>
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="font-extrabold text-white text-base">
+                {editingPlan ? 'Edit Subscription Plan' : 'Create New Subscription Plan'}
+              </h3>
+              <button
+                onClick={() => setIsPlanModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-            <form onSubmit={handleSavePlan} className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-400 font-bold block mb-1">Plan Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 30-Day Premium Pass"
-                  value={planForm.name}
-                  onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
-                />
+            <form onSubmit={handleSavePlan} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 font-bold block mb-1">Plan ID</label>
+                  <input
+                    type="text"
+                    disabled={!!editingPlan}
+                    placeholder="e.g. basic, standard, premium"
+                    value={planForm.id}
+                    onChange={(e) => setPlanForm({ ...planForm, id: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white disabled:opacity-50"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-400 font-bold block mb-1">Plan Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Basic, Standard, Premium"
+                    value={planForm.name}
+                    onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 font-bold block mb-1">Price (₦)</label>
+                  <label className="text-xs text-slate-400 font-bold block mb-1">Amount (₦) *</label>
                   <input
                     type="number"
                     required
+                    min="1"
+                    placeholder="e.g. 150, 800, 1500"
                     value={planForm.price}
                     onChange={(e) => setPlanForm({ ...planForm, price: Number(e.target.value) })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
@@ -1700,10 +1820,12 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-400 font-bold block mb-1">Duration (Days)</label>
+                  <label className="text-xs text-slate-400 font-bold block mb-1">Duration Days *</label>
                   <input
                     type="number"
                     required
+                    min="1"
+                    placeholder="e.g. 2, 14, 30"
                     value={planForm.durationDays}
                     onChange={(e) => setPlanForm({ ...planForm, durationDays: Number(e.target.value) })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
@@ -1711,17 +1833,42 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 pt-3">
+              <div>
+                <label className="text-xs text-slate-400 font-bold block mb-1">Description</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 2-Day Starter Pass for full access"
+                  value={planForm.description}
+                  onChange={(e) => setPlanForm({ ...planForm, description: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <input
+                  type="checkbox"
+                  id="plan-active-checkbox"
+                  checked={planForm.active}
+                  onChange={(e) => setPlanForm({ ...planForm, active: e.target.checked })}
+                  className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-indigo-500 focus:ring-indigo-500 cursor-pointer accent-indigo-500"
+                />
+                <label htmlFor="plan-active-checkbox" className="text-xs text-slate-200 font-bold cursor-pointer">
+                  Active Status (Plan is available for purchase on frontend)
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsPlanModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 text-xs font-bold rounded-xl"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow cursor-pointer active:scale-95 transition-all"
+                  id="save-plan-btn"
                 >
                   Save Subscription Plan
                 </button>

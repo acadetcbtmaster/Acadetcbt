@@ -78,6 +78,9 @@ const processedKorapayReferences = new Set<string>();
 
 // Official Subscription Plans Configuration
 const SUBSCRIPTION_PLANS: Record<string, { id: string; name: string; price: number; durationDays: number }> = {
+  "plan-1d": { id: "plan-1d", name: "1-Day Starter Pass", price: 150, durationDays: 1 },
+  "premium-150": { id: "premium-150", name: "1-Day Starter Pass", price: 150, durationDays: 1 },
+  "plan-150": { id: "plan-150", name: "1-Day Starter Pass", price: 150, durationDays: 1 },
   "premium": { id: "premium", name: "Premium Plan", price: 800, durationDays: 30 },
   "premium-basic": { id: "premium-basic", name: "Premium Basic", price: 800, durationDays: 14 },
   "plan-14d": { id: "plan-14d", name: "Premium Basic (14-Day)", price: 800, durationDays: 14 },
@@ -702,7 +705,29 @@ app.get("/api/squad/config", (_req, res) => {
   });
 });
 
-// 2. Initiate Payment (POST /api/payments/initiate)
+// Helper: Fetch live subscription plan from Firestore (subscription_plans/{planId})
+const getLivePlanFromFirestore = async (planId: string) => {
+  if (!dbServer || !planId) return null;
+  try {
+    const planRef = doc(dbServer, "subscription_plans", planId);
+    const planSnap = await getDoc(planRef);
+    if (planSnap.exists()) {
+      const data = planSnap.data();
+      return {
+        id: planSnap.id,
+        name: String(data.name || "Premium Plan"),
+        price: Number(data.price) || 0,
+        durationDays: Number(data.durationDays) || 30,
+        active: data.active !== false,
+      };
+    }
+  } catch (err) {
+    console.warn(`[Firestore Server] Failed to fetch subscription_plan ${planId}:`, err);
+  }
+  return null;
+};
+
+// 2. Initiate Payment (POST /api/payments/initiate & aliases)
 const handlePaymentInitiation = async (req: express.Request, res: express.Response) => {
   try {
     const { planId, email, userEmail, userId, uid, userName, userUsername } = req.body;
@@ -719,11 +744,32 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       });
     }
 
-    // Determine Plan and Amount
-    const knownPlan = SUBSCRIPTION_PLANS[planId];
-    const amountInNaira = (reqAmount && reqAmount > 0) ? reqAmount : (knownPlan ? knownPlan.price : 800);
+    // Determine Plan and Amount (Load live plan from Firestore first for security & accuracy)
+    const livePlan = await getLivePlanFromFirestore(planId);
+    const knownPlan = livePlan || SUBSCRIPTION_PLANS[planId];
+
+    if (livePlan && !livePlan.active) {
+      return res.status(400).json({
+        success: false,
+        error: `Subscription plan "${livePlan.name}" is currently inactive or disabled.`,
+      });
+    }
+
+    // Amount in Naira is always stored and treated in Naira (e.g. 150, 800, 1500)
+    const amountInNaira = knownPlan ? knownPlan.price : (reqAmount && reqAmount > 0 ? reqAmount : 800);
     const planTitle = req.body.planName || (knownPlan ? knownPlan.name : (planId === "premium-plus" || planId === "plan-30d" ? "Premium Plus" : "Premium Membership"));
     const amountInKobo = Math.round(amountInNaira * 100);
+
+    const gatewayName = provider === "korapay" ? "KoraPay" : "Squad";
+    const amountSentToGateway = provider === "korapay" ? amountInNaira : amountInKobo;
+
+    // Required Debug Logs (Selected Plan Price, Amount Sent To Gateway, Gateway Name)
+    console.log(`\n=================== [PAYMENT DEBUG LOG] ===================`);
+    console.log(`- Selected Plan Price: ₦${amountInNaira}`);
+    console.log(`- Gateway Name: ${gatewayName}`);
+    console.log(`- Amount Sent To Gateway: ${amountSentToGateway} (${provider === 'korapay' ? 'Naira' : 'Kobo'})`);
+    console.log(`- Plan ID: ${planId || 'default'} | Plan Name: ${planTitle}`);
+    console.log(`===========================================================\n`);
 
     const timestamp = Date.now();
     const cleanUid = String(effUserId).replace(/[^a-zA-Z0-9_]/g, '');
@@ -763,7 +809,13 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       });
 
       const customerName = (userName || "Acadet Student").trim();
-      const userEmailStr = String(effEmail).trim().toLowerCase();
+      let userEmailStr = String(effEmail).trim().toLowerCase();
+      
+      // Korapay requires a valid top-level domain email format (e.g., .com, .org, .ng)
+      if (!userEmailStr || !userEmailStr.includes("@") || userEmailStr.endsWith(".cbt") || userEmailStr.endsWith(".local")) {
+        const userPrefix = (userEmailStr.split("@")[0] || String(effUserId)).replace(/[^a-z0-9]/g, "") || "student";
+        userEmailStr = `${userPrefix}@gmail.com`;
+      }
 
       // Korapay requires valid public HTTPS URLs for redirect and webhooks
       let publicAppUrl = appUrl.startsWith('http://') ? appUrl.replace('http://', 'https://') : appUrl;
@@ -776,29 +828,27 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         ? 'https://cadetcbt.website/api/webhooks/korapay'
         : `${publicAppUrl}/api/webhooks/korapay`;
 
-      // Korapay charges/initialize payload (standard)
+      // Korapay charges/initialize payload (KoraPay API expects amount in NAIRA, e.g. 150 for ₦150)
       const korapayPayload = {
-        amount: Number(amountInKobo),
+        amount: Number(amountInNaira),
         currency: "NGN",
         reference: cleanRef,
         narration: String(planTitle).substring(0, 100),
         notification_url: validNotificationUrl,
         redirect_url: validRedirectUrl,
-        customer_name: customerName,
-        customer_email: userEmailStr,
         customer: {
           name: customerName,
           email: userEmailStr,
         },
         metadata: {
-          user_id: String(effUserId).substring(0, 50),
-          user_email: userEmailStr.substring(0, 50),
-          plan_id: String(planId || "premium").substring(0, 20),
-          plan_name: String(planTitle).substring(0, 50),
+          "user-id": String(effUserId).substring(0, 50),
+          "user-email": userEmailStr.substring(0, 50),
+          "plan-id": String(planId || "premium").substring(0, 20),
+          "plan-name": String(planTitle).substring(0, 50),
         },
       };
 
-      console.log(`[KoraPay Initiate] Initiating NGN ${amountInNaira} (${amountInKobo} Kobo) for ${userEmailStr} (Ref: ${cleanRef})`);
+      console.log(`[KoraPay Initiate] Initiating NGN ${amountInNaira} for ${userEmailStr} (Ref: ${cleanRef})`);
 
       // Primary attempt: charges/initialize
       let korapayRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
@@ -812,17 +862,45 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
 
       let korapayData = await korapayRes.json();
 
-      // Fallback 1: Try /merchant/api/v1/checkout/initialize if charges/initialize returned error
+      // Fallback 1: Retrying without metadata if Korapay metadata validation failed
+      if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
+        console.warn("[KoraPay Initiate] Validation error received. Retrying without metadata object...");
+        const noMetaPayload = {
+          amount: Number(amountInNaira),
+          currency: "NGN",
+          reference: cleanRef,
+          narration: String(planTitle).substring(0, 100),
+          notification_url: validNotificationUrl,
+          redirect_url: validRedirectUrl,
+          customer: {
+            name: customerName,
+            email: userEmailStr,
+          },
+        };
+
+        const fbRes0 = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${secretKey}`,
+          },
+          body: JSON.stringify(noMetaPayload),
+        });
+        const fbData0 = await fbRes0.json();
+        if (fbData0.status === true || fbData0.status === "true" || fbData0.status === 200) {
+          korapayData = fbData0;
+        }
+      }
+
+      // Fallback 2: Try /merchant/api/v1/checkout/initialize if charges/initialize returned error
       if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
         console.warn("[KoraPay Initiate] /charges/initialize failed. Retrying with /checkout/initialize...");
         const checkoutPayload = {
-          amount: Number(amountInKobo),
+          amount: Number(amountInNaira),
           currency: "NGN",
           reference: cleanRef,
           redirect_url: validRedirectUrl,
           notification_url: validNotificationUrl,
-          customer_name: customerName,
-          customer_email: userEmailStr,
           customer: {
             name: customerName,
             email: userEmailStr,
@@ -843,33 +921,11 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         }
       }
 
-      // Fallback 2: If validation error, try with amount in Naira (in case Korapay account uses Naira directly)
-      if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
-        console.warn("[KoraPay Initiate] Validation error received with Kobo amount. Retrying with Naira amount...");
-        const nairaPayload = {
-          ...korapayPayload,
-          amount: Number(amountInNaira),
-        };
-
-        const fbRes1 = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${secretKey}`,
-          },
-          body: JSON.stringify(nairaPayload),
-        });
-        const fbData1 = await fbRes1.json();
-        if (fbData1.status === true || fbData1.status === "true" || fbData1.status === 200) {
-          korapayData = fbData1;
-        }
-      }
-
-      // Fallback 2: If still validation error, try minimal payload without metadata or extra fields
+      // Fallback 3: Try minimal payload without metadata or extra fields
       if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
         console.warn("[KoraPay Initiate] Retrying with minimal Korapay payload...");
         const minimalPayload = {
-          amount: Number(amountInKobo),
+          amount: Number(amountInNaira),
           currency: "NGN",
           reference: cleanRef,
           redirect_url: validRedirectUrl,

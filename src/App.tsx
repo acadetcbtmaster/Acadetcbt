@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, X, AlertTriangle, ArrowLeft } from 'lucide-react';
-import { auth } from './lib/firebase';
+import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
 import {
   UserProfile,
   Question,
@@ -13,7 +14,8 @@ import {
   TestSessionResult,
   PaymentTransaction,
   SubscriptionPlan,
-  SystemSettings
+  SystemSettings,
+  DEFAULT_PLANS
 } from './types';
 import { StorageService } from './services/storage';
 import { ApiClient } from './services/apiClient';
@@ -170,8 +172,48 @@ export default function App() {
     window.addEventListener('storage', syncAllData);
     window.addEventListener('cbt_storage_change', syncAllData);
 
+    // Real-time Firestore subscription_plans listener
+    const unsubPlans = onSnapshot(collection(db, 'subscription_plans'), (snapshot) => {
+      if (!snapshot.empty) {
+        const livePlans: SubscriptionPlan[] = [];
+        snapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          livePlans.push({
+            id: docSnap.id,
+            name: d.name || 'Plan',
+            price: Number(d.price) || 0,
+            currency: d.currency || 'NGN',
+            durationDays: Number(d.durationDays) || 30,
+            description: d.description || '',
+            active: d.active !== false,
+            features: d.features || [],
+            popular: !!d.popular,
+            createdAt: d.createdAt || new Date().toISOString(),
+            updatedAt: d.updatedAt || new Date().toISOString(),
+          });
+        });
+        if (livePlans.length > 0) {
+          setPlans(livePlans);
+          StorageService.savePlans(livePlans);
+        }
+      } else {
+        // Seed default plans into Firestore subscription_plans collection
+        DEFAULT_PLANS.forEach((p) => {
+          setDoc(doc(db, 'subscription_plans', p.id), {
+            ...p,
+            active: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }, { merge: true }).catch(console.warn);
+        });
+      }
+    }, (err) => {
+      console.warn('subscription_plans snapshot listener error:', err);
+    });
+
     return () => {
       unsubscribe();
+      unsubPlans();
       window.removeEventListener('focus', syncAllData);
       window.removeEventListener('storage', syncAllData);
       window.removeEventListener('cbt_storage_change', syncAllData);

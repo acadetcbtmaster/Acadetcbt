@@ -68,9 +68,29 @@
         "rank": { "type": "number" }
       },
       "required": ["name", "referralCount", "rank"]
+    },
+    "SubscriptionPlan": {
+      "title": "SubscriptionPlan",
+      "description": "Single source of truth for subscription plans",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "durationDays": { "type": "number" },
+        "description": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "price", "durationDays", "active"]
     }
   },
   "firestore": {
+    "/subscription_plans/{planId}": {
+      "schema": "SubscriptionPlan",
+      "description": "Subscription plan definitions"
+    },
     "/users/{uid}": {
       "schema": "UserProfile",
       "description": "User profile records containing subscription status and referral metrics"

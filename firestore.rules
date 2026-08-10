@@ -31,6 +31,12 @@ service cloud.firestore {
       allow write: if true;
     }
 
+    // Subscription Plans collection
+    match /subscription_plans/{planId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
     // Referrals collection
     match /referrals/{referralId} {
       allow read: if true;

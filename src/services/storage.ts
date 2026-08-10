@@ -1732,14 +1732,27 @@ export class StorageService {
   static savePlans(plans: SubscriptionPlan[]): void {
     this.setItem(STORAGE_KEYS.PLANS, plans);
     plans.forEach((p) => {
-      setDoc(doc(db, 'plans', p.id), safeClone(p), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `plans/${p.id}`)
+      const payload = safeClone({
+        ...p,
+        active: p.active !== false,
+        updatedAt: new Date().toISOString(),
+      });
+      setDoc(doc(db, 'subscription_plans', p.id), payload, { merge: true }).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, `subscription_plans/${p.id}`)
       );
     });
   }
 
   static saveSubscriptionPlans(plans: SubscriptionPlan[]): void {
     this.savePlans(plans);
+  }
+
+  static deleteSubscriptionPlan(planId: string): void {
+    const plans = this.getPlans().filter((p) => p.id !== planId);
+    this.setItem(STORAGE_KEYS.PLANS, plans);
+    deleteDoc(doc(db, 'subscription_plans', planId)).catch((err) =>
+      handleFirestoreError(err, OperationType.DELETE, `subscription_plans/${planId}`)
+    );
   }
 
   static getTransactions(): PaymentTransaction[] {
