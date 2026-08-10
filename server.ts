@@ -758,25 +758,23 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         amount: amountInKobo,
         currency: "NGN",
         reference,
+        narration: planTitle,
+        notification_url: `${appUrl}/api/webhooks/korapay`,
+        redirect_url: callbackUrl,
         customer: {
           name: userName || "Acadet Student",
           email: effEmail,
         },
-        notification_url: `${appUrl}/api/webhooks/korapay`,
-        redirect_url: callbackUrl,
-        description: planTitle,
         metadata: {
           userId: effUserId,
           userEmail: effEmail,
-          fullName: userName || "Acadet Student",
           planId: planId || "premium",
           planName: planTitle,
-          amount: amountInNaira,
-          durationDays: Number(req.body?.durationDays) || (knownPlan ? knownPlan.durationDays : 30),
+          durationDays: String(Number(req.body?.durationDays) || (knownPlan ? knownPlan.durationDays : 30)),
         },
       };
 
-      console.log(`[KoraPay Initiate] Initiating NGN ${amountInNaira} for ${effEmail} (Ref: ${reference})`);
+      console.log(`[KoraPay Initiate] Initiating NGN ${amountInNaira} (${amountInKobo} Kobo) for ${effEmail} (Ref: ${reference})`);
 
       const korapayRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
         method: "POST",
@@ -817,6 +815,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         return res.status(400).json({
           success: false,
           error: korapayData.message || korapayData.error || "Failed to initialize payment with KoraPay Gateway.",
+          details: korapayData.data || korapayData.errors || korapayData,
           korapayResponse: korapayData,
         });
       }

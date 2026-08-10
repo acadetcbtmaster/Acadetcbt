@@ -68,7 +68,11 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         const redirectUrl = res.checkoutUrl || res.paymentLink;
         window.location.href = redirectUrl;
       } else {
-        setError(res?.error || `Failed to initialize ${selectedGateway === 'korapay' ? 'KoraPay' : 'Squad'} payment. Please try again.`);
+        const extraDetails = res?.details && typeof res.details === 'object' 
+          ? Object.values(res.details).flat().join(' ') 
+          : (typeof res?.details === 'string' ? res.details : '');
+        const errorMsg = res?.error || `Failed to initialize ${selectedGateway === 'korapay' ? 'KoraPay' : 'Squad'} payment. Please try again.`;
+        setError(extraDetails ? `${errorMsg} (${extraDetails})` : errorMsg);
       }
     } catch (err: any) {
       setError(err?.message || `Server error while contacting ${selectedGateway === 'korapay' ? 'KoraPay' : 'Squad'} Payment Gateway.`);
