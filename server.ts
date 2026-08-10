@@ -755,7 +755,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       });
 
       const korapayPayload = {
-        amount: amountInNaira,
+        amount: amountInKobo,
         currency: "NGN",
         reference,
         customer: {
@@ -1009,7 +1009,8 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
 
       processedKorapayReferences.add(reference);
 
-      const actualAmount = verifyData.data?.amount || meta.amount || 800;
+      const rawAmount = verifyData.data?.amount || meta.amount || 800;
+      const actualAmount = rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount;
       const reqPlanId = planId || meta.planId || "premium";
       const knownPlan = SUBSCRIPTION_PLANS[reqPlanId];
       const durationDays = Number(meta.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
@@ -1307,7 +1308,8 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
       const userId = meta.userId || data.customer?.userId || "usr-student";
       const userEmail = meta.userEmail || data.customer?.email || "student@acadet.cbt";
       const userName = meta.fullName || meta.userName || data.customer?.name || "Acadet Student";
-      const amount = data.amount || meta.amount || 800;
+      const rawAmount = data.amount || meta.amount || 800;
+      const amount = rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount;
 
       if (dbServer) {
         const logId = `kora_log_${Date.now()}_${reference}`;
