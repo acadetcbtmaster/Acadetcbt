@@ -98,6 +98,8 @@ const createPendingPaymentInFirestore = async (params: {
   reference: string;
   amount: number;
   plan?: string;
+  planId?: string;
+  durationDays?: number;
   provider?: string;
 }) => {
   if (!dbServer) return;
@@ -112,6 +114,8 @@ const createPendingPaymentInFirestore = async (params: {
         email: params.email,
         amount: params.amount,
         plan: params.plan || "Premium Membership",
+        planId: params.planId || "premium",
+        durationDays: params.durationDays || 30,
         provider,
         transactionRef: params.reference,
         squadTransactionId: null,
@@ -122,7 +126,7 @@ const createPendingPaymentInFirestore = async (params: {
       },
       { merge: true }
     );
-    console.log(`[Firestore Server] Created pending payment record: ${params.reference} (Provider: ${provider})`);
+    console.log(`[Firestore Server] Created pending payment record: ${params.reference} (Amount: ₦${params.amount}, Duration: ${params.durationDays || 30} days, Provider: ${provider})`);
   } catch (err) {
     console.error("[Firestore Server] Failed to create pending payment record:", err);
   }
@@ -758,6 +762,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     // Amount in Naira is always stored and treated in Naira (e.g. 150, 800, 1500)
     const amountInNaira = knownPlan ? knownPlan.price : (reqAmount && reqAmount > 0 ? reqAmount : 800);
     const planTitle = req.body.planName || (knownPlan ? knownPlan.name : (planId === "premium-plus" || planId === "plan-30d" ? "Premium Plus" : "Premium Membership"));
+    const durationDays = Number(req.body.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
     const amountInKobo = Math.round(amountInNaira * 100);
 
     const gatewayName = provider === "korapay" ? "KoraPay" : "Squad";
@@ -766,6 +771,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     // Required Debug Logs (Selected Plan Price, Amount Sent To Gateway, Gateway Name)
     console.log(`\n=================== [PAYMENT DEBUG LOG] ===================`);
     console.log(`- Selected Plan Price: ₦${amountInNaira}`);
+    console.log(`- Plan Duration Days: ${durationDays} days`);
     console.log(`- Gateway Name: ${gatewayName}`);
     console.log(`- Amount Sent To Gateway: ${amountSentToGateway} (${provider === 'korapay' ? 'Naira' : 'Kobo'})`);
     console.log(`- Plan ID: ${planId || 'default'} | Plan Name: ${planTitle}`);
@@ -805,6 +811,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         reference: cleanRef,
         amount: amountInNaira,
         plan: planTitle,
+        planId: planId || "premium",
+        durationDays,
         provider: "korapay",
       });
 
@@ -845,6 +853,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
           "user-email": userEmailStr.substring(0, 50),
           "plan-id": String(planId || "premium").substring(0, 20),
           "plan-name": String(planTitle).substring(0, 50),
+          "duration-days": String(durationDays),
         },
       };
 
@@ -1003,6 +1012,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       reference,
       amount: amountInNaira,
       plan: planTitle,
+      planId: planId || "premium",
+      durationDays,
       provider: "squad",
     });
 
@@ -1170,12 +1181,25 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
 
       processedKorapayReferences.add(reference);
 
-      const rawAmount = verifyData.data?.amount || meta.amount || 800;
-      const actualAmount = rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount;
-      const reqPlanId = planId || meta.planId || "premium";
-      const knownPlan = SUBSCRIPTION_PLANS[reqPlanId];
-      const durationDays = Number(meta.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
-      const planTitle = req.body?.planName || meta.planName || (knownPlan ? knownPlan.name : "Premium Membership");
+      let storedPending: any = null;
+      if (dbServer) {
+        try {
+          const pSnap = await getDoc(doc(dbServer, "payments", reference));
+          if (pSnap.exists()) {
+            storedPending = pSnap.data();
+          }
+        } catch (e) {
+          console.warn("[KoraPay Verify] Could not fetch stored pending doc:", e);
+        }
+      }
+
+      const rawAmount = verifyData.data?.amount || meta.amount || storedPending?.amount || 800;
+      const actualAmount = storedPending?.amount || (rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount);
+      const reqPlanId = planId || meta.planId || meta["plan-id"] || storedPending?.planId || "premium";
+      const livePlan = await getLivePlanFromFirestore(reqPlanId);
+      const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
+      const durationDays = Number(req.body?.durationDays) || Number(meta.durationDays) || Number(meta["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
+      const planTitle = req.body?.planName || meta.planName || meta["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
 
       const syncResult = await activateSubscriptionInFirestore({
         userId: effUserId,
@@ -1264,15 +1288,28 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
 
     processedSquadReferences.add(reference);
 
+    let storedPending: any = null;
+    if (dbServer) {
+      try {
+        const pSnap = await getDoc(doc(dbServer, "payments", reference));
+        if (pSnap.exists()) {
+          storedPending = pSnap.data();
+        }
+      } catch (e) {
+        console.warn("[Squad Verify] Could not fetch stored pending doc:", e);
+      }
+    }
+
     const returnedAmt = verifyData.data.transaction_amount || verifyData.data.amount;
-    const actualAmount = returnedAmt ? (returnedAmt > 10000 ? Math.round(returnedAmt / 100) : returnedAmt) : 800;
+    const actualAmount = storedPending?.amount || (returnedAmt ? (returnedAmt > 10000 ? Math.round(returnedAmt / 100) : returnedAmt) : 800);
     const gatewayRef = verifyData.data?.gateway_ref || verifyData.data?.transaction_ref || reference;
 
     const meta = verifyData.data?.meta || verifyData.data?.metadata || {};
-    const reqPlanId = planId || meta.planId || "premium";
-    const knownPlan = SUBSCRIPTION_PLANS[reqPlanId];
-    const durationDays = Number(meta.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
-    const planTitle = req.body?.planName || meta.planName || (knownPlan ? knownPlan.name : "Premium Membership");
+    const reqPlanId = planId || meta.planId || meta["plan-id"] || storedPending?.planId || "premium";
+    const livePlan = await getLivePlanFromFirestore(reqPlanId);
+    const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
+    const durationDays = Number(req.body?.durationDays) || Number(meta.durationDays) || Number(meta["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
+    const planTitle = req.body?.planName || meta.planName || meta["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
 
     const syncResult = await activateSubscriptionInFirestore({
       userId: effUserId,
@@ -1359,13 +1396,31 @@ const handleSquadWebhook = async (req: express.Request, res: express.Response) =
 
       processedSquadReferences.add(reference);
 
+      let storedPending: any = null;
+      if (dbServer) {
+        try {
+          const pSnap = await getDoc(doc(dbServer, "payments", reference));
+          if (pSnap.exists()) {
+            storedPending = pSnap.data();
+          }
+        } catch (e) {
+          console.warn("[Squad Webhook] Could not fetch stored pending doc:", e);
+        }
+      }
+
       const metadata = bodyData.meta || bodyData.metadata || {};
-      const userId = metadata.userId || bodyData.customer?.user_id || "usr-student";
-      const userEmail = bodyData.email || metadata.userEmail || "student@acadet.cbt";
-      const userName = metadata.userName || bodyData.customer?.name || "Acadet Student";
-      const rawAmt = bodyData.amount || bodyData.transaction_amount || metadata.amount || 800;
-      const amount = rawAmt > 10000 ? Math.round(rawAmt / 100) : rawAmt;
+      const userId = metadata.userId || bodyData.customer?.user_id || storedPending?.userId || "usr-student";
+      const userEmail = bodyData.email || metadata.userEmail || storedPending?.email || "student@acadet.cbt";
+      const userName = metadata.userName || bodyData.customer?.name || storedPending?.fullName || "Acadet Student";
+      const rawAmt = bodyData.amount || bodyData.transaction_amount || metadata.amount || storedPending?.amount || 800;
+      const amount = storedPending?.amount || (rawAmt > 10000 ? Math.round(rawAmt / 100) : rawAmt);
       const gatewayRef = bodyData.gateway_ref || bodyData.transaction_ref || reference;
+
+      const reqPlanId = metadata.planId || metadata["plan-id"] || storedPending?.planId || "premium";
+      const livePlan = await getLivePlanFromFirestore(reqPlanId);
+      const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
+      const durationDays = Number(metadata.durationDays) || Number(metadata["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
+      const planTitle = metadata.planName || metadata["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
 
       // Log webhook event in webhook_logs/{logId}
       if (dbServer) {
@@ -1390,8 +1445,8 @@ const handleSquadWebhook = async (req: express.Request, res: express.Response) =
           reference,
           gatewayRef,
           amount,
-          planName: metadata.planName || "Premium Membership",
-          durationDays: Number(metadata.durationDays) || 30,
+          planName: planTitle,
+          durationDays,
           paymentMethod: bodyData.payment_type || "Squad Webhook",
           squadResponse: payload,
         });
@@ -1465,12 +1520,30 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
         }
       }
 
+      let storedPending: any = null;
+      if (dbServer) {
+        try {
+          const pSnap = await getDoc(doc(dbServer, "payments", reference));
+          if (pSnap.exists()) {
+            storedPending = pSnap.data();
+          }
+        } catch (e) {
+          console.warn("[KoraPay Webhook] Could not fetch stored pending doc:", e);
+        }
+      }
+
       const meta = data.metadata || {};
-      const userId = meta.userId || data.customer?.userId || "usr-student";
-      const userEmail = meta.userEmail || data.customer?.email || "student@acadet.cbt";
-      const userName = meta.fullName || meta.userName || data.customer?.name || "Acadet Student";
-      const rawAmount = data.amount || meta.amount || 800;
-      const amount = rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount;
+      const userId = meta.userId || meta["user-id"] || data.customer?.userId || storedPending?.userId || "usr-student";
+      const userEmail = meta.userEmail || meta["user-email"] || data.customer?.email || storedPending?.email || "student@acadet.cbt";
+      const userName = meta.fullName || meta.userName || data.customer?.name || storedPending?.fullName || "Acadet Student";
+      const rawAmount = data.amount || meta.amount || meta["amount"] || storedPending?.amount || 800;
+      const amount = storedPending?.amount || (rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount);
+
+      const reqPlanId = meta.planId || meta["plan-id"] || storedPending?.planId || "premium";
+      const livePlan = await getLivePlanFromFirestore(reqPlanId);
+      const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
+      const durationDays = Number(meta.durationDays) || Number(meta["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
+      const planTitle = meta.planName || meta["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
 
       if (dbServer) {
         const logId = `kora_log_${Date.now()}_${reference}`;
@@ -1495,8 +1568,8 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
           gatewayRef: reference,
           squadTransactionId: reference,
           amount,
-          planName: meta.planName || "Premium Membership",
-          durationDays: Number(meta.durationDays) || 30,
+          planName: planTitle,
+          durationDays,
           paymentMethod: "KoraPay Webhook",
           provider: "korapay",
           squadResponse: payload,

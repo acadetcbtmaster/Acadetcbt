@@ -51,9 +51,11 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     const amount = currentChosenPlan ? currentChosenPlan.price : 800;
     const planId = currentChosenPlan ? currentChosenPlan.id : 'premium';
     const planName = currentChosenPlan ? currentChosenPlan.name : 'Premium Membership';
+    const durationDays = currentChosenPlan ? currentChosenPlan.durationDays : 30;
 
     console.log(`[Payment Debug Log - Frontend]`);
     console.log(`- Selected Plan Price: ₦${amount}`);
+    console.log(`- Duration Days: ${durationDays}`);
     console.log(`- Gateway Name: ${selectedGateway.toUpperCase()}`);
     console.log(`- Amount Sent To Gateway: ₦${amount}`);
     console.log(`- Plan ID: ${planId} (${planName})`);
@@ -65,6 +67,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         planId,
         planName,
         amount,
+        durationDays,
         email: (user.email && user.email.includes('@') && !user.email.endsWith('.cbt')) ? user.email : 'student@gmail.com',
         userId: user.id || 'usr-student',
         userName: user.fullName || user.name || 'Acadet Student',
