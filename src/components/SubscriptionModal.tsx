@@ -45,6 +45,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     activePlans[0];
 
   const handleInitiatePayment = async () => {
+    if (loading) return; // Prevent duplicate clicks
+    const btnClickTime = performance.now();
     setLoading(true);
     setError(null);
 
@@ -53,11 +55,14 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     const planName = currentChosenPlan ? currentChosenPlan.name : 'Premium Membership';
     const durationDays = currentChosenPlan ? currentChosenPlan.durationDays : 30;
 
-    console.log(`[Payment Debug Log - Frontend]`);
+    const apiStartTime = performance.now();
+    const timeToApiCallMs = (apiStartTime - btnClickTime).toFixed(2);
+
+    console.log(`[Payment Performance Log - Frontend]`);
+    console.log(`- Time from button click to API request: ${timeToApiCallMs}ms`);
     console.log(`- Selected Plan Price: ₦${amount}`);
     console.log(`- Duration Days: ${durationDays}`);
     console.log(`- Gateway Name: ${selectedGateway.toUpperCase()}`);
-    console.log(`- Amount Sent To Gateway: ₦${amount}`);
     console.log(`- Plan ID: ${planId} (${planName})`);
 
     try {
@@ -72,6 +77,10 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         userId: user.id || 'usr-student',
         userName: user.fullName || user.name || 'Acadet Student',
       });
+
+      const totalFrontEndDuration = (performance.now() - btnClickTime).toFixed(2);
+      console.log(`- Time taken by backend to generate link & return response: ${res?.backendTimeMs || 'N/A'}ms`);
+      console.log(`- Total frontend duration before redirect: ${totalFrontEndDuration}ms`);
 
       if (res && res.success && (res.checkoutUrl || res.paymentLink)) {
         const redirectUrl = res.checkoutUrl || res.paymentLink;

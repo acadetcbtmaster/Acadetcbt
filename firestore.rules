@@ -3,79 +3,97 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Helper functions
-    function isAuthenticated() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.role == 'admin' ||
+        request.auth.token.email == 'idrisanderumohammed2521@gmail.com' ||
+        request.auth.token.email == 'admin@menmex.ng' ||
+        request.auth.token.email == 'admin@cadetcbt.website'
+      );
     }
 
     // Users collection
     match /users/{userId} {
-      allow read: if true;
-      allow create: if true;
-      allow update, delete: if isOwner(userId) || true;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // Payments collection
+    // Payments collection: Payments are written and updated server-side or by admin
     match /payments/{paymentId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || resource.data.email == request.auth.token.email || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
     }
 
     // Subscriptions collection
     match /subscriptions/{subscriptionId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isSignedIn() && (subscriptionId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
     }
 
-    // Subscription Plans collection
+    // Subscription Plans collection: Public read, Admin write
     match /subscription_plans/{planId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isAdmin();
     }
 
     // Referrals collection
     match /referrals/{referralId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isSignedIn() && (resource == null || resource.data.referrerId == request.auth.uid || resource.data.referredUserId == request.auth.uid || isAdmin());
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
     // Leaderboard collection
     match /leaderboard/{userId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isOwner(userId) || isAdmin();
     }
 
-    // Webhook logs collection
+    // Webhook logs collection: Admin only
     match /webhook_logs/{logId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Questions collection
+    // Questions & Study Materials: Public/Authenticated read, Admin write
     match /questions/{questionId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isAdmin();
     }
 
-    // Study Materials collection
     match /study_materials/{materialId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isAdmin();
     }
 
     // Community Posts collection
     match /community_posts/{postId} {
       allow read: if true;
-      allow create, update, delete: if true;
+      allow create, update: if isSignedIn();
+      allow delete: if isOwner(resource.data.authorId) || isAdmin();
     }
 
-    // Default fallback rule
+    // Results collection
+    match /results/{resultId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // Catch-all default fallback rule (secure default)
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() || isAdmin();
     }
   }
 }
+

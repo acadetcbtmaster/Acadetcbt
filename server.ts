@@ -714,10 +714,10 @@ const getLivePlanFromFirestore = async (planId: string) => {
   if (!dbServer || !planId) return null;
   try {
     const planRef = doc(dbServer, "subscription_plans", planId);
-    // Timeout getDoc after 600ms so payment initiation is instantaneous
+    // Timeout getDoc after 150ms so payment initiation is instantaneous
     const planSnap = await Promise.race([
       getDoc(planRef),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 600)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 150)),
     ]);
     if (planSnap && planSnap.exists()) {
       const data = planSnap.data();
@@ -737,6 +737,7 @@ const getLivePlanFromFirestore = async (planId: string) => {
 
 // 2. Initiate Payment (POST /api/payments/initiate & aliases)
 const handlePaymentInitiation = async (req: express.Request, res: express.Response) => {
+  const backendStartTime = Date.now();
   try {
     const { planId, email, userEmail, userId, uid, userName, userUsername } = req.body;
     const reqAmount = Number(req.body.amount);
@@ -752,8 +753,11 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       });
     }
 
-    // Determine Plan and Amount (Load live plan from Firestore first for security & accuracy)
-    const livePlan = await getLivePlanFromFirestore(planId);
+    // Determine Plan and Amount (Fast resolution without blocking on Firestore if price is provided)
+    let livePlan = null;
+    if ((!reqAmount || reqAmount <= 0) && planId) {
+      livePlan = await getLivePlanFromFirestore(planId);
+    }
     const knownPlan = livePlan || SUBSCRIPTION_PLANS[planId];
 
     if (livePlan && !livePlan.active) {
@@ -854,17 +858,18 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
           email: userEmailStr,
         },
         metadata: {
-          "user-id": String(effUserId).substring(0, 50),
-          "user-email": userEmailStr.substring(0, 50),
-          "plan-id": String(planId || "premium").substring(0, 20),
-          "plan-name": String(planTitle).substring(0, 50),
-          "duration-days": String(durationDays),
+          userId: String(effUserId).substring(0, 50),
+          userEmail: userEmailStr.substring(0, 50),
+          planId: String(planId || "premium").substring(0, 20),
+          planName: String(planTitle).substring(0, 50),
+          durationDays: String(durationDays),
         },
       };
 
       console.log(`[KoraPay Initiate] Initiating NGN ${amountInNaira} for ${userEmailStr} (Ref: ${cleanRef})`);
 
-      // Primary attempt: charges/initialize
+      // Primary attempt: charges/initialize with 4s timeout
+      const gatewayCallStart = Date.now();
       let korapayRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
         method: "POST",
         headers: {
@@ -872,14 +877,15 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
           Authorization: `Bearer ${secretKey}`,
         },
         body: JSON.stringify(korapayPayload),
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(4000),
       });
 
       let korapayData = await korapayRes.json();
+      let gatewayDuration = Date.now() - gatewayCallStart;
 
-      // Fallback 1: Retrying without metadata if Korapay metadata validation failed
+      // Fast single fallback without metadata if Korapay metadata validation failed
       if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
-        console.warn("[KoraPay Initiate] Validation error received. Retrying without metadata object...");
+        console.warn("[KoraPay Initiate] Retrying Korapay charges/initialize without metadata...");
         const noMetaPayload = {
           amount: Number(amountInNaira),
           currency: "NGN",
@@ -900,6 +906,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
             Authorization: `Bearer ${secretKey}`,
           },
           body: JSON.stringify(noMetaPayload),
+          signal: AbortSignal.timeout(3000),
         });
         const fbData0 = await fbRes0.json();
         if (fbData0.status === true || fbData0.status === "true" || fbData0.status === 200) {
@@ -907,62 +914,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         }
       }
 
-      // Fallback 2: Try /merchant/api/v1/checkout/initialize if charges/initialize returned error
-      if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
-        console.warn("[KoraPay Initiate] /charges/initialize failed. Retrying with /checkout/initialize...");
-        const checkoutPayload = {
-          amount: Number(amountInNaira),
-          currency: "NGN",
-          reference: cleanRef,
-          redirect_url: validRedirectUrl,
-          notification_url: validNotificationUrl,
-          customer: {
-            name: customerName,
-            email: userEmailStr,
-          },
-        };
-
-        const checkoutRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/checkout/initialize`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${secretKey}`,
-          },
-          body: JSON.stringify(checkoutPayload),
-        });
-        const checkoutData = await checkoutRes.json();
-        if (checkoutData.status === true || checkoutData.status === "true" || checkoutData.status === 200) {
-          korapayData = checkoutData;
-        }
-      }
-
-      // Fallback 3: Try minimal payload without metadata or extra fields
-      if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
-        console.warn("[KoraPay Initiate] Retrying with minimal Korapay payload...");
-        const minimalPayload = {
-          amount: Number(amountInNaira),
-          currency: "NGN",
-          reference: cleanRef,
-          redirect_url: validRedirectUrl,
-          customer: {
-            name: customerName,
-            email: userEmailStr,
-          },
-        };
-
-        const fbRes2 = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${secretKey}`,
-          },
-          body: JSON.stringify(minimalPayload),
-        });
-        const fbData2 = await fbRes2.json();
-        if (fbData2.status === true || fbData2.status === "true" || fbData2.status === 200) {
-          korapayData = fbData2;
-        }
-      }
+      const totalBackendTimeMs = Date.now() - backendStartTime;
+      console.log(`[KoraPay Initiate Timing] Gateway API call took ${gatewayDuration}ms | Total backend handling took ${totalBackendTimeMs}ms`);
 
       if ((korapayData.status === true || korapayData.status === "true" || korapayData.status === 200) && korapayData.data) {
         const checkoutUrl = korapayData.data.checkout_url || korapayData.data.authorization_url;
@@ -986,6 +939,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
           planId: planId || "premium",
           planName: planTitle,
           korapayData: korapayData.data,
+          gatewayTimeMs: gatewayDuration,
+          backendTimeMs: totalBackendTimeMs,
         });
       } else {
         console.error("[KoraPay Initiate Error]", korapayData);
@@ -1045,6 +1000,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
 
     console.log(`[Squad Initiate] Initiating NGN ${amountInNaira} for ${effEmail} (Ref: ${reference})`);
 
+    const gatewayCallStart = Date.now();
     const squadRes = await fetch(`${baseUrl}/transaction/initiate`, {
       method: "POST",
       headers: {
@@ -1052,10 +1008,14 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         Authorization: `Bearer ${secretKey}`,
       },
       body: JSON.stringify(squadPayload),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(4000),
     });
 
     const squadData = await squadRes.json();
+    const gatewayDuration = Date.now() - gatewayCallStart;
+    const totalBackendTimeMs = Date.now() - backendStartTime;
+
+    console.log(`[Squad Initiate Timing] Gateway API call took ${gatewayDuration}ms | Total backend handling took ${totalBackendTimeMs}ms`);
 
     if ((squadData.status === 200 || squadData.status === "200" || squadData.success) && squadData.data) {
       const checkoutUrl = squadData.data.checkout_url || squadData.data.auth_url;
@@ -1079,6 +1039,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         planId: planId || "premium",
         planName: planTitle,
         squadData: squadData.data,
+        gatewayTimeMs: gatewayDuration,
+        backendTimeMs: totalBackendTimeMs,
       });
     } else {
       console.error("[Squad Initiate Error]", squadData);
