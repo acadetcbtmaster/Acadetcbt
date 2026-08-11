@@ -709,13 +709,17 @@ app.get("/api/squad/config", (_req, res) => {
   });
 });
 
-// Helper: Fetch live subscription plan from Firestore (subscription_plans/{planId})
+// Helper: Fetch live subscription plan from Firestore (subscription_plans/{planId}) with 600ms fast timeout
 const getLivePlanFromFirestore = async (planId: string) => {
   if (!dbServer || !planId) return null;
   try {
     const planRef = doc(dbServer, "subscription_plans", planId);
-    const planSnap = await getDoc(planRef);
-    if (planSnap.exists()) {
+    // Timeout getDoc after 600ms so payment initiation is instantaneous
+    const planSnap = await Promise.race([
+      getDoc(planRef),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 600)),
+    ]);
+    if (planSnap && planSnap.exists()) {
       const data = planSnap.data();
       return {
         id: planSnap.id,
@@ -804,7 +808,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       const uniqueSuffix = Math.random().toString(36).substring(2, 7);
       const cleanRef = `${baseRef.replace(/[^a-zA-Z0-9_\-]/g, '')}_${uniqueSuffix}`.substring(0, 50);
 
-      await createPendingPaymentInFirestore({
+      // Non-blocking firestore pending payment record creation
+      createPendingPaymentInFirestore({
         userId: effUserId,
         fullName: userName || "Acadet Student",
         email: effEmail,
@@ -814,7 +819,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         planId: planId || "premium",
         durationDays,
         provider: "korapay",
-      });
+      }).catch((e) => console.warn("[Firestore Server] Non-blocking Korapay pending record creation error:", e));
 
       const customerName = (userName || "Acadet Student").trim();
       let userEmailStr = String(effEmail).trim().toLowerCase();
@@ -867,6 +872,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
           Authorization: `Bearer ${secretKey}`,
         },
         body: JSON.stringify(korapayPayload),
+        signal: AbortSignal.timeout(8000),
       });
 
       let korapayData = await korapayRes.json();
@@ -1004,8 +1010,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     const reference = req.body.reference || req.body.transactionRef || `ACADE_${timestamp}_${cleanUid}`;
     const baseUrl = getSquadBaseUrl();
 
-    // Step 1: Create initial pending record in Firestore (payments/{paymentId})
-    await createPendingPaymentInFirestore({
+    // Step 1: Create initial pending record in Firestore (payments/{paymentId}) non-blockingly
+    createPendingPaymentInFirestore({
       userId: effUserId,
       fullName: userName || "Acadet Student",
       email: effEmail,
@@ -1015,7 +1021,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       planId: planId || "premium",
       durationDays,
       provider: "squad",
-    });
+    }).catch((e) => console.warn("[Firestore Server] Non-blocking Squad pending record creation error:", e));
 
     const squadPayload = {
       amount: amountInKobo,
@@ -1046,6 +1052,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         Authorization: `Bearer ${secretKey}`,
       },
       body: JSON.stringify(squadPayload),
+      signal: AbortSignal.timeout(8000),
     });
 
     const squadData = await squadRes.json();
