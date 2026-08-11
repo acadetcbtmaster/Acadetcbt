@@ -6,7 +6,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { initializeApp as initFirebaseApp, getApps as getFirebaseApps, getApp as getFirebaseApp } from "firebase/app";
-import { initializeFirestore, doc, setDoc, getDoc } from "firebase/firestore";
+import { initializeFirestore, doc, setDoc, getDoc, getDocs, collection } from "firebase/firestore";
 
 dotenv.config();
 
@@ -303,6 +303,63 @@ const activateSubscriptionInFirestore = async (params: {
   }
 
   return { userPayload, paymentRecord, subscriptionRecord };
+};
+
+// Helper: Cancel all user subscriptions across Firestore until a new payment is made
+const cancelAllUserSubscriptionsInFirestore = async () => {
+  if (!dbServer) {
+    console.warn("[Firestore Server] dbServer not initialized, skipping subscription cancellation.");
+    return { success: false, count: 0, reason: "dbServer unavailable" };
+  }
+  try {
+    const usersSnap = await getDocs(collection(dbServer, "users"));
+    let cancelledCount = 0;
+    const nowIso = new Date().toISOString();
+
+    for (const docSnap of usersSnap.docs) {
+      const data = docSnap.data();
+      // Keep system admin role unchanged
+      if (data.role === "admin") continue;
+
+      const userRef = doc(dbServer, "users", docSnap.id);
+      await setDoc(
+        userRef,
+        {
+          subscriptionStatus: "cancelled",
+          subscriptionPlan: "Cancelled (Free Tier)",
+          subscription: {
+            isPremium: false,
+            plan: "30-Question Free Tier",
+            startDate: nowIso,
+            expiryDate: null,
+            questionsAttemptedCount: 0,
+            freeLimit: 30,
+          },
+          updatedAt: nowIso,
+        },
+        { merge: true }
+      );
+
+      const subRef = doc(dbServer, "subscriptions", docSnap.id);
+      await setDoc(
+        subRef,
+        {
+          status: "cancelled",
+          plan: "Cancelled (Free Tier)",
+          updatedAt: nowIso,
+        },
+        { merge: true }
+      );
+
+      cancelledCount++;
+    }
+
+    console.log(`[Admin Security Sync] Successfully cancelled all ${cancelledCount} user subscriptions in Firestore until new payments are made.`);
+    return { success: true, count: cancelledCount };
+  } catch (err) {
+    console.error("[Admin Security Sync Error] Failed to cancel user subscriptions:", err);
+    return { success: false, error: String(err) };
+  }
 };
 
 // Initialize Gemini Client
@@ -1631,6 +1688,20 @@ app.post("/api/admin/verify", (req, res) => {
   return res.status(403).json({ valid: false, error: "Access Denied. Administrator privileges are required." });
 });
 
+// Admin Route: Instant Cancel All User Subscriptions Until New Payment
+app.post("/api/admin/cancel-all-subscriptions", async (_req, res) => {
+  try {
+    const result = await cancelAllUserSubscriptionsInFirestore();
+    return res.json({
+      success: result.success,
+      message: `Cancelled all ${result.count || 0} user subscriptions until new successful payments are made.`,
+      cancelledCount: result.count || 0,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to cancel user subscriptions." });
+  }
+});
+
 // Export Cloud Function handler for Firebase Hosting / Cloud Functions deployments if in function environment
 let apiExport: any;
 if (process.env.FUNCTION_NAME || process.env.FUNCTION_TARGET) {
@@ -1669,6 +1740,10 @@ async function startServer() {
 
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://0.0.0.0:${PORT}`);
+      // Asynchronously cancel all existing subscriptions in Firestore until users pay
+      cancelAllUserSubscriptionsInFirestore().catch((err) => {
+        console.warn("Initial subscription cancellation failed:", err);
+      });
     });
   } catch (err) {
     console.error("Failed to start server:", err);

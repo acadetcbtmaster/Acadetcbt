@@ -748,6 +748,29 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
     showToast('📥 Payment transactions exported to CSV!');
   };
 
+  const handleCancelAllSubscriptions = async () => {
+    if (!confirm('Are you sure you want to cancel all user subscriptions across the system? All users will be placed on the free tier until a new payment is made.')) {
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const res = await fetch('/api/admin/cancel-all-subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`🚫 Successfully cancelled all ${data.cancelledCount || 0} user subscriptions in Firestore.`);
+      } else {
+        showToast(`⚠️ Sync notice: ${data.error || 'All active user subscriptions cancelled.'}`);
+      }
+    } catch (err: any) {
+      showToast('❌ Failed to connect to server to cancel subscriptions.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <div className="space-y-6" id="payment-subscription-admin-module">
       {/* Toast Notice */}
@@ -795,6 +818,16 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
           >
             <Download className="w-4 h-4" />
             <span>Export Transactions (CSV)</span>
+          </button>
+
+          <button
+            onClick={handleCancelAllSubscriptions}
+            disabled={isProcessing}
+            className="px-4 py-2.5 bg-rose-600/90 hover:bg-rose-600 text-white font-bold text-xs rounded-xl shadow transition-all flex items-center gap-2 cursor-pointer border border-rose-500/30 active:scale-95 disabled:opacity-50"
+            title="Revoke all active subscriptions until new payments are made"
+          >
+            <ShieldAlert className="w-4 h-4 text-rose-200" />
+            <span>Cancel All Subscriptions</span>
           </button>
         </div>
       </div>

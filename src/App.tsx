@@ -220,6 +220,43 @@ export default function App() {
     };
   }, []);
 
+  // Real-time Firestore user profile & subscription unlock listener
+  useEffect(() => {
+    if (!currentUser || !currentUser.id) return;
+
+    const unsubUserDoc = onSnapshot(
+      doc(db, 'users', currentUser.id),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const d = docSnap.data();
+          setCurrentUser((prev) => {
+            if (!prev) return prev;
+            const updatedProfile: UserProfile = {
+              ...prev,
+              ...d,
+              id: docSnap.id,
+              name: d.fullName || d.name || prev.name,
+              email: d.email || prev.email,
+              role: d.role || prev.role,
+              subscriptionStatus: d.subscriptionStatus,
+              subscriptionPlan: d.subscriptionPlan,
+              subscription: d.subscription || prev.subscription,
+            };
+            StorageService.saveUser(updatedProfile);
+            return updatedProfile;
+          });
+        }
+      },
+      (err) => {
+        console.warn('Real-time currentUser document listener warning:', err);
+      }
+    );
+
+    return () => {
+      unsubUserDoc();
+    };
+  }, [currentUser?.id]);
+
   // Detect Squad Payment Return Redirect
   useEffect(() => {
     const isPaymentReturn =
