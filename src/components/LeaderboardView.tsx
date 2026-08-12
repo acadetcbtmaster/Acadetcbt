@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, TestSessionResult } from '../types';
 import { StorageService } from '../services/storage';
-import { ReferralSection } from './ReferralSection';
-import { ReferralLeaderboard } from './ReferralLeaderboard';
 import {
   Trophy,
   Crown,
@@ -15,7 +13,6 @@ import {
   CheckCircle2,
   ArrowLeft,
   X,
-  Share2,
 } from 'lucide-react';
 
 interface LeaderboardViewProps {
@@ -42,7 +39,6 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
   onOpenSubscribe,
   onNavigate,
 }) => {
-  const [leaderboardTab, setLeaderboardTab] = useState<'referrals' | 'academic'>('referrals');
   const isPremium = currentUser?.subscription?.isPremium ?? false;
   const userQuestionsUsed = currentUser?.subscription?.questionsAttemptedCount ?? 0;
   const userStreak = currentUser?.streakCount || 0;
@@ -143,16 +139,16 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             <div className="flex items-center gap-2 mb-2">
               <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1.5">
                 <Trophy className="w-3.5 h-3.5 text-amber-400" />
-                Referrals & Leaderboards
+                University Leaderboard
               </span>
               <span className="text-xs text-slate-300 font-medium">
-                Live Real-Time Rankings
+                Live Performance Rankings
               </span>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-black text-white">Student Leaderboards & Referral Center</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-white">Student Academic Rankings</h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
-              Track your invites, manage referral links, view peer rankings, and compare CBT performance across Nigeria.
+              Compare your score accuracy, study streaks, and CBT test completions with fellow university students across Nigeria.
             </p>
           </div>
 
@@ -167,53 +163,11 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             </button>
           )}
         </div>
-
-        {/* Sub-Tab Navigation Bar */}
-        <div className="relative z-10 mt-6 pt-4 border-t border-slate-800/80 flex items-center gap-3 overflow-x-auto">
-          <button
-            onClick={() => setLeaderboardTab('referrals')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
-              leaderboardTab === 'referrals'
-                ? 'bg-indigo-600 text-white shadow-lg border border-indigo-400'
-                : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-700'
-            }`}
-            id="tab-referral-system-btn"
-          >
-            <Share2 className="w-4 h-4 text-indigo-300" />
-            <span>Referral Tracking & Leaderboard</span>
-          </button>
-
-          <button
-            onClick={() => setLeaderboardTab('academic')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
-              leaderboardTab === 'academic'
-                ? 'bg-amber-600 text-white shadow-lg border border-amber-400'
-                : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-700'
-            }`}
-            id="tab-academic-leaderboard-btn"
-          >
-            <Trophy className="w-4 h-4 text-amber-300" />
-            <span>Academic Performance Standings</span>
-          </button>
-        </div>
       </div>
 
-      {/* Main Content Sections */}
-      {leaderboardTab === 'referrals' ? (
-        <div className="space-y-6 animate-in fade-in">
-          {/* Real-Time Referral Tracking Box */}
-          <ReferralSection user={currentUser} />
-
-          {/* Real-Time Referral Leaderboard Box */}
-          <ReferralLeaderboard
-            currentUser={currentUser}
-            onNavigate={onNavigate}
-            idPrefix="unified-referral-lb"
-          />
-        </div>
-      ) : (
-        <div className="space-y-6 animate-in fade-in">
-          {/* Top 3 Podium Cards */}
+      {/* Main Content Section */}
+      <div className="space-y-6 animate-in fade-in">
+        {/* Top 3 Podium Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6" id="leaderboard-podium">
         {topStudents.slice(0, 3).map((st) => (
           <div
@@ -348,8 +302,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
           </table>
         </div>
       </div>
-        </div>
-      )}
+      </div>
 
     </div>
   );

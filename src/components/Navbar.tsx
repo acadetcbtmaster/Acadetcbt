@@ -220,11 +220,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button
                     onClick={() => onNavigate('leaderboard')}
                     className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      activeTab === 'leaderboard' || activeTab === 'referrals' ? 'bg-indigo-50 dark:bg-indigo-600/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/40' : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+                      activeTab === 'leaderboard' ? 'bg-indigo-50 dark:bg-indigo-600/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/40' : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                     id="nav-btn-leaderboard"
                   >
-                    Referrals & Leaderboard
+                    Leaderboard
                   </button>
                   <button
                     onClick={() => onNavigate('performance')}
@@ -582,7 +582,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     onClick={() => { onNavigate('leaderboard'); setMobileMenuOpen(false); }}
                     className="block w-full text-left px-3 py-2 text-sm text-amber-300 font-bold hover:bg-slate-800 rounded-lg"
                   >
-                    🎁 Referrals & Leaderboards
+                    🏆 Student Leaderboard
                   </button>
                   <button
                     onClick={() => { onNavigate('performance'); setMobileMenuOpen(false); }}

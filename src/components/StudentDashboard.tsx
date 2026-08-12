@@ -551,8 +551,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         {session.type === 'mock_cbt' ? 'Mock CBT Exam' : 'Practice Session'} • {session.totalQuestions} questions • {new Date(session.date).toLocaleDateString()}
                       </p>
                     </div>
-                    <div className="text-right">
-                      <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
+                    <div className="text-right shrink-0 ml-2">
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-bold inline-block whitespace-nowrap ${
                         session.percentage >= 70
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                           : session.percentage >= 50
