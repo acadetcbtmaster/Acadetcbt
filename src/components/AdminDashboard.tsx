@@ -37,7 +37,6 @@ import { MenCoreManagementModule } from './admin/MenCoreManagementModule';
 import { ReferralManagementModule } from './admin/ReferralManagementModule';
 import { DepartmentManagementModule } from './admin/DepartmentManagementModule';
 import { FaceArenaAdminModule } from './admin/FaceArenaAdminModule';
-import { InterfaceEditorModule } from './admin/InterfaceEditorModule';
 import {
   Shield,
   BookOpen,
@@ -122,8 +121,7 @@ export type AdminCategory =
   | 'topic_requests'
   | 'mencore_ai'
   | 'referral_management'
-  | 'face_arena'
-  | 'interface_editor';
+  | 'face_arena';
 
 export type AdminRole =
   | 'Super Administrator'
@@ -1690,7 +1688,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 { id: 'topic_requests', title: 'Community Learning & Topic Requests', desc: 'Community learning hub, student topic requests, grouped demand analytics, Joyce & video tutorial team production & video management.', icon: MessageSquarePlus, color: 'text-indigo-400', border: 'hover:border-indigo-500' },
                 { id: 'mencore_ai', title: 'MenCore AI System & Joyce Tutor Studio', desc: '11 AI management modules: system prompt, vector knowledge base, model router, audio TTS engine, rate limits & cost analytics.', icon: Sparkles, color: 'text-amber-400', border: 'hover:border-amber-500' },
                 { id: 'face_arena', title: 'Face Arena Quiz Challenges', desc: 'Manage weekly face arena CBT competitions, participant lists & scoreboards.', icon: Swords, color: 'text-amber-400', border: 'hover:border-amber-500' },
-                { id: 'interface_editor', title: 'Interface Editor', desc: 'CMS to manage Quick Links, dynamic homepage banners, announcements & section layout order without code editing.', icon: Layers, color: 'text-indigo-400', border: 'hover:border-indigo-500' },
               ].map((cat) => {
                 const IconComp = cat.icon;
                 const access = checkCategoryAccess(cat.id as AdminCategory);
@@ -4042,11 +4039,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* --- Face Arena Weekly Quiz Challenge Management --- */}
       {activeCategory === 'face_arena' && (
         <FaceArenaAdminModule />
-      )}
-
-      {/* --- Dynamic Interface Editor CMS (Quick Links & Banners) --- */}
-      {activeCategory === 'interface_editor' && (
-        <InterfaceEditorModule />
       )}
 
       {/* Role Permissions Matrix Modal */}

@@ -577,7 +577,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'leaderboard' && currentUser && (
+        {(activeTab === 'leaderboard' || activeTab === 'referrals') && currentUser && (
           <LeaderboardView
             currentUser={currentUser}
             onOpenSubscribe={() => setSubModalOpen(true)}
