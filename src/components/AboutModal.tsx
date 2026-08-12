@@ -1,6 +1,6 @@
 import React from 'react';
 import brandLogo from '../assets/images/exact_acadet_cbt_logo_1786225425882.jpg';
-import { X, GraduationCap, Target, Eye, Heart, MessageSquare, ExternalLink, Sparkles, Quote, Award, ArrowLeft } from 'lucide-react';
+import { X, GraduationCap, Target, Eye, Heart, MessageSquare, ExternalLink, Sparkles, Quote, Award, ArrowLeft, Youtube } from 'lucide-react';
 
 interface AboutModalProps {
   isOpen: boolean;
@@ -126,28 +126,55 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
             "Great ideas become reality through collaboration, dedication, and a shared commitment to excellence. Acadet is a reflection of that vision—built to inspire learning, empower students, and shape academic success."
           </blockquote>
 
-          {/* Social Media Link */}
-          <div className="bg-emerald-950/30 border border-emerald-500/40 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3 text-left">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                <MessageSquare className="w-5 h-5" />
+          {/* Social Media Links */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* YouTube Channel */}
+            <div className="bg-red-950/30 border border-red-500/40 p-4 rounded-2xl flex flex-col justify-between gap-3">
+              <div className="flex items-center gap-3 text-left">
+                <div className="w-10 h-10 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
+                  <Youtube className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">Acadet CBT Master YouTube</h4>
+                  <p className="text-[11px] text-slate-400">Subscribe for video tutorials, CBT hacks & breakdowns</p>
+                </div>
               </div>
-              <div>
-                <h4 className="text-sm font-bold text-white">Official WhatsApp Channel</h4>
-                <p className="text-xs text-slate-400">Follow the FACE ARENA (( Media)) channel on WhatsApp</p>
-              </div>
+
+              <a
+                href="https://youtube.com/@acadetcbtmaster?si=Z05Z-87Vtar00lsr"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                id="youtube-channel-btn"
+              >
+                <span>Subscribe on YouTube</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
             </div>
 
-            <a
-              href="https://whatsapp.com/channel/0029VbCkCtQ545urWwBmWM1Z"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center gap-2 shrink-0 cursor-pointer"
-              id="whatsapp-channel-btn"
-            >
-              <span>Join Channel</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
+            {/* Official WhatsApp Channel */}
+            <div className="bg-emerald-950/30 border border-emerald-500/40 p-4 rounded-2xl flex flex-col justify-between gap-3">
+              <div className="flex items-center gap-3 text-left">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">AcadetCBT Learning HUB</h4>
+                  <p className="text-[11px] text-slate-400">Follow the AcadetCBT Learning HUB channel on WhatsApp</p>
+                </div>
+              </div>
+
+              <a
+                href="https://whatsapp.com/channel/0029VbD0s0Y7oQhXIlLM4c3K"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                id="whatsapp-channel-btn"
+              >
+                <span>Join Channel</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
           </div>
 
         </div>

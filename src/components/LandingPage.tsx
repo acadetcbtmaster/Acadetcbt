@@ -25,6 +25,7 @@ import {
   Video,
   Globe,
   Layers,
+  Youtube,
 } from 'lucide-react';
 import { SubscriptionPlan, UserProfile, QuickLinkItem, HomepageSection } from '../types';
 import { StorageService } from '../services/storage';
@@ -603,43 +604,61 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               "Great ideas become reality through collaboration, dedication, and a shared commitment to excellence. Acadet is a reflection of that vision—built to inspire learning, empower students, and shape academic success."
             </blockquote>
 
-            {/* Social Media WhatsApp Link */}
-            <div className="bg-emerald-950/40 border border-emerald-500/40 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="flex items-center gap-4 text-left">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                  <MessageSquare className="w-6 h-6" />
+            {/* Official Social Media Links */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* YouTube Channel */}
+              <div className="bg-red-950/30 border border-red-500/40 p-6 rounded-2xl flex flex-col justify-between gap-4">
+                <div className="flex items-start gap-4 text-left">
+                  <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 shrink-0">
+                    <Youtube className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-white">Acadet CBT Master YouTube</h4>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-1">Subscribe for step-by-step video tutorials, CBT masterclasses & exam breakdowns by Joyce and team.</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-base font-bold text-white">FACE ARENA (( Media)) WhatsApp Channel</h4>
-                  <p className="text-xs sm:text-sm text-slate-300">Follow the FACE ARENA (( Media)) channel on WhatsApp for real-time academic updates and study materials.</p>
-                </div>
+
+                <a
+                  href="https://youtube.com/@acadetcbtmaster?si=Z05Z-87Vtar00lsr"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full px-5 py-3 bg-red-600 hover:bg-red-500 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-red-600/30 flex items-center justify-center gap-2 cursor-pointer"
+                  id="landing-youtube-btn"
+                >
+                  <Youtube className="w-4 h-4" />
+                  <span>Subscribe on YouTube (@acadetcbtmaster)</span>
+                  <ExternalLink className="w-4 h-4" />
+                </a>
               </div>
 
-              <a
-                href="https://whatsapp.com/channel/0029VbCkCtQ545urWwBmWM1Z"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full md:w-auto px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 shrink-0 cursor-pointer"
-                id="landing-whatsapp-btn"
-              >
-                <span>Follow Channel on WhatsApp</span>
-                <ExternalLink className="w-4 h-4" />
-              </a>
+              {/* Official WhatsApp Channel */}
+              <div className="bg-emerald-950/30 border border-emerald-500/40 p-6 rounded-2xl flex flex-col justify-between gap-4">
+                <div className="flex items-start gap-4 text-left">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                    <MessageSquare className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-white">AcadetCBT Learning HUB WhatsApp</h4>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-1">Follow the AcadetCBT Learning HUB channel on WhatsApp for real-time academic updates and study materials.</p>
+                  </div>
+                </div>
+
+                <a
+                  href="https://whatsapp.com/channel/0029VbD0s0Y7oQhXIlLM4c3K"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer"
+                  id="landing-whatsapp-btn"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Follow AcadetCBT Learning HUB</span>
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              </div>
             </div>
 
           </div>
 
-        </div>
-      </section>
-
-      {/* Real-Time Referral Leaderboard Section */}
-      <section className="py-16 bg-slate-950 relative" id="homepage-referral-leaderboard-section">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ReferralLeaderboard
-            currentUser={currentUser}
-            title="Referral Leaderboard"
-            idPrefix="homepage-referral-lb"
-          />
         </div>
       </section>
 
@@ -650,7 +669,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           <p className="text-slate-300 text-sm mb-6">Join thousands of university students practicing past questions and course material tests.</p>
           <button
             onClick={onStartPractice}
-            className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-xl shadow-indigo-600/30 transition-all"
+            className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-xl shadow-indigo-600/30 transition-all cursor-pointer"
           >
             Start Free Practice Now
           </button>
@@ -661,15 +680,24 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <footer className="py-8 bg-slate-950 border-t border-slate-900 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p>© 2026 Acadet CBT MASTER. Created by Menmex with the support of Joyce and the video tutorial team. All rights reserved.</p>
-          <div className="flex items-center space-x-4">
+          <div className="flex flex-wrap items-center justify-center gap-4">
             <a
-              href="https://whatsapp.com/channel/0029VbCkCtQ545urWwBmWM1Z"
+              href="https://youtube.com/@acadetcbtmaster?si=Z05Z-87Vtar00lsr"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-red-400 hover:text-red-300 font-semibold cursor-pointer flex items-center gap-1"
+            >
+              <Youtube className="w-3.5 h-3.5" />
+              <span>@acadetcbtmaster YouTube</span>
+            </a>
+            <a
+              href="https://whatsapp.com/channel/0029VbD0s0Y7oQhXIlLM4c3K"
               target="_blank"
               rel="noopener noreferrer"
               className="text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer flex items-center gap-1"
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              <span>FACE ARENA (( Media)) WhatsApp</span>
+              <span>AcadetCBT Learning HUB</span>
             </a>
             <span className="hover:text-slate-300 cursor-pointer">Privacy Policy</span>
             <span className="hover:text-slate-300 cursor-pointer">Terms of Service</span>

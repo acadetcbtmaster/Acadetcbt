@@ -675,12 +675,20 @@ export default function App() {
               About Acadet
             </button>
             <a
-              href="https://whatsapp.com/channel/0029VbCkCtQ545urWwBmWM1Z"
+              href="https://youtube.com/@acadetcbtmaster?si=Z05Z-87Vtar00lsr"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-red-400 hover:text-red-300 font-semibold cursor-pointer"
+            >
+              @acadetcbtmaster YouTube
+            </a>
+            <a
+              href="https://whatsapp.com/channel/0029VbD0s0Y7oQhXIlLM4c3K"
               target="_blank"
               rel="noopener noreferrer"
               className="text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer"
             >
-              FACE ARENA WhatsApp Channel
+              AcadetCBT Learning HUB
             </a>
             <button
               onClick={() => handleNavigate(currentUser ? (currentUser.role === 'admin' ? 'admin' : 'dashboard') : 'landing')}

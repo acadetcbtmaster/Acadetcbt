@@ -132,7 +132,7 @@ export const TutorialVideosSection: React.FC<TutorialVideosSectionProps> = ({
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 sm:p-8 relative overflow-hidden">
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 sm:p-8 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="absolute top-0 right-0 w-80 h-80 bg-red-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="relative z-10 max-w-3xl space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold">
@@ -146,6 +146,18 @@ export const TutorialVideosSection: React.FC<TutorialVideosSectionProps> = ({
             Prepared by Joyce and the video tutorial team with step-by-step breakdowns for difficult university CBT topics. Watch quick in-app previews, study key points, and continue on YouTube for full tutorials.
           </p>
         </div>
+
+        <a
+          href="https://youtube.com/@acadetcbtmaster?si=Z05Z-87Vtar00lsr"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="relative z-10 px-5 py-3 bg-red-600 hover:bg-red-500 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-red-600/30 flex items-center gap-2 shrink-0 cursor-pointer"
+          id="tutorial-header-youtube-channel-btn"
+        >
+          <Youtube className="w-4 h-4" />
+          <span>Visit @acadetcbtmaster Channel</span>
+          <ExternalLink className="w-3.5 h-3.5" />
+        </a>
       </div>
 
       {/* Search & Filter Controls */}
@@ -351,7 +363,7 @@ export const TutorialVideosSection: React.FC<TutorialVideosSectionProps> = ({
                       Watch Preview
                     </button>
                     <a
-                      href={vid.youtubeUrl || 'https://whatsapp.com/channel/0029VbCkCtQ545urWwBmWM1Z'}
+                      href={vid.youtubeUrl || 'https://youtube.com/@acadetcbtmaster?si=Z05Z-87Vtar00lsr'}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
@@ -524,7 +536,7 @@ export const TutorialVideosSection: React.FC<TutorialVideosSectionProps> = ({
                   Close Preview
                 </button>
                 <a
-                  href={activePreviewVideo.youtubeUrl || 'https://whatsapp.com/channel/0029VbCkCtQ545urWwBmWM1Z'}
+                  href={activePreviewVideo.youtubeUrl || 'https://youtube.com/@acadetcbtmaster?si=Z05Z-87Vtar00lsr'}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-6 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-red-600/30 flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
