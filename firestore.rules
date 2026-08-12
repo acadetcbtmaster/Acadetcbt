@@ -76,6 +76,17 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Dynamic Interface Editor: Quick Links & Homepage Sections
+    match /quick_links/{linkId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /homepage_sections/{sectionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Community Posts collection
     match /community_posts/{postId} {
       allow read: if true;

@@ -84,9 +84,54 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "name", "price", "durationDays", "active"]
+    },
+    "QuickLink": {
+      "title": "QuickLink",
+      "description": "Dynamic quick link items managed from Interface Editor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "icon": { "type": "string" },
+        "url": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "order": { "type": "number" },
+        "badge": { "type": "string" },
+        "target": { "type": "string", "enum": ["_blank", "_self"] }
+      },
+      "required": ["id", "title", "url", "status", "order"]
+    },
+    "HomepageSection": {
+      "title": "HomepageSection",
+      "description": "Dynamic homepage/interface sections managed from Interface Editor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["announcement", "quick_links", "featured_content", "latest_updates", "ad_banner", "custom_section"] },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "description": { "type": "string" },
+        "buttonText": { "type": "string" },
+        "buttonLink": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "bgImage": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "order": { "type": "number" },
+        "badge": { "type": "string" }
+      },
+      "required": ["id", "type", "title", "status", "order"]
     }
   },
   "firestore": {
+    "/quick_links/{linkId}": {
+      "schema": "QuickLink",
+      "description": "Dynamic quick links collection"
+    },
+    "/homepage_sections/{sectionId}": {
+      "schema": "HomepageSection",
+      "description": "Dynamic homepage sections collection"
+    },
     "/subscription_plans/{planId}": {
       "schema": "SubscriptionPlan",
       "description": "Subscription plan definitions"

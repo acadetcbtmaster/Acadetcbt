@@ -1814,6 +1814,48 @@ export interface FaceArenaArchive {
   settings: FaceArenaSettings;
 }
 
+// Dynamic Interface Editor Types
+export interface QuickLinkItem {
+  id: string;
+  title: string;
+  description?: string;
+  icon?: string;
+  url: string;
+  status: 'active' | 'inactive';
+  order: number;
+  badge?: string;
+  target?: '_blank' | '_self';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type HomepageSectionType =
+  | 'announcement'
+  | 'quick_links'
+  | 'featured_content'
+  | 'latest_updates'
+  | 'ad_banner'
+  | 'custom_section';
+
+export interface HomepageSection {
+  id: string;
+  type: HomepageSectionType;
+  title: string;
+  subtitle?: string;
+  description?: string;
+  buttonText?: string;
+  buttonLink?: string;
+  imageUrl?: string;
+  bgImage?: string;
+  bgColor?: string;
+  textColor?: string;
+  status: 'active' | 'inactive';
+  order: number;
+  badge?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 
 
 

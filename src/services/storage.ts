@@ -36,6 +36,8 @@ import {
   FaceArenaQuestion,
   FaceArenaParticipant,
   FaceArenaArchive,
+  QuickLinkItem,
+  HomepageSection,
   DEFAULT_FACULTY_DEPARTMENTS,
   SEED_UNIVERSITIES,
   SEED_FACULTIES,
@@ -672,6 +674,8 @@ const STORAGE_KEYS = {
   FACE_ARENA_QUESTIONS: 'cbt_face_arena_questions',
   FACE_ARENA_PARTICIPANTS: 'cbt_face_arena_participants',
   FACE_ARENA_ARCHIVES: 'cbt_face_arena_archives',
+  QUICK_LINKS: 'cbt_quick_links',
+  HOMEPAGE_SECTIONS: 'cbt_homepage_sections',
 };
 
 const DEFAULT_FACE_ARENA_SETTINGS: FaceArenaSettings = {
@@ -3846,6 +3850,187 @@ export class StorageService {
   static resetSignupFacultyGroups(): FacultyGroup[] {
     this.saveSignupFacultyGroups(DEFAULT_FACULTY_DEPARTMENTS);
     return DEFAULT_FACULTY_DEPARTMENTS;
+  }
+
+  // Dynamic Interface Editor: Quick Links
+  static getQuickLinks(): QuickLinkItem[] {
+    const defaultLinks: QuickLinkItem[] = [
+      {
+        id: 'ql-1',
+        title: 'Face Arena',
+        description: 'Real-time CBT Quiz Battle & Competition',
+        icon: 'Swords',
+        url: '/face-arena',
+        status: 'active',
+        order: 1,
+        badge: 'LIVE BATTLE',
+        target: '_self',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'ql-2',
+        title: 'WhatsApp Channel',
+        description: 'Get Instant Exam & Study Updates',
+        icon: 'MessageSquare',
+        url: 'https://whatsapp.com/channel/0029VaMencoreCBTUpdates',
+        status: 'active',
+        order: 2,
+        badge: 'JOIN HUB',
+        target: '_blank',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'ql-3',
+        title: 'Study Materials',
+        description: 'Verified Past Question PDFs & Course Summaries',
+        icon: 'FileText',
+        url: '/study-materials',
+        status: 'active',
+        order: 3,
+        target: '_self',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'ql-4',
+        title: 'Scholarship Updates',
+        description: 'Latest University & Undergraduate Scholarships',
+        icon: 'GraduationCap',
+        url: 'https://scholarships.ng',
+        status: 'active',
+        order: 4,
+        badge: 'SCHOLARSHIPS',
+        target: '_blank',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'ql-5',
+        title: 'YouTube Channel',
+        description: 'Video Tutorials, Exam Hacks & Explanations',
+        icon: 'Video',
+        url: 'https://youtube.com/@mencore_cbt',
+        status: 'active',
+        order: 5,
+        badge: 'TUTORIALS',
+        target: '_blank',
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    return this.getItem<QuickLinkItem[]>(STORAGE_KEYS.QUICK_LINKS, defaultLinks);
+  }
+
+  static saveQuickLinks(links: QuickLinkItem[]): void {
+    const sorted = [...links].sort((a, b) => a.order - b.order);
+    this.setItem(STORAGE_KEYS.QUICK_LINKS, sorted);
+    setDoc(doc(db, 'interface_settings', 'quick_links'), { links: safeClone(sorted), updatedAt: new Date().toISOString() }, { merge: true }).catch((err) => {
+      handleFirestoreError(err, OperationType.WRITE, 'interface_settings/quick_links');
+    });
+  }
+
+  static listenQuickLinks(callback: (links: QuickLinkItem[]) => void): Unsubscribe {
+    const docRef = doc(db, 'interface_settings', 'quick_links');
+    return onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.links)) {
+          const sorted = [...data.links].sort((a, b) => a.order - b.order);
+          this.setItem(STORAGE_KEYS.QUICK_LINKS, sorted);
+          callback(sorted);
+          return;
+        }
+      }
+      callback(this.getQuickLinks());
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'interface_settings/quick_links');
+      callback(this.getQuickLinks());
+    });
+  }
+
+  // Dynamic Interface Editor: Homepage Sections
+  static getHomepageSections(): HomepageSection[] {
+    const defaultSections: HomepageSection[] = [
+      {
+        id: 'sec-1',
+        type: 'announcement',
+        title: '📢 Semester Examination Mock CBT Practice Platform',
+        subtitle: 'UNILAG, UI, ABU, FUL, FUAHSE & Top Nigerian Universities',
+        description: 'Practice verified university past questions, simulate timed CBT exams, and generate step-by-step explanations directly from lecture PDF course outlines.',
+        buttonText: 'Start Free Mock CBT (30 Free Qs)',
+        buttonLink: '/practice',
+        bgColor: 'from-indigo-950/70 via-purple-950/50 to-slate-950',
+        textColor: 'text-white',
+        status: 'active',
+        order: 1,
+        badge: 'NOTICE',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'sec-2',
+        type: 'quick_links',
+        title: '⚡ Essential Student Links & Portals',
+        subtitle: 'Direct access to quick tools, study materials, and learning portals',
+        description: 'Explore live Face Arena CBT battles, WhatsApp channels, scholarship updates, and study PDFs.',
+        status: 'active',
+        order: 2,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'sec-3',
+        type: 'featured_content',
+        title: '🏆 Face Arena Live CBT Championship',
+        subtitle: 'Challenge fellow university students in real-time quiz battles',
+        description: 'Compete head-to-head on verified university past questions, earn instant points, and climb the national student leaderboard.',
+        buttonText: 'Enter Face Arena Battle',
+        buttonLink: '/face-arena',
+        imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80',
+        bgColor: 'from-amber-950/40 via-slate-900/80 to-slate-950',
+        status: 'active',
+        order: 3,
+        badge: 'HOT FEATURE',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'sec-4',
+        type: 'ad_banner',
+        title: '🚀 Upgrade to Premium Unlimited CBT Access',
+        subtitle: 'Get unlimited past questions, smart PDF material summaries & priority support',
+        description: 'Unlock 50,000+ verified past questions across all faculties, automated PDF question extraction, and unlimited mock CBT simulations.',
+        buttonText: 'Unlock Premium Now',
+        buttonLink: '/subscribe',
+        bgColor: 'from-emerald-950/50 via-indigo-950/50 to-slate-950',
+        status: 'active',
+        order: 4,
+        badge: 'SPECIAL OFFER',
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    return this.getItem<HomepageSection[]>(STORAGE_KEYS.HOMEPAGE_SECTIONS, defaultSections);
+  }
+
+  static saveHomepageSections(sections: HomepageSection[]): void {
+    const sorted = [...sections].sort((a, b) => a.order - b.order);
+    this.setItem(STORAGE_KEYS.HOMEPAGE_SECTIONS, sorted);
+    setDoc(doc(db, 'interface_settings', 'homepage_sections'), { sections: safeClone(sorted), updatedAt: new Date().toISOString() }, { merge: true }).catch((err) => {
+      handleFirestoreError(err, OperationType.WRITE, 'interface_settings/homepage_sections');
+    });
+  }
+
+  static listenHomepageSections(callback: (sections: HomepageSection[]) => void): Unsubscribe {
+    const docRef = doc(db, 'interface_settings', 'homepage_sections');
+    return onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.sections)) {
+          const sorted = [...data.sections].sort((a, b) => a.order - b.order);
+          this.setItem(STORAGE_KEYS.HOMEPAGE_SECTIONS, sorted);
+          callback(sorted);
+          return;
+        }
+      }
+      callback(this.getHomepageSections());
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'interface_settings/homepage_sections');
+      callback(this.getHomepageSections());
+    });
   }
 }
 

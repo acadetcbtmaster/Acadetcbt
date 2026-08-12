@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   BookOpen,
@@ -21,8 +21,13 @@ import {
   MessageSquare,
   ExternalLink,
   Quote,
+  Swords,
+  Video,
+  Globe,
+  Layers,
 } from 'lucide-react';
-import { SubscriptionPlan, UserProfile } from '../types';
+import { SubscriptionPlan, UserProfile, QuickLinkItem, HomepageSection } from '../types';
+import { StorageService } from '../services/storage';
 import { ReferralLeaderboard } from './ReferralLeaderboard';
 
 interface LandingPageProps {
@@ -43,6 +48,40 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
+
+  // Dynamic Interface Editor Content
+  const [quickLinks, setQuickLinks] = useState<QuickLinkItem[]>([]);
+  const [homepageSections, setHomepageSections] = useState<HomepageSection[]>([]);
+
+  useEffect(() => {
+    const unsubLinks = StorageService.listenQuickLinks((links) => {
+      setQuickLinks(links.filter((l) => l.status === 'active'));
+    });
+
+    const unsubSections = StorageService.listenHomepageSections((sections) => {
+      setHomepageSections(sections.filter((s) => s.status === 'active'));
+    });
+
+    return () => {
+      unsubLinks();
+      unsubSections();
+    };
+  }, []);
+
+  const renderQuickLinkIcon = (iconName?: string) => {
+    switch (iconName) {
+      case 'Swords': return <Swords className="w-5 h-5 text-amber-400" />;
+      case 'MessageSquare': return <MessageSquare className="w-5 h-5 text-emerald-400" />;
+      case 'FileText': return <FileText className="w-5 h-5 text-indigo-400" />;
+      case 'GraduationCap': return <GraduationCap className="w-5 h-5 text-purple-400" />;
+      case 'Video': return <Video className="w-5 h-5 text-rose-400" />;
+      case 'Sparkles': return <Sparkles className="w-5 h-5 text-amber-300" />;
+      case 'BookOpen': return <BookOpen className="w-5 h-5 text-cyan-400" />;
+      case 'Zap': return <Zap className="w-5 h-5 text-yellow-400" />;
+      case 'Award': return <Award className="w-5 h-5 text-amber-500" />;
+      default: return <Globe className="w-5 h-5 text-slate-400" />;
+    }
+  };
 
   const sampleQuestion = {
     q: 'GST101: Which of the following best exemplifies the subject-verb concord rule regarding proximity in "neither... nor"?',
@@ -144,6 +183,115 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
       </section>
+
+      {/* Dynamic Homepage Sections Managed via Admin Interface Editor */}
+      {homepageSections.map((sec) => (
+        <section key={sec.id} className="py-12 border-b border-slate-900 bg-slate-950">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            
+            {/* Type: Announcement */}
+            {sec.type === 'announcement' && (
+              <div className={`p-6 sm:p-8 rounded-3xl border border-indigo-500/30 bg-gradient-to-r ${sec.bgColor || 'from-indigo-950/70 via-purple-950/50 to-slate-950'} relative overflow-hidden shadow-2xl`}>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+                  <div className="space-y-2 max-w-3xl">
+                    {sec.badge && (
+                      <span className="inline-block px-3 py-1 rounded-full text-xs font-extrabold bg-amber-400 text-slate-950 mb-1">
+                        {sec.badge}
+                      </span>
+                    )}
+                    <h2 className="text-2xl sm:text-3xl font-extrabold text-white">{sec.title}</h2>
+                    {sec.subtitle && <p className="text-sm font-semibold text-indigo-300">{sec.subtitle}</p>}
+                    {sec.description && <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">{sec.description}</p>}
+                  </div>
+                  {sec.buttonText && (
+                    <button
+                      onClick={onStartPractice}
+                      className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 shrink-0 cursor-pointer"
+                    >
+                      {sec.buttonText}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Type: Quick Links */}
+            {sec.type === 'quick_links' && quickLinks.length > 0 && (
+              <div className="space-y-6">
+                <div className="text-center max-w-2xl mx-auto">
+                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
+                    Quick Portals & Resources
+                  </span>
+                  <h2 className="text-2xl sm:text-3xl font-bold text-white mt-3">{sec.title}</h2>
+                  {sec.subtitle && <p className="text-slate-400 text-xs sm:text-sm mt-1">{sec.subtitle}</p>}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                  {quickLinks.map((link) => (
+                    <a
+                      key={link.id}
+                      href={link.url}
+                      target={link.target || '_self'}
+                      rel={link.target === '_blank' ? 'noopener noreferrer' : undefined}
+                      className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-indigo-500/60 hover:bg-slate-900/90 transition-all flex flex-col justify-between group shadow-xl"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0">
+                            {renderQuickLinkIcon(link.icon)}
+                          </div>
+                          {link.badge && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                              {link.badge}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                          <span>{link.title}</span>
+                          {link.target === '_blank' && <ExternalLink className="w-3 h-3 text-slate-500" />}
+                        </h3>
+                        {link.description && <p className="text-xs text-slate-400 mt-1.5 leading-relaxed line-clamp-2">{link.description}</p>}
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs font-semibold text-indigo-400 group-hover:translate-x-0.5 transition-transform">
+                        <span>Open Link</span>
+                        <span>→</span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Type: Featured Content / Banner */}
+            {(sec.type === 'featured_content' || sec.type === 'ad_banner') && (
+              <div className={`p-6 sm:p-8 rounded-3xl border border-slate-800 bg-gradient-to-r ${sec.bgColor || 'from-slate-900 to-slate-950'} flex flex-col md:flex-row items-center gap-8 shadow-2xl`}>
+                {sec.imageUrl && (
+                  <img src={sec.imageUrl} alt={sec.title} className="w-full md:w-80 h-48 object-cover rounded-2xl border border-slate-800 shrink-0" />
+                )}
+                <div className="space-y-3 flex-1">
+                  {sec.badge && (
+                    <span className="inline-block px-3 py-1 rounded-full text-xs font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      {sec.badge}
+                    </span>
+                  )}
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-white">{sec.title}</h2>
+                  {sec.subtitle && <p className="text-sm font-semibold text-indigo-300">{sec.subtitle}</p>}
+                  {sec.description && <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">{sec.description}</p>}
+                  {sec.buttonText && (
+                    <button
+                      onClick={onStartPractice}
+                      className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md inline-block mt-2 cursor-pointer"
+                    >
+                      {sec.buttonText}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+          </div>
+        </section>
+      ))}
 
       {/* Interactive Sample CBT Teaser */}
       <section className="py-16 bg-slate-900/40 border-b border-slate-900" id="sample-cbt-teaser">
