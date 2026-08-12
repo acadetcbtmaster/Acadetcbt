@@ -846,13 +846,42 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     const timestamp = Date.now();
     const cleanUid = String(effUserId).replace(/[^a-zA-Z0-9_]/g, '');
 
-    // Determine base App URL
-    const rawHost = req.get('host') || 'cadetcbt.website';
-    const rawProto = req.get('x-forwarded-proto') || req.protocol || 'https';
-    const isLocalhost = rawHost.includes('localhost') || rawHost.includes('127.0.0.1');
-    const secureProto = isLocalhost ? rawProto : 'https';
-    const reqHostUrl = `${secureProto}://${rawHost}`;
-    const appUrl = (process.env.APP_URL || reqHostUrl).replace(/\/+$/, "");
+    // Determine base App URL safely without stale Railway URLs
+    let resolvedHostUrl = '';
+
+    // 1. Try origin or referer header first (e.g. "https://acadetcbt.website")
+    const originHeader = req.get('origin') || req.get('referer');
+    if (originHeader) {
+      try {
+        const parsed = new URL(originHeader);
+        if (parsed.protocol.startsWith('http') && !parsed.hostname.includes('railway.app')) {
+          resolvedHostUrl = `${parsed.protocol}//${parsed.host}`;
+        }
+      } catch (e) {}
+    }
+
+    // 2. If origin Header not found, try x-forwarded-host or host
+    if (!resolvedHostUrl) {
+      const xHost = req.get('x-forwarded-host') || req.get('host') || '';
+      if (xHost && !xHost.includes('railway.app')) {
+        const rawProto = req.get('x-forwarded-proto') || req.protocol || 'https';
+        const isLocalhost = xHost.includes('localhost') || xHost.includes('127.0.0.1');
+        const secureProto = isLocalhost ? rawProto : 'https';
+        resolvedHostUrl = `${secureProto}://${xHost}`;
+      }
+    }
+
+    // 3. Fallback to process.env.APP_URL if valid and not railway
+    if (!resolvedHostUrl && process.env.APP_URL && !process.env.APP_URL.includes('railway.app')) {
+      resolvedHostUrl = process.env.APP_URL.replace(/\/+$/, "");
+    }
+
+    // 4. Fallback to active website domain
+    if (!resolvedHostUrl || resolvedHostUrl.includes('railway.app')) {
+      resolvedHostUrl = 'https://acadetcbt.website';
+    }
+
+    const appUrl = resolvedHostUrl.replace(/\/+$/, "");
     const callbackUrl = `${appUrl}/payment-success`;
 
     // ------------------- KORAPAY INITIALIZATION -------------------
@@ -1749,10 +1778,6 @@ async function startServer() {
 
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://0.0.0.0:${PORT}`);
-      // Asynchronously cancel all existing subscriptions in Firestore until users pay
-      cancelAllUserSubscriptionsInFirestore().catch((err) => {
-        console.warn("Initial subscription cancellation failed:", err);
-      });
     });
   } catch (err) {
     console.error("Failed to start server:", err);

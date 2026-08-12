@@ -128,6 +128,40 @@ export default function App() {
 
   // Real-Time Data Architecture & Live Sync across all modules
   useEffect(() => {
+    const checkAndVerifyPendingPayments = async () => {
+      const pendingRef = localStorage.getItem('pending_payment_ref');
+      if (pendingRef) {
+        try {
+          const res = await ApiClient.verifyPaymentByRef(pendingRef);
+          if (res && (res.success || res.status === 'success' || res.alreadyVerified)) {
+            const currentU = StorageService.getUser();
+            if (currentU) {
+              const activatedPlan = res.planName || res.user?.subscriptionPlan || 'Premium Membership';
+              const updatedUser: UserProfile = {
+                ...currentU,
+                subscriptionPlan: activatedPlan,
+                subscriptionStatus: 'active',
+                subscription: {
+                  isPremium: true,
+                  plan: activatedPlan,
+                  startDate: new Date().toISOString(),
+                  expiryDate: new Date(Date.now() + 30 * 86400000).toISOString(),
+                  questionsAttemptedCount: 0,
+                  freeLimit: 999999,
+                },
+              };
+              StorageService.saveUser(updatedUser);
+              setCurrentUser(updatedUser);
+            }
+            localStorage.removeItem('pending_payment_ref');
+            localStorage.removeItem('pending_payment_time');
+          }
+        } catch (e) {
+          console.warn('[Auto Payment Check] Notice:', e);
+        }
+      }
+    };
+
     const syncAllData = () => {
       const refreshedUser = StorageService.getUser();
       if (refreshedUser) {
@@ -145,6 +179,7 @@ export default function App() {
       setTransactions(StorageService.getTransactions());
       setPlans(StorageService.getSubscriptionPlans());
       setSettings(StorageService.getSystemSettings());
+      checkAndVerifyPendingPayments();
     };
 
     // Initial sync

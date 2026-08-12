@@ -36,6 +36,52 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const [selectedGateway, setSelectedGateway] = useState<'squad' | 'korapay'>('squad');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [verifyingManual, setVerifyingManual] = useState<boolean>(false);
+  const [manualRefInput, setManualRefInput] = useState<string>('');
+  const [showVerifyInput, setShowVerifyInput] = useState<boolean>(false);
+
+  const handleVerifyRecentPayment = async (customRef?: string) => {
+    const refToVerify = (customRef || manualRefInput || localStorage.getItem('pending_payment_ref') || '').trim();
+    if (!refToVerify) {
+      setError('Please enter a valid transaction reference to verify.');
+      return;
+    }
+    setVerifyingManual(true);
+    setError(null);
+    try {
+      const res = await ApiClient.verifyPaymentByRef(refToVerify);
+      if (res && (res.success || res.status === 'success' || res.alreadyVerified)) {
+        const activatedPlan = res.planName || res.user?.subscriptionPlan || 'Premium Membership';
+        const updatedUser: UserProfile = {
+          ...user,
+          subscriptionPlan: activatedPlan,
+          subscriptionStatus: 'active',
+          subscription: {
+            isPremium: true,
+            plan: activatedPlan,
+            startDate: new Date().toISOString(),
+            expiryDate: new Date(Date.now() + 30 * 86400000).toISOString(),
+            questionsAttemptedCount: 0,
+            freeLimit: 999999,
+          },
+        };
+        StorageService.saveUser(updatedUser);
+        if (onUpdateUser) {
+          onUpdateUser(updatedUser);
+        }
+        localStorage.removeItem('pending_payment_ref');
+        localStorage.removeItem('pending_payment_time');
+        alert(`Payment Verified! Premium subscription (${activatedPlan}) is now ACTIVE on your account.`);
+        onClose();
+      } else {
+        setError(res?.error || 'Could not verify payment with Squad/KoraPay. Please check the reference or contact support.');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Error verifying payment. Please try again.');
+    } finally {
+      setVerifyingManual(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -84,6 +130,11 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
       if (res && res.success && (res.checkoutUrl || res.paymentLink)) {
         const redirectUrl = res.checkoutUrl || res.paymentLink;
+        const txRef = res.reference || res.transactionRef || res.paymentId;
+        if (txRef) {
+          localStorage.setItem('pending_payment_ref', txRef);
+          localStorage.setItem('pending_payment_time', Date.now().toString());
+        }
         window.location.href = redirectUrl;
       } else {
         const extraDetails = res?.details && typeof res.details === 'object' 
@@ -295,6 +346,49 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
             <span>{error}</span>
           </div>
         )}
+
+        {/* Already Paid? Quick Verification Bar */}
+        <div className="pt-1 border-t border-slate-800/80">
+          {!showVerifyInput ? (
+            <button
+              type="button"
+              onClick={() => {
+                setShowVerifyInput(true);
+                const pendingRef = localStorage.getItem('pending_payment_ref');
+                if (pendingRef) {
+                  setManualRefInput(pendingRef);
+                }
+              }}
+              className="w-full py-2 px-3 bg-slate-800/60 hover:bg-slate-800 text-emerald-400 hover:text-emerald-300 rounded-xl text-xs font-semibold border border-slate-700/80 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Already made a payment? Verify transaction here</span>
+            </button>
+          ) : (
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 space-y-2">
+              <label className="text-[11px] font-bold text-slate-300 block">
+                Enter Payment Transaction Reference:
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={manualRefInput}
+                  onChange={(e) => setManualRefInput(e.target.value)}
+                  placeholder="e.g. ACADE_17234..."
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleVerifyRecentPayment()}
+                  disabled={verifyingManual}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  {verifyingManual ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Verify'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Bottom Action Footer with Pay, Back, and Cancel Buttons */}
         <div className="space-y-2.5 pt-2 shrink-0">
