@@ -194,6 +194,7 @@ export const InterfaceEditorModule: React.FC = () => {
       showToast('✅ New quick link created!');
     }
 
+    setQuickLinks(updatedList);
     StorageService.saveQuickLinks(updatedList);
     setIsLinkModalOpen(false);
   };
@@ -204,6 +205,7 @@ export const InterfaceEditorModule: React.FC = () => {
         ? { ...item, status: (item.status === 'active' ? 'inactive' : 'active') as 'active' | 'inactive' }
         : item
     );
+    setQuickLinks(updated);
     StorageService.saveQuickLinks(updated);
     showToast(`Status changed to ${link.status === 'active' ? 'Inactive' : 'Active'}`);
   };
@@ -221,6 +223,7 @@ export const InterfaceEditorModule: React.FC = () => {
 
     // Recalculate order indices
     const reordered = newLinks.map((item, idx) => ({ ...item, order: idx + 1 }));
+    setQuickLinks(reordered);
     StorageService.saveQuickLinks(reordered);
     showToast('Display position reordered!');
   };
@@ -291,6 +294,7 @@ export const InterfaceEditorModule: React.FC = () => {
       showToast('✅ New homepage section created!');
     }
 
+    setHomepageSections(updatedList);
     StorageService.saveHomepageSections(updatedList);
     setIsSectionModalOpen(false);
   };
@@ -301,6 +305,7 @@ export const InterfaceEditorModule: React.FC = () => {
         ? { ...item, status: (item.status === 'active' ? 'inactive' : 'active') as 'active' | 'inactive' }
         : item
     );
+    setHomepageSections(updated);
     StorageService.saveHomepageSections(updated);
     showToast(`Section ${sec.status === 'active' ? 'Hidden' : 'Published'}`);
   };
@@ -316,6 +321,7 @@ export const InterfaceEditorModule: React.FC = () => {
     newSections[targetIndex] = temp;
 
     const reordered = newSections.map((item, idx) => ({ ...item, order: idx + 1 }));
+    setHomepageSections(reordered);
     StorageService.saveHomepageSections(reordered);
     showToast('Section order updated!');
   };
@@ -326,10 +332,12 @@ export const InterfaceEditorModule: React.FC = () => {
 
     if (deleteTarget.type === 'link') {
       const updated = quickLinks.filter((l) => l.id !== deleteTarget.id);
+      setQuickLinks(updated);
       StorageService.saveQuickLinks(updated);
       showToast('Quick link deleted');
     } else {
       const updated = homepageSections.filter((s) => s.id !== deleteTarget.id);
+      setHomepageSections(updated);
       StorageService.saveHomepageSections(updated);
       showToast('Homepage section deleted');
     }

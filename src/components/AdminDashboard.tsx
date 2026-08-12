@@ -1964,11 +1964,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               Reset Pwd
                             </button>
 
-                            {(std.subscription?.isPremium || (std.subscription?.plan && std.subscription.plan !== 'Free Trial' && std.subscription.plan !== 'Cancelled')) && (
+                            {(std.subscription?.isPremium || std.subscriptionStatus === 'active') && (
                               <button
                                 onClick={() => handleCancelSubscription(std.id)}
                                 className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-xs font-bold text-rose-300 rounded-lg cursor-pointer"
-                                title="Cancel Subscription"
+                                title="Cancel Active Subscription"
                               >
                                 Cancel Sub
                               </button>
