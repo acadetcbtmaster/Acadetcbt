@@ -300,7 +300,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return 'Sign-in popup was closed before completing authentication.';
     }
     if (code === 'auth/network-request-failed' || msg.includes('network-request-failed')) {
-      return 'Network error. Please check your internet connection and try again.';
+      return 'Network connection issue detected. Local sign-in & registration remain fully active.';
     }
 
     // Convert generic technical error strings
@@ -749,9 +749,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         const code = authErr?.code || '';
         const msg = authErr?.message || '';
 
-        // If domain unauthorized or operation not allowed in Firebase Auth console,
+        // If domain unauthorized, operation not allowed, or network failure in Firebase Auth console,
         // but user is attempting valid credentials, allow creating/logging into local session
-        if (code === 'auth/unauthorized-domain' || code === 'auth/operation-not-allowed' || msg.includes('unauthorized-domain')) {
+        if (
+          code === 'auth/unauthorized-domain' ||
+          code === 'auth/operation-not-allowed' ||
+          code === 'auth/network-request-failed' ||
+          msg.includes('unauthorized-domain') ||
+          msg.includes('network-request-failed')
+        ) {
           const fallbackUser: UserProfile = matched || {
             id: `usr-${Date.now()}`,
             name: targetEmail.split('@')[0] || 'Student',

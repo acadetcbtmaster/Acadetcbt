@@ -150,23 +150,29 @@ export default function App() {
     // Initial sync
     syncAllData();
 
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser) {
-        const storedUsers = StorageService.getUsers();
-        const matched = storedUsers.find(
-          (u) => u.email?.toLowerCase() === firebaseUser.email?.toLowerCase() || u.googleUserId === firebaseUser.uid
-        );
-        if (matched) {
-          setCurrentUser(matched);
-          StorageService.saveUser(matched);
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (firebaseUser) => {
+        if (firebaseUser) {
+          const storedUsers = StorageService.getUsers();
+          const matched = storedUsers.find(
+            (u) => u.email?.toLowerCase() === firebaseUser.email?.toLowerCase() || u.googleUserId === firebaseUser.uid
+          );
+          if (matched) {
+            setCurrentUser(matched);
+            StorageService.saveUser(matched);
+          }
+        } else {
+          const savedUser = StorageService.getUser();
+          if (!savedUser) {
+            setCurrentUser(null);
+          }
         }
-      } else {
-        const savedUser = StorageService.getUser();
-        if (!savedUser) {
-          setCurrentUser(null);
-        }
+      },
+      (err) => {
+        console.warn('Firebase Auth state listener notice:', err?.message || err);
       }
-    });
+    );
 
     window.addEventListener('focus', syncAllData);
     window.addEventListener('storage', syncAllData);
