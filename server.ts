@@ -795,7 +795,10 @@ const getLivePlanFromFirestore = async (planId: string) => {
 // 2. Initiate Payment (POST /api/payments/initiate & aliases)
 const handlePaymentInitiation = async (req: express.Request, res: express.Response) => {
   const backendStartTime = Date.now();
+  console.log(`\n========================================`);
+  console.log(`[Payment Init] Request Received: ${new Date(backendStartTime).toISOString()}`);
   try {
+    console.log(`[Payment Init] Validation Started (Elapsed: 0ms)`);
     const { planId, email, userEmail, userId, uid, userName, userUsername } = req.body;
     const reqAmount = Number(req.body.amount);
     const provider = String(req.body.provider || req.body.gateway || "").toLowerCase();
@@ -834,13 +837,11 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     const amountSentToGateway = provider === "korapay" ? amountInNaira : amountInKobo;
 
     // Required Debug Logs (Selected Plan Price, Amount Sent To Gateway, Gateway Name)
-    console.log(`\n=================== [PAYMENT DEBUG LOG] ===================`);
     console.log(`- Selected Plan Price: ₦${amountInNaira}`);
     console.log(`- Plan Duration Days: ${durationDays} days`);
     console.log(`- Gateway Name: ${gatewayName}`);
     console.log(`- Amount Sent To Gateway: ${amountSentToGateway} (${provider === 'korapay' ? 'Naira' : 'Kobo'})`);
     console.log(`- Plan ID: ${planId || 'default'} | Plan Name: ${planTitle}`);
-    console.log(`===========================================================\n`);
 
     const timestamp = Date.now();
     const cleanUid = String(effUserId).replace(/[^a-zA-Z0-9_]/g, '');
@@ -923,10 +924,10 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         },
       };
 
-      console.log(`[KoraPay Initiate] Initiating NGN ${amountInNaira} for ${userEmailStr} (Ref: ${cleanRef})`);
+      const gatewayCallStart = Date.now();
+      console.log(`[Payment Init] Gateway Request Sent: KoraPay (${cleanRef}) at ${new Date(gatewayCallStart).toISOString()}`);
 
       // Primary attempt: charges/initialize with 4s timeout
-      const gatewayCallStart = Date.now();
       let korapayRes = await fetch(`${getKorapayBaseUrl()}/merchant/api/v1/charges/initialize`, {
         method: "POST",
         headers: {
@@ -939,6 +940,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
 
       let korapayData = await korapayRes.json();
       let gatewayDuration = Date.now() - gatewayCallStart;
+      console.log(`[Payment Init] Gateway Response Received: KoraPay in ${gatewayDuration}ms`);
 
       // Fast single fallback without metadata if Korapay metadata validation failed
       if (!korapayData.status && (korapayData.error === "validation_error" || korapayData.message?.toLowerCase().includes("invalid"))) {
@@ -972,7 +974,6 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       }
 
       const totalBackendTimeMs = Date.now() - backendStartTime;
-      console.log(`[KoraPay Initiate Timing] Gateway API call took ${gatewayDuration}ms | Total backend handling took ${totalBackendTimeMs}ms`);
 
       if ((korapayData.status === true || korapayData.status === "true" || korapayData.status === 200) && korapayData.data) {
         const checkoutUrl = korapayData.data.checkout_url || korapayData.data.authorization_url;
@@ -983,6 +984,10 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
             korapayResponse: korapayData,
           });
         }
+
+        console.log(`[Payment Init] Checkout URL Returned: ${checkoutUrl}`);
+        console.log(`[Payment Init] Total Duration: ${totalBackendTimeMs}ms`);
+        console.log(`========================================\n`);
 
         return res.json({
           success: true,
@@ -1055,9 +1060,9 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       },
     };
 
-    console.log(`[Squad Initiate] Initiating NGN ${amountInNaira} for ${effEmail} (Ref: ${reference})`);
-
     const gatewayCallStart = Date.now();
+    console.log(`[Payment Init] Gateway Request Sent: Squad (${reference}) at ${new Date(gatewayCallStart).toISOString()}`);
+
     const squadRes = await fetch(`${baseUrl}/transaction/initiate`, {
       method: "POST",
       headers: {
@@ -1072,7 +1077,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     const gatewayDuration = Date.now() - gatewayCallStart;
     const totalBackendTimeMs = Date.now() - backendStartTime;
 
-    console.log(`[Squad Initiate Timing] Gateway API call took ${gatewayDuration}ms | Total backend handling took ${totalBackendTimeMs}ms`);
+    console.log(`[Payment Init] Gateway Response Received: Squad in ${gatewayDuration}ms`);
 
     if ((squadData.status === 200 || squadData.status === "200" || squadData.success) && squadData.data) {
       const checkoutUrl = squadData.data.checkout_url || squadData.data.auth_url;
@@ -1083,6 +1088,10 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
           squadResponse: squadData,
         });
       }
+
+      console.log(`[Payment Init] Checkout URL Returned: ${checkoutUrl}`);
+      console.log(`[Payment Init] Total Duration: ${totalBackendTimeMs}ms`);
+      console.log(`========================================\n`);
 
       return res.json({
         success: true,
@@ -1108,7 +1117,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       });
     }
   } catch (err: any) {
-    console.error("[Payment Initiate Exception]", err);
+    console.error("[Payment Init Exception]", err);
     return res.status(500).json({
       success: false,
       error: err.message || "Server error while contacting Payment Gateway.",
