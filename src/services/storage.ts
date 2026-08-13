@@ -1337,6 +1337,72 @@ export class StorageService {
     } catch (err) {
       console.warn('Failed to attach admin_notifications listener:', err);
     }
+
+    // 22. Real-time Community Announcements Listener
+    try {
+      const unsubCommunityAnnouncements = onSnapshot(
+        collection(db, 'community_announcements'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const announcements: CommunityAnnouncement[] = [];
+            snapshot.forEach((docSnap) => {
+              announcements.push({ ...docSnap.data(), id: docSnap.id } as CommunityAnnouncement);
+            });
+            this.setItem(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, announcements);
+          }
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.GET, 'community_announcements');
+        }
+      );
+      this.unsubscribers.push(unsubCommunityAnnouncements);
+    } catch (err) {
+      console.warn('Failed to attach community_announcements listener:', err);
+    }
+
+    // 23. Real-time Learning Resources Listener
+    try {
+      const unsubLearningResources = onSnapshot(
+        collection(db, 'learning_resources'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const resources: LearningResourceItem[] = [];
+            snapshot.forEach((docSnap) => {
+              resources.push({ ...docSnap.data(), id: docSnap.id } as LearningResourceItem);
+            });
+            this.setItem(STORAGE_KEYS.LEARNING_RESOURCES, resources);
+          }
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.GET, 'learning_resources');
+        }
+      );
+      this.unsubscribers.push(unsubLearningResources);
+    } catch (err) {
+      console.warn('Failed to attach learning_resources listener:', err);
+    }
+
+    // 24. Real-time Quick Links Listener
+    try {
+      const unsubQuickLinks = onSnapshot(
+        collection(db, 'quick_links'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const links: QuickLinkItem[] = [];
+            snapshot.forEach((docSnap) => {
+              links.push({ ...docSnap.data(), id: docSnap.id } as QuickLinkItem);
+            });
+            this.setItem(STORAGE_KEYS.QUICK_LINKS, links);
+          }
+        },
+        (error) => {
+          handleFirestoreError(error, OperationType.GET, 'quick_links');
+        }
+      );
+      this.unsubscribers.push(unsubQuickLinks);
+    } catch (err) {
+      console.warn('Failed to attach quick_links listener:', err);
+    }
   }
 
   private static getItem<T>(key: string, defaultValue: T): T {
@@ -3762,6 +3828,31 @@ export class StorageService {
     return this.getItem<LearningResourceItem[]>(STORAGE_KEYS.LEARNING_RESOURCES, defaultResources);
   }
 
+  static saveLearningResource(resource: LearningResourceItem): void {
+    const list = this.getLearningResources();
+    const existingIndex = list.findIndex((r) => r.id === resource.id);
+    let updated: LearningResourceItem[];
+    if (existingIndex >= 0) {
+      updated = [...list];
+      updated[existingIndex] = resource;
+    } else {
+      updated = [resource, ...list];
+    }
+    this.setItem(STORAGE_KEYS.LEARNING_RESOURCES, updated);
+    setDoc(doc(db, 'learning_resources', resource.id), safeClone(resource), { merge: true }).catch((err) =>
+      handleFirestoreError(err, OperationType.WRITE, `learning_resources/${resource.id}`)
+    );
+  }
+
+  static deleteLearningResource(id: string): void {
+    const list = this.getLearningResources();
+    const updated = list.filter((r) => r.id !== id);
+    this.setItem(STORAGE_KEYS.LEARNING_RESOURCES, updated);
+    deleteDoc(doc(db, 'learning_resources', id)).catch((err) =>
+      handleFirestoreError(err, OperationType.DELETE, `learning_resources/${id}`)
+    );
+  }
+
   // Community Announcements
   static getCommunityAnnouncements(): CommunityAnnouncement[] {
     const defaultAnnouncements: CommunityAnnouncement[] = [
@@ -3786,6 +3877,31 @@ export class StorageService {
       },
     ];
     return this.getItem<CommunityAnnouncement[]>(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, defaultAnnouncements);
+  }
+
+  static saveCommunityAnnouncement(announcement: CommunityAnnouncement): void {
+    const list = this.getCommunityAnnouncements();
+    const existingIndex = list.findIndex((a) => a.id === announcement.id);
+    let updated: CommunityAnnouncement[];
+    if (existingIndex >= 0) {
+      updated = [...list];
+      updated[existingIndex] = announcement;
+    } else {
+      updated = [announcement, ...list];
+    }
+    this.setItem(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, updated);
+    setDoc(doc(db, 'community_announcements', announcement.id), safeClone(announcement), { merge: true }).catch((err) =>
+      handleFirestoreError(err, OperationType.WRITE, `community_announcements/${announcement.id}`)
+    );
+  }
+
+  static deleteCommunityAnnouncement(id: string): void {
+    const list = this.getCommunityAnnouncements();
+    const updated = list.filter((a) => a.id !== id);
+    this.setItem(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, updated);
+    deleteDoc(doc(db, 'community_announcements', id)).catch((err) =>
+      handleFirestoreError(err, OperationType.DELETE, `community_announcements/${id}`)
+    );
   }
 
   // Referral Leaderboard Config & Reset Methods

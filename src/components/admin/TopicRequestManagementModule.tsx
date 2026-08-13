@@ -48,11 +48,19 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
     StorageService.getTopicCollectionConfig()
   );
   const [videos, setVideos] = useState<TutorialVideo[]>(() => StorageService.getTutorialVideos());
+  const [posts, setPosts] = useState<CommunityDiscussionPost[]>(() => StorageService.getCommunityPosts());
+  const [announcements, setAnnouncements] = useState<CommunityAnnouncement[]>(() => StorageService.getCommunityAnnouncements());
+  const [resources, setResources] = useState<LearningResourceItem[]>(() => StorageService.getLearningResources());
 
-  const [activeSubTab, setActiveSubTab] = useState<'grouped' | 'all_requests' | 'videos' | 'analytics' | 'moderation'>('grouped');
+  const [activeSubTab, setActiveSubTab] = useState<
+    'grouped' | 'all_requests' | 'videos' | 'discussions' | 'announcements' | 'resources' | 'analytics' | 'moderation'
+  >('grouped');
   const [reports, setReports] = useState<any[]>(() => StorageService.getReports());
 
-  // Filters
+  // Publishing Status Filter
+  const [approvalFilter, setApprovalFilter] = useState<'All' | 'Draft' | 'Approved' | 'Rejected' | 'Archived' | 'Hidden'>('All');
+
+  // Search & Uni Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterUni, setFilterUni] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -70,6 +78,33 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
   const [videoUniId, setVideoUniId] = useState<string>('');
   const [videoPoints, setVideoPoints] = useState<string>('');
   const [videoFeatured, setVideoFeatured] = useState<boolean>(false);
+  const [videoApprovalStatus, setVideoApprovalStatus] = useState<'Draft' | 'Approved' | 'Rejected' | 'Archived'>('Approved');
+  const [videoVisibility, setVideoVisibility] = useState<'visible' | 'hidden'>('visible');
+
+  // Announcement Modal
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState<boolean>(false);
+  const [editingAnnId, setEditingAnnId] = useState<string | null>(null);
+  const [annTitle, setAnnTitle] = useState<string>('');
+  const [annContent, setAnnContent] = useState<string>('');
+  const [annCategory, setAnnCategory] = useState<'New Tutorial' | 'Academic Update' | 'CBT Notice' | 'Weekly Tip'>('Academic Update');
+  const [annYoutubeLink, setAnnYoutubeLink] = useState<string>('');
+  const [annPinned, setAnnPinned] = useState<boolean>(true);
+  const [annApprovalStatus, setAnnApprovalStatus] = useState<'Draft' | 'Approved' | 'Rejected' | 'Archived'>('Approved');
+  const [annVisibility, setAnnVisibility] = useState<'visible' | 'hidden'>('visible');
+
+  // Learning Resource Modal
+  const [showResourceModal, setShowResourceModal] = useState<boolean>(false);
+  const [editingResId, setEditingResId] = useState<string | null>(null);
+  const [resTitle, setResTitle] = useState<string>('');
+  const [resDescription, setResDescription] = useState<string>('');
+  const [resType, setResType] = useState<'PDF Summary' | 'Formula Sheet' | 'Revision Outline' | 'Diagram' | 'Past Q&A Note'>('PDF Summary');
+  const [resFileUrl, setResFileUrl] = useState<string>('');
+  const [resFileSize, setResFileSize] = useState<string>('1.2 MB');
+  const [resUniName, setResUniName] = useState<string>('');
+  const [resCourseCode, setResCourseCode] = useState<string>('');
+  const [resLevel, setResLevel] = useState<string>('100 Level');
+  const [resApprovalStatus, setResApprovalStatus] = useState<'Draft' | 'Approved' | 'Rejected' | 'Archived'>('Approved');
+  const [resVisibility, setResVisibility] = useState<'visible' | 'hidden'>('visible');
 
   // Toggle Config Modal
   const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
@@ -82,6 +117,9 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
     setRequests(StorageService.getTopicRequests());
     setCollectionConfig(StorageService.getTopicCollectionConfig());
     setVideos(StorageService.getTutorialVideos());
+    setPosts(StorageService.getCommunityPosts());
+    setAnnouncements(StorageService.getCommunityAnnouncements());
+    setResources(StorageService.getLearningResources());
   };
 
   // Group similar topic requests by course code & normalized topic title
@@ -147,33 +185,61 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
   };
 
   // Video Management
-  const handleOpenVideoModal = (presetReq?: TopicRequest) => {
-    if (presetReq) {
+  const handleOpenVideoModal = (presetReq?: TopicRequest, existing?: TutorialVideo) => {
+    if (existing) {
+      setEditingVideoId(existing.id);
+      setVideoTitle(existing.title);
+      setVideoDescription(existing.description);
+      setVideoYoutubeUrl(existing.youtubeUrl);
+      setVideoThumbnailUrl(existing.thumbnailUrl);
+      setVideoDuration(existing.durationMinutes);
+      setVideoCourseCode(existing.courseCode);
+      setVideoTopic(existing.topic);
+      setVideoUniId(existing.universityId);
+      setVideoPoints(existing.keyLearningPoints ? existing.keyLearningPoints.join('\n') : '');
+      setVideoFeatured(existing.isFeatured);
+      setVideoApprovalStatus(existing.approvalStatus || 'Approved');
+      setVideoVisibility(existing.visibility || 'visible');
+    } else if (presetReq) {
       setVideoTitle(`Tutorial: ${presetReq.topicTitle}`);
       setVideoCourseCode(presetReq.courseCode);
       setVideoTopic(presetReq.topicTitle);
       setVideoUniId(presetReq.universityId);
+      setVideoDescription('');
+      setVideoYoutubeUrl('');
+      setVideoThumbnailUrl('');
+      setVideoDuration(15);
+      setVideoPoints('');
+      setVideoFeatured(false);
+      setVideoApprovalStatus('Approved');
+      setVideoVisibility('visible');
+      setEditingVideoId(null);
     } else {
       setVideoTitle('');
       setVideoCourseCode('');
       setVideoTopic('');
       setVideoUniId('');
+      setVideoDescription('');
+      setVideoYoutubeUrl('');
+      setVideoThumbnailUrl('');
+      setVideoDuration(15);
+      setVideoPoints('');
+      setVideoFeatured(false);
+      setVideoApprovalStatus('Approved');
+      setVideoVisibility('visible');
+      setEditingVideoId(null);
     }
-    setVideoDescription('');
-    setVideoYoutubeUrl('');
-    setVideoThumbnailUrl('');
-    setVideoDuration(15);
-    setVideoPoints('');
-    setVideoFeatured(false);
-    setEditingVideoId(null);
     setShowVideoModal(true);
   };
 
-  const handleSaveVideo = (e: React.FormEvent) => {
+  const handleSaveVideoWithStatus = (
+    e: React.FormEvent,
+    status: 'Draft' | 'Approved' | 'Rejected' | 'Archived',
+    visibility: 'visible' | 'hidden'
+  ) => {
     e.preventDefault();
     if (!videoTitle.trim()) return;
 
-    // Extract YouTube video ID
     let ytId = '';
     if (videoYoutubeUrl.includes('v=')) {
       ytId = videoYoutubeUrl.split('v=')[1]?.split('&')[0] || '';
@@ -209,6 +275,8 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
       keyLearningPoints: pointsArray.length > 0 ? pointsArray : ['Step-by-step CBT solutions', 'Anatomical/Mathematical breakdowns'],
       viewsCount: editingVideoId ? videos.find((v) => v.id === editingVideoId)?.viewsCount || 100 : 0,
       isFeatured: videoFeatured,
+      approvalStatus: status,
+      visibility: visibility,
       createdAt: new Date().toISOString(),
       createdByName: 'Joyce and video tutorial team',
     };
@@ -216,6 +284,180 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
     StorageService.saveTutorialVideo(videoObj);
     setShowVideoModal(false);
     refreshData();
+  };
+
+  const handleUpdateVideoPublishing = (
+    vid: TutorialVideo,
+    approvalStatus: 'Draft' | 'Approved' | 'Rejected' | 'Archived',
+    visibility: 'visible' | 'hidden'
+  ) => {
+    const updated = { ...vid, approvalStatus, visibility };
+    StorageService.saveTutorialVideo(updated);
+    refreshData();
+  };
+
+  // Announcement Management
+  const handleOpenAnnouncementModal = (existing?: CommunityAnnouncement) => {
+    if (existing) {
+      setEditingAnnId(existing.id);
+      setAnnTitle(existing.title);
+      setAnnContent(existing.content);
+      setAnnCategory(existing.category);
+      setAnnYoutubeLink(existing.youtubeLink || '');
+      setAnnPinned(existing.isPinned);
+      setAnnApprovalStatus(existing.approvalStatus || 'Approved');
+      setAnnVisibility(existing.visibility || 'visible');
+    } else {
+      setEditingAnnId(null);
+      setAnnTitle('');
+      setAnnContent('');
+      setAnnCategory('Academic Update');
+      setAnnYoutubeLink('');
+      setAnnPinned(true);
+      setAnnApprovalStatus('Approved');
+      setAnnVisibility('visible');
+    }
+    setShowAnnouncementModal(true);
+  };
+
+  const handleSaveAnnouncementWithStatus = (
+    e: React.FormEvent,
+    status: 'Draft' | 'Approved' | 'Rejected' | 'Archived',
+    visibility: 'visible' | 'hidden'
+  ) => {
+    e.preventDefault();
+    if (!annTitle.trim() || !annContent.trim()) return;
+
+    const annObj: CommunityAnnouncement = {
+      id: editingAnnId || `ann-${Date.now()}`,
+      title: annTitle.trim(),
+      content: annContent.trim(),
+      category: annCategory,
+      authorName: 'Acadet Admin',
+      youtubeLink: annYoutubeLink.trim() || undefined,
+      createdAt: new Date().toISOString(),
+      isPinned: annPinned,
+      approvalStatus: status,
+      visibility: visibility,
+    };
+
+    StorageService.saveCommunityAnnouncement(annObj);
+    setShowAnnouncementModal(false);
+    refreshData();
+  };
+
+  const handleUpdateAnnouncementPublishing = (
+    ann: CommunityAnnouncement,
+    approvalStatus: 'Draft' | 'Approved' | 'Rejected' | 'Archived',
+    visibility: 'visible' | 'hidden'
+  ) => {
+    const updated = { ...ann, approvalStatus, visibility };
+    StorageService.saveCommunityAnnouncement(updated);
+    refreshData();
+  };
+
+  const handleDeleteAnnouncement = (id: string) => {
+    if (window.confirm('Delete this announcement permanently?')) {
+      StorageService.deleteCommunityAnnouncement(id);
+      refreshData();
+    }
+  };
+
+  // Learning Resource Management
+  const handleOpenResourceModal = (existing?: LearningResourceItem) => {
+    if (existing) {
+      setEditingResId(existing.id);
+      setResTitle(existing.title);
+      setResDescription(existing.description);
+      setResType(existing.resourceType);
+      setResFileUrl(existing.fileUrl);
+      setResFileSize(existing.fileSize);
+      setResUniName(existing.universityName);
+      setResCourseCode(existing.courseCode);
+      setResLevel(existing.level);
+      setResApprovalStatus(existing.approvalStatus || 'Approved');
+      setResVisibility(existing.visibility || 'visible');
+    } else {
+      setEditingResId(null);
+      setResTitle('');
+      setResDescription('');
+      setResType('PDF Summary');
+      setResFileUrl('https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf');
+      setResFileSize('1.2 MB');
+      setResUniName(universities[0]?.name || 'Federal University Lokoja (FUL)');
+      setResCourseCode('GST101');
+      setResLevel('100 Level');
+      setResApprovalStatus('Approved');
+      setResVisibility('visible');
+    }
+    setShowResourceModal(true);
+  };
+
+  const handleSaveResourceWithStatus = (
+    e: React.FormEvent,
+    status: 'Draft' | 'Approved' | 'Rejected' | 'Archived',
+    visibility: 'visible' | 'hidden'
+  ) => {
+    e.preventDefault();
+    if (!resTitle.trim()) return;
+
+    const resObj: LearningResourceItem = {
+      id: editingResId || `res-${Date.now()}`,
+      title: resTitle.trim(),
+      description: resDescription.trim(),
+      resourceType: resType,
+      fileUrl: resFileUrl.trim() || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+      fileSize: resFileSize.trim() || '1.2 MB',
+      universityName: resUniName,
+      courseCode: resCourseCode.trim(),
+      level: resLevel,
+      approvalStatus: status,
+      visibility: visibility,
+      createdAt: new Date().toISOString(),
+    };
+
+    StorageService.saveLearningResource(resObj);
+    setShowResourceModal(false);
+    refreshData();
+  };
+
+  const handleUpdateResourcePublishing = (
+    res: LearningResourceItem,
+    approvalStatus: 'Draft' | 'Approved' | 'Rejected' | 'Archived',
+    visibility: 'visible' | 'hidden'
+  ) => {
+    const updated = { ...res, approvalStatus, visibility };
+    StorageService.saveLearningResource(updated);
+    refreshData();
+  };
+
+  const handleDeleteResource = (id: string) => {
+    if (window.confirm('Delete this learning resource permanently?')) {
+      StorageService.deleteCommunityAnnouncement(id);
+      refreshData();
+    }
+  };
+
+  const handleUpdatePostPublishing = (
+    post: CommunityDiscussionPost,
+    approvalStatus: 'Draft' | 'Approved' | 'Rejected' | 'Archived',
+    visibility: 'visible' | 'hidden'
+  ) => {
+    const updated: CommunityDiscussionPost = {
+      ...post,
+      approvalStatus,
+      visibility,
+      status: approvalStatus === 'Approved' ? 'Active' : (approvalStatus as any),
+    };
+    StorageService.saveCommunityPost(updated);
+    refreshData();
+  };
+
+  const handleDeletePost = (id: string) => {
+    if (window.confirm('Delete this community post permanently?')) {
+      StorageService.deleteCommunityPost(id);
+      refreshData();
+    }
   };
 
   const handleDeleteVideo = (id: string) => {
@@ -379,6 +621,42 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
         </button>
 
         <button
+          onClick={() => setActiveSubTab('discussions')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'discussions'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+              : 'bg-slate-950 text-slate-400 hover:text-white'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span>Articles & Discussions ({posts.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('announcements')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'announcements'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+              : 'bg-slate-950 text-slate-400 hover:text-white'
+          }`}
+        >
+          <Bell className="w-4 h-4" />
+          <span>Announcements ({announcements.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('resources')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'resources'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+              : 'bg-slate-950 text-slate-400 hover:text-white'
+          }`}
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          <span>Learning Resources ({resources.length})</span>
+        </button>
+
+        <button
           onClick={() => {
             setReports(StorageService.getReports());
             setActiveSubTab('analytics');
@@ -527,34 +805,347 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
       {/* View 3: Videos Management */}
       {activeSubTab === 'videos' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {videos.map((vid) => (
-              <div
-                key={vid.id}
-                className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="px-2 py-0.5 bg-red-500/10 text-red-300 font-bold border border-red-500/20 rounded">
-                      {vid.courseCode}
-                    </span>
-                    <span className="text-slate-400">{vid.durationMinutes} mins</span>
-                  </div>
-                  <h4 className="text-base font-bold text-white">{vid.title}</h4>
-                  <p className="text-xs text-slate-400 line-clamp-2">{vid.description}</p>
-                </div>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+            <div>
+              <h3 className="font-bold text-white text-sm">Tutorial Videos Publishing Control</h3>
+              <p className="text-xs text-slate-400">Approved videos automatically stream live to student devices in real-time.</p>
+            </div>
+            <button
+              onClick={() => handleOpenVideoModal()}
+              className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-red-600/20"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Tutorial Video</span>
+            </button>
+          </div>
 
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                  <span className="text-xs text-slate-500">{vid.viewsCount || 0} views • {vid.likesCount || 0} likes</span>
-                  <button
-                    onClick={() => handleDeleteVideo(vid.id)}
-                    className="px-3 py-1 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg text-xs font-semibold cursor-pointer"
-                  >
-                    Delete Video
-                  </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {videos.map((vid) => {
+              const status = vid.approvalStatus || 'Approved';
+              const isVis = vid.visibility !== 'hidden';
+              return (
+                <div
+                  key={vid.id}
+                  className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+                      <span className="px-2 py-0.5 bg-red-500/10 text-red-300 font-bold border border-red-500/20 rounded">
+                        {vid.courseCode}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            status === 'Approved' && isVis
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : status === 'Draft'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : status === 'Rejected'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              : 'bg-slate-800 text-slate-400 border border-slate-700'
+                          }`}
+                        >
+                          {status === 'Approved' && isVis ? 'Approved & Live' : !isVis ? 'Hidden' : status}
+                        </span>
+                        <span className="text-slate-400 text-[11px]">{vid.durationMinutes} mins</span>
+                      </div>
+                    </div>
+                    <h4 className="text-base font-bold text-white">{vid.title}</h4>
+                    <p className="text-xs text-slate-400 line-clamp-2">{vid.description}</p>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-800/80 space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>{vid.viewsCount || 0} views • {vid.likesCount || 0} likes</span>
+                      <span>By {vid.createdByName || 'Joyce & Team'}</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {status !== 'Approved' && (
+                        <button
+                          onClick={() => handleUpdateVideoPublishing(vid, 'Approved', 'visible')}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold cursor-pointer"
+                        >
+                          Approve & Publish
+                        </button>
+                      )}
+                      {status !== 'Draft' && (
+                        <button
+                          onClick={() => handleUpdateVideoPublishing(vid, 'Draft', 'hidden')}
+                          className="px-2.5 py-1 bg-amber-600/30 text-amber-200 hover:bg-amber-600/50 rounded-lg text-[11px] font-bold cursor-pointer"
+                        >
+                          Save Draft
+                        </button>
+                      )}
+                      {status !== 'Rejected' && (
+                        <button
+                          onClick={() => handleUpdateVideoPublishing(vid, 'Rejected', 'hidden')}
+                          className="px-2.5 py-1 bg-rose-600/30 text-rose-300 hover:bg-rose-600/50 rounded-lg text-[11px] font-bold cursor-pointer"
+                        >
+                          Reject
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleUpdateVideoPublishing(vid, vid.approvalStatus || 'Approved', isVis ? 'hidden' : 'visible')}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] font-semibold cursor-pointer"
+                      >
+                        {isVis ? 'Hide' : 'Show'}
+                      </button>
+                      <button
+                        onClick={() => handleOpenVideoModal(undefined, vid)}
+                        className="px-2.5 py-1 bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50 rounded-lg text-[11px] font-semibold cursor-pointer"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteVideo(vid.id)}
+                        className="px-2.5 py-1 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg text-[11px] font-semibold cursor-pointer ml-auto"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* View 3b: Articles & Discussions */}
+      {activeSubTab === 'discussions' && (
+        <div className="space-y-4">
+          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+            <h3 className="font-bold text-white text-sm">Community Articles & Discussion Posts Moderation</h3>
+            <p className="text-xs text-slate-400">Review student discussions or publish official admin academic articles.</p>
+          </div>
+
+          <div className="space-y-3">
+            {posts.map((post) => {
+              const status = post.approvalStatus || (post.status === 'Hidden' ? 'Draft' : 'Approved');
+              const isVis = post.visibility !== 'hidden';
+              return (
+                <div key={post.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 bg-indigo-500/10 text-indigo-300 font-bold border border-indigo-500/20 rounded">
+                        {post.courseCode}
+                      </span>
+                      <span className="text-slate-300 font-medium">By {post.authorName}</span>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        status === 'Approved' && isVis
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}
+                    >
+                      {status === 'Approved' && isVis ? 'Approved & Live' : 'Draft / Restricted'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-white text-base">{post.title}</h4>
+                    <p className="text-xs text-slate-300 mt-1 line-clamp-3">{post.content}</p>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between flex-wrap gap-2 text-xs">
+                    <span className="text-slate-500">{post.upvotes || 0} Upvotes • {post.repliesCount || 0} Replies</span>
+
+                    <div className="flex items-center gap-1.5">
+                      {status !== 'Approved' && (
+                        <button
+                          onClick={() => handleUpdatePostPublishing(post, 'Approved', 'visible')}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold cursor-pointer"
+                        >
+                          Approve Post
+                        </button>
+                      )}
+                      {status !== 'Draft' && (
+                        <button
+                          onClick={() => handleUpdatePostPublishing(post, 'Draft', 'hidden')}
+                          className="px-2.5 py-1 bg-amber-600/30 text-amber-200 hover:bg-amber-600/50 rounded-lg text-[11px] font-bold cursor-pointer"
+                        >
+                          Set Draft
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeletePost(post.id)}
+                        className="px-2.5 py-1 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg text-[11px] font-semibold cursor-pointer"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* View 3c: Announcements */}
+      {activeSubTab === 'announcements' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-slate-950 p-4 rounded-2xl border border-slate-800">
+            <div>
+              <h3 className="font-bold text-white text-sm">Community Announcements Control</h3>
+              <p className="text-xs text-slate-400">Broadcast notices, weekly tips, and CBT exam updates to all students.</p>
+            </div>
+            <button
+              onClick={() => handleOpenAnnouncementModal()}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-600/20"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Announcement</span>
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {announcements.map((ann) => {
+              const status = ann.approvalStatus || 'Approved';
+              const isVis = ann.visibility !== 'hidden';
+              return (
+                <div key={ann.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+                    <span className="px-2.5 py-0.5 bg-amber-500/10 text-amber-300 font-bold border border-amber-500/20 rounded">
+                      {ann.category}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        status === 'Approved' && isVis
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}
+                    >
+                      {status === 'Approved' && isVis ? 'Approved & Published' : 'Draft / Hidden'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-white text-base">{ann.title}</h4>
+                    <p className="text-xs text-slate-300 mt-1">{ann.content}</p>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-slate-500 text-xs">Posted by {ann.authorName}</span>
+                    <div className="flex items-center gap-1.5">
+                      {status !== 'Approved' && (
+                        <button
+                          onClick={() => handleUpdateAnnouncementPublishing(ann, 'Approved', 'visible')}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold cursor-pointer"
+                        >
+                          Approve & Publish
+                        </button>
+                      )}
+                      {status !== 'Draft' && (
+                        <button
+                          onClick={() => handleUpdateAnnouncementPublishing(ann, 'Draft', 'hidden')}
+                          className="px-2.5 py-1 bg-amber-600/30 text-amber-200 hover:bg-amber-600/50 rounded-lg text-[11px] font-bold cursor-pointer"
+                        >
+                          Set Draft
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleOpenAnnouncementModal(ann)}
+                        className="px-2.5 py-1 bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50 rounded-lg text-[11px] font-semibold cursor-pointer"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAnnouncement(ann.id)}
+                        className="px-2.5 py-1 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg text-[11px] font-semibold cursor-pointer"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* View 3d: Learning Resources */}
+      {activeSubTab === 'resources' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-slate-950 p-4 rounded-2xl border border-slate-800">
+            <div>
+              <h3 className="font-bold text-white text-sm">Learning Resources Control</h3>
+              <p className="text-xs text-slate-400">Manage PDF summary sheets, formula cheatsheets, and revision outlines.</p>
+            </div>
+            <button
+              onClick={() => handleOpenResourceModal()}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-indigo-600/20"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Resource</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {resources.map((res) => {
+              const status = res.approvalStatus || 'Approved';
+              const isVis = res.visibility !== 'hidden';
+              return (
+                <div key={res.id} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="px-2.5 py-0.5 bg-indigo-500/10 text-indigo-300 font-bold border border-indigo-500/20 rounded">
+                        {res.courseCode} • {res.resourceType}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          status === 'Approved' && isVis
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}
+                      >
+                        {status === 'Approved' && isVis ? 'Approved' : 'Draft'}
+                      </span>
+                    </div>
+
+                    <h4 className="font-bold text-white text-base">{res.title}</h4>
+                    <p className="text-xs text-slate-400 line-clamp-2">{res.description}</p>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-slate-500 text-xs">{res.fileSize} • {res.universityName}</span>
+                    <div className="flex items-center gap-1.5">
+                      {status !== 'Approved' && (
+                        <button
+                          onClick={() => handleUpdateResourcePublishing(res, 'Approved', 'visible')}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold cursor-pointer"
+                        >
+                          Approve
+                        </button>
+                      )}
+                      {status !== 'Draft' && (
+                        <button
+                          onClick={() => handleUpdateResourcePublishing(res, 'Draft', 'hidden')}
+                          className="px-2.5 py-1 bg-amber-600/30 text-amber-200 hover:bg-amber-600/50 rounded-lg text-[11px] font-bold cursor-pointer"
+                        >
+                          Set Draft
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleOpenResourceModal(res)}
+                        className="px-2.5 py-1 bg-indigo-600/30 text-indigo-300 hover:bg-indigo-600/50 rounded-lg text-[11px] font-semibold cursor-pointer"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteResource(res.id)}
+                        className="px-2.5 py-1 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg text-[11px] font-semibold cursor-pointer"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -812,7 +1403,7 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
                 </label>
               </div>
 
-              <div className="pt-2 flex justify-end gap-3">
+              <div className="pt-2 flex flex-wrap justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowVideoModal(false)}
@@ -821,11 +1412,237 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
                   Cancel
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={(e) => handleSaveVideoWithStatus(e, 'Draft', 'hidden')}
+                  className="px-4 py-2 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30 font-bold rounded-xl text-xs cursor-pointer"
+                >
+                  Save as Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleSaveVideoWithStatus(e, 'Approved', 'visible')}
                   className="px-6 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-red-600/30 flex items-center gap-1.5 cursor-pointer"
                 >
                   <Send className="w-4 h-4" />
-                  <span>Save Tutorial Video</span>
+                  <span>Approve & Publish</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Announcement Modal */}
+      {showAnnouncementModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full p-6 sm:p-8 relative space-y-5 shadow-2xl">
+            <button
+              onClick={() => setShowAnnouncementModal(false)}
+              className="absolute top-5 right-5 p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <Bell className="w-5 h-5 text-amber-500" />
+              <span>{editingAnnId ? 'Edit Announcement' : 'Create Community Announcement'}</span>
+            </h3>
+
+            <form className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Announcement Title *
+                </label>
+                <input
+                  type="text"
+                  value={annTitle}
+                  onChange={(e) => setAnnTitle(e.target.value)}
+                  placeholder="e.g. CBT Exam Timetable Announcement & Live Revision Schedule"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Category
+                </label>
+                <select
+                  value={annCategory}
+                  onChange={(e) => setAnnCategory(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                >
+                  <option value="Academic Update">Academic Update</option>
+                  <option value="CBT Exam Prep">CBT Exam Prep</option>
+                  <option value="Live Stream">Live Stream</option>
+                  <option value="Study Tip">Study Tip</option>
+                  <option value="Community Notice">Community Notice</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Content *
+                </label>
+                <textarea
+                  rows={4}
+                  value={annContent}
+                  onChange={(e) => setAnnContent(e.target.value)}
+                  placeholder="Full text details of the announcement for students..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-500"
+                ></textarea>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Optional YouTube Link (Live stream / Explanation)
+                </label>
+                <input
+                  type="text"
+                  value={annYoutubeLink}
+                  onChange={(e) => setAnnYoutubeLink(e.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="pt-2 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAnnouncementModal(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 font-semibold rounded-xl text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleSaveAnnouncementWithStatus(e, 'Draft', 'hidden')}
+                  className="px-4 py-2 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30 font-bold rounded-xl text-xs cursor-pointer"
+                >
+                  Save as Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleSaveAnnouncementWithStatus(e, 'Approved', 'visible')}
+                  className="px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-amber-600/30 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Approve & Publish</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Resource Modal */}
+      {showResourceModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full p-6 sm:p-8 relative space-y-5 shadow-2xl">
+            <button
+              onClick={() => setShowResourceModal(false)}
+              className="absolute top-5 right-5 p-2 rounded-full bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-indigo-500" />
+              <span>{editingResId ? 'Edit Learning Resource' : 'Add Learning Resource'}</span>
+            </h3>
+
+            <form className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Resource Title *
+                </label>
+                <input
+                  type="text"
+                  value={resTitle}
+                  onChange={(e) => setResTitle(e.target.value)}
+                  placeholder="e.g. GST101 General Studies Complete Summary PDF"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Course Code *
+                  </label>
+                  <input
+                    type="text"
+                    value={resCourseCode}
+                    onChange={(e) => setResCourseCode(e.target.value)}
+                    placeholder="e.g. GST101"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Resource Type
+                  </label>
+                  <select
+                    value={resType}
+                    onChange={(e) => setResType(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="PDF Summary">PDF Summary</option>
+                    <option value="Formula Sheet">Formula Sheet</option>
+                    <option value="Past Questions PDF">Past Questions PDF</option>
+                    <option value="Diagram Sheet">Diagram Sheet</option>
+                    <option value="Revision Checklist">Revision Checklist</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  File URL *
+                </label>
+                <input
+                  type="text"
+                  value={resFileUrl}
+                  onChange={(e) => setResFileUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Description
+                </label>
+                <textarea
+                  rows={2}
+                  value={resDescription}
+                  onChange={(e) => setResDescription(e.target.value)}
+                  placeholder="Brief summary of what is inside this document..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-indigo-500"
+                ></textarea>
+              </div>
+
+              <div className="pt-2 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowResourceModal(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 font-semibold rounded-xl text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleSaveResourceWithStatus(e, 'Draft', 'hidden')}
+                  className="px-4 py-2 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 border border-amber-500/30 font-bold rounded-xl text-xs cursor-pointer"
+                >
+                  Save as Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleSaveResourceWithStatus(e, 'Approved', 'visible')}
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Approve & Publish</span>
                 </button>
               </div>
             </form>

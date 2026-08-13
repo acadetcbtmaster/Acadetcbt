@@ -53,6 +53,27 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Community & Publishing System
+    match /tutorial_videos/{videoId} {
+      allow read, write: if true;
+    }
+
+    match /community_posts/{postId} {
+      allow read, write: if true;
+    }
+
+    match /community_announcements/{announcementId} {
+      allow read, write: if true;
+    }
+
+    match /learning_resources/{resourceId} {
+      allow read, write: if true;
+    }
+
+    match /topic_requests/{requestId} {
+      allow read, write: if true;
+    }
+
     // Users
     match /users/{userId} {
       allow read, write: if true;

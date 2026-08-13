@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   UserProfile,
   University,
@@ -11,11 +11,14 @@ import {
   TopicCollectionConfig
 } from '../types';
 import { StorageService } from '../services/storage';
+import { isContentApprovedAndVisible } from '../lib/communityUtils';
 import { TopicRequestCenter } from './community/TopicRequestCenter';
 import { TutorialVideosSection } from './community/TutorialVideosSection';
 import { CommunityDiscussionsSection } from './community/CommunityDiscussionsSection';
 import { LearningResourcesSection } from './community/LearningResourcesSection';
 import { CommunityAnnouncementsSection } from './community/CommunityAnnouncementsSection';
+
+// ... (keep icon imports)
 import {
   Users,
   MessageSquarePlus,
@@ -67,6 +70,25 @@ export const LearningCommunityView: React.FC<LearningCommunityViewProps> = ({
     setResources(StorageService.getLearningResources());
     setAnnouncements(StorageService.getCommunityAnnouncements());
   };
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      refreshCommunityData();
+    };
+    window.addEventListener('cbt_storage_change', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('cbt_storage_change', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  // Filter approved and visible items for students (admins can see draft items in admin panel)
+  const isAdmin = currentUser?.role === 'admin';
+  const visibleVideos = isAdmin ? videos : videos.filter(isContentApprovedAndVisible);
+  const visiblePosts = isAdmin ? posts : posts.filter(isContentApprovedAndVisible);
+  const visibleResources = isAdmin ? resources : resources.filter(isContentApprovedAndVisible);
+  const visibleAnnouncements = isAdmin ? announcements : announcements.filter(isContentApprovedAndVisible);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8 space-y-8 max-w-7xl mx-auto">
@@ -271,7 +293,7 @@ export const LearningCommunityView: React.FC<LearningCommunityViewProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {videos.slice(0, 2).map((vid) => (
+              {visibleVideos.slice(0, 2).map((vid) => (
                 <div
                   key={vid.id}
                   className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col justify-between p-5 space-y-3"
@@ -311,7 +333,7 @@ export const LearningCommunityView: React.FC<LearningCommunityViewProps> = ({
               <span>Latest Announcements</span>
             </h3>
 
-            <CommunityAnnouncementsSection announcements={announcements} />
+            <CommunityAnnouncementsSection announcements={visibleAnnouncements} />
           </div>
         </div>
       )}
@@ -329,7 +351,7 @@ export const LearningCommunityView: React.FC<LearningCommunityViewProps> = ({
 
       {activeSubTab === 'tutorials' && (
         <TutorialVideosSection
-          videos={videos}
+          videos={visibleVideos}
           courses={courses}
           universities={universities}
           onRefreshData={refreshCommunityData}
@@ -340,7 +362,7 @@ export const LearningCommunityView: React.FC<LearningCommunityViewProps> = ({
 
       {activeSubTab === 'discussions' && (
         <CommunityDiscussionsSection
-          posts={posts}
+          posts={visiblePosts}
           currentUser={currentUser}
           courses={courses}
           onRefreshData={refreshCommunityData}
@@ -348,11 +370,11 @@ export const LearningCommunityView: React.FC<LearningCommunityViewProps> = ({
       )}
 
       {activeSubTab === 'announcements' && (
-        <CommunityAnnouncementsSection announcements={announcements} />
+        <CommunityAnnouncementsSection announcements={visibleAnnouncements} />
       )}
 
       {activeSubTab === 'resources' && (
-        <LearningResourcesSection resources={resources} />
+        <LearningResourcesSection resources={visibleResources} />
       )}
     </div>
   );

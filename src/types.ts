@@ -1604,6 +1604,8 @@ export interface TutorialVideo {
   likedBy?: string[];
   savedBy?: string[];
   isFeatured: boolean;
+  approvalStatus?: 'Draft' | 'Approved' | 'Rejected' | 'Archived';
+  visibility?: 'visible' | 'hidden';
   createdAt: string;
   createdByName: string;
 }
@@ -1626,7 +1628,9 @@ export interface CommunityDiscussionPost {
   reportReason?: string;
   reportedBy?: string;
   createdAt: string;
-  status: 'Active' | 'Hidden' | 'Reviewed';
+  status: 'Active' | 'Hidden' | 'Reviewed' | 'Draft' | 'Approved' | 'Rejected' | 'Archived';
+  approvalStatus?: 'Draft' | 'Approved' | 'Rejected' | 'Archived';
+  visibility?: 'visible' | 'hidden';
 }
 
 export interface CommunityReply {
@@ -1649,6 +1653,8 @@ export interface LearningResourceItem {
   universityName: string;
   courseCode: string;
   level: string;
+  approvalStatus?: 'Draft' | 'Approved' | 'Rejected' | 'Archived';
+  visibility?: 'visible' | 'hidden';
   createdAt: string;
 }
 
@@ -1661,6 +1667,8 @@ export interface CommunityAnnouncement {
   youtubeLink?: string;
   createdAt: string;
   isPinned: boolean;
+  approvalStatus?: 'Draft' | 'Approved' | 'Rejected' | 'Archived';
+  visibility?: 'visible' | 'hidden';
 }
 
 // ==========================================
@@ -1822,6 +1830,8 @@ export interface QuickLinkItem {
   icon?: string;
   url: string;
   status: 'active' | 'inactive';
+  approvalStatus?: 'Draft' | 'Approved' | 'Rejected' | 'Archived';
+  visibility?: 'visible' | 'hidden';
   order: number;
   badge?: string;
   target?: '_blank' | '_self';
