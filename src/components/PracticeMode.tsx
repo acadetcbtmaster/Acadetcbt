@@ -518,7 +518,11 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
           {/* Top Navigation Bar */}
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <button
-              onClick={() => onNavigate ? onNavigate('dashboard') : window.history.back()}
+              onClick={() => {
+                if (onNavigate) {
+                  onNavigate('dashboard');
+                }
+              }}
               className="px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-slate-700 cursor-pointer shadow-sm"
               id="practice-top-back-btn"
               title="Back to Dashboard"
@@ -528,7 +532,11 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
             </button>
 
             <button
-              onClick={() => onNavigate ? onNavigate('dashboard') : window.history.back()}
+              onClick={() => {
+                if (onNavigate) {
+                  onNavigate('dashboard');
+                }
+              }}
               className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all border border-slate-700 cursor-pointer shadow-sm"
               id="practice-top-cancel-btn"
               title="Cancel / Close Practice"
