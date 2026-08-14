@@ -11,7 +11,7 @@ import {
   updateProfile,
   User,
 } from 'firebase/auth';
-import { initializeFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfigData from '../../firebase-applet-config.json';
 
@@ -34,14 +34,25 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 // Initialize Firebase Storage
 export const storage = getStorage(app);
 
-// Initialize Firestore with forced long polling for preview and iframe sandboxes
+// Initialize Firestore safely
 const configuredDbId = firebaseConfigData.firestoreDatabaseId || '(default)';
-const dbId = configuredDbId === 'ai-studio-aicbtsimulator-24029710-e20e-4e1e-a3cf-846d58bd47cf' ? '(default)' : configuredDbId;
+const targetDbId =
+  !configuredDbId ||
+  configuredDbId === '(default)' ||
+  configuredDbId === 'ai-studio-aicbtsimulator-24029710-e20e-4e1e-a3cf-846d58bd47cf'
+    ? undefined
+    : configuredDbId;
 
-export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-  ignoreUndefinedProperties: true,
-}, dbId);
+let firestoreInstance;
+try {
+  firestoreInstance = targetDbId
+    ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true, ignoreUndefinedProperties: true }, targetDbId)
+    : initializeFirestore(app, { experimentalAutoDetectLongPolling: true, ignoreUndefinedProperties: true });
+} catch {
+  firestoreInstance = targetDbId ? getFirestore(app, targetDbId) : getFirestore(app);
+}
+
+export const db = firestoreInstance;
 
 export {
   signInWithPopup,
