@@ -58,7 +58,7 @@ export const FounderPage: React.FC<FounderPageProps> = ({
     } else if (onNavigate) {
       onNavigate(currentUser ? 'dashboard' : 'landing');
     } else {
-      window.location.pathname = '/';
+      window.location.href = '/';
     }
   };
   // Update document title and dynamic meta for SEO & Knowledge Graph

@@ -60,50 +60,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 
-// Global Protection Against Native JSON.stringify Circular Errors (e.g., Y2 -> Ka -> Y2 in minified SDKs)
-if (typeof window !== 'undefined' && !(window as any).__cbt_json_patched) {
-  (window as any).__cbt_json_patched = true;
-  const origStringify = JSON.stringify;
-  JSON.stringify = function (value: any, replacer?: any, space?: any) {
-    try {
-      return origStringify(value, replacer, space);
-    } catch (err: any) {
-      if (err && (err.message?.includes('circular') || String(err).includes('circular'))) {
-        const seen = new WeakSet();
-        const safeReplacer = (key: string, val: any) => {
-          if (key === 'toJSON') return undefined;
-          if (typeof val === 'function' || typeof val === 'symbol') return undefined;
-          if (typeof val === 'object' && val !== null) {
-            if (seen.has(val)) return '[Circular]';
-            try { seen.add(val); } catch {}
-            let cName = '';
-            try { cName = val?.constructor?.name || ''; } catch {}
-            if (
-              cName === 'Y2' ||
-              cName === 'Ka' ||
-              cName === 'UserImpl' ||
-              cName === 'AuthImpl' ||
-              cName === 'Firestore' ||
-              (cName.length > 0 && cName.length <= 3 && cName !== 'Object' && cName !== 'Array' && cName !== 'Set' && cName !== 'Map' && cName !== 'Date')
-            ) {
-              return `[SDK Object: ${cName}]`;
-            }
-          }
-          if (typeof replacer === 'function') {
-            return replacer(key, val);
-          }
-          return val;
-        };
-        try {
-          return origStringify(value, safeReplacer, space);
-        } catch {
-          return '{}';
-        }
-      }
-      throw err;
-    }
-  };
-}
+// Custom safe serializer handled by safeStringify without altering global JSON.stringify
 
 export enum OperationType {
   CREATE = 'create',

@@ -3,7 +3,10 @@
   "short_name": "Acadet CBT",
   "description": "Acadet CBT MASTER - Modern University Learning and Computer Based Test Practice Platform",
   "start_url": "/",
+  "scope": "/",
+  "id": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#020617",
   "theme_color": "#020617",
   "icons": [
