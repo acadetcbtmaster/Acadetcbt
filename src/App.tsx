@@ -264,11 +264,25 @@ export default function App() {
     };
 
     let syncTimeout: any = null;
-    const debouncedSyncAllData = () => {
+    const debouncedSyncAllData = (event?: any) => {
       if (syncTimeout) clearTimeout(syncTimeout);
       syncTimeout = setTimeout(() => {
-        syncAllData();
-      }, 100);
+        const changedKey = event?.detail?.key;
+        if (changedKey) {
+          if (changedKey.includes('user')) {
+            const u = StorageService.getUser();
+            setCurrentUser(u);
+          } else if (changedKey.includes('plans')) {
+            setPlans(StorageService.getSubscriptionPlans());
+          } else if (changedKey.includes('settings')) {
+            setSettings(StorageService.getSystemSettings());
+          } else {
+            syncAllData();
+          }
+        } else {
+          syncAllData();
+        }
+      }, 250);
     };
 
     // Initial sync
@@ -284,7 +298,7 @@ export default function App() {
           );
           if (matched) {
             setCurrentUser(matched);
-            StorageService.saveUser(matched);
+            StorageService.saveLocalUserOnly(matched);
           }
         } else {
           const savedUser = StorageService.getUser();
@@ -324,7 +338,7 @@ export default function App() {
         });
         if (livePlans.length > 0) {
           setPlans(livePlans);
-          StorageService.savePlans(livePlans);
+          StorageService.saveLocalPlansOnly(livePlans);
         }
       }
     }, (err) => {
@@ -363,7 +377,7 @@ export default function App() {
               subscriptionPlan: d.subscriptionPlan,
               subscription: d.subscription || prev.subscription,
             };
-            StorageService.saveUser(updatedProfile);
+            StorageService.saveLocalUserOnly(updatedProfile);
             return updatedProfile;
           });
         }

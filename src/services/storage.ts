@@ -1,3 +1,4 @@
+import '../lib/safeJson';
 import {
   UserProfile,
   Question,
@@ -751,579 +752,63 @@ const DEFAULT_SETTINGS: SystemSettings = {
 
 export class StorageService {
   private static isInitialized = false;
-  private static unsubscribers: Unsubscribe[] = [];
   private static storageDispatchTimer: any = null;
   private static pendingChangedKeys = new Set<string>();
+  private static memoryCache = new Map<string, any>();
 
-  // Initialize live Firebase Cloud Firestore real-time listeners for questions, universities, courses, etc.
+  // Safe initialization
   static initRealtimeListeners(): void {
     if (this.isInitialized) return;
     this.isInitialized = true;
-
-    // 1. Real-time Questions Listener
-    try {
-      const unsubQuestions = onSnapshot(
-        collection(db, 'questions'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const qs: Question[] = [];
-            snapshot.forEach((docSnap) => {
-              qs.push({ ...docSnap.data(), id: docSnap.id } as Question);
-            });
-            this.setItem(STORAGE_KEYS.QUESTIONS, qs);
-          } else {
-            this.setItem(STORAGE_KEYS.QUESTIONS, SEED_QUESTIONS);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'questions');
-        }
-      );
-      this.unsubscribers.push(unsubQuestions);
-    } catch (err) {
-      console.warn('Failed to attach questions listener:', err);
-    }
-
-    // 2. Real-time Universities Listener
-    try {
-      const unsubUniversities = onSnapshot(
-        collection(db, 'universities'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const unis: University[] = [];
-            snapshot.forEach((docSnap) => {
-              unis.push({ ...docSnap.data(), id: docSnap.id } as University);
-            });
-            this.setItem(STORAGE_KEYS.UNIVERSITIES, unis);
-          } else {
-            this.setItem(STORAGE_KEYS.UNIVERSITIES, SEED_UNIVERSITIES);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'universities');
-        }
-      );
-      this.unsubscribers.push(unsubUniversities);
-    } catch (err) {
-      console.warn('Failed to attach universities listener:', err);
-    }
-
-    // 3. Real-time Courses Listener
-    try {
-      const unsubCourses = onSnapshot(
-        collection(db, 'courses'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const crs: Course[] = [];
-            snapshot.forEach((docSnap) => {
-              crs.push({ ...docSnap.data(), id: docSnap.id } as Course);
-            });
-            this.setItem(STORAGE_KEYS.COURSES, crs);
-          } else {
-            this.setItem(STORAGE_KEYS.COURSES, SEED_COURSES);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'courses');
-        }
-      );
-      this.unsubscribers.push(unsubCourses);
-    } catch (err) {
-      console.warn('Failed to attach courses listener:', err);
-    }
-
-    // 4. Real-time Users Listener
-    try {
-      const unsubUsers = onSnapshot(
-        collection(db, 'users'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const usersList: UserProfile[] = [];
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data();
-              usersList.push({
-                id: docSnap.id,
-                name: data.fullName || data.name || 'User',
-                email: data.email || '',
-                role: data.role || 'student',
-                universityName: data.universityName || '',
-                departmentName: data.departmentName || '',
-                subscription: data.subscription,
-                bookmarks: data.bookmarks || [],
-                createdDate: data.createdDate || new Date().toISOString(),
-                ...data,
-              } as UserProfile);
-            });
-            this.setItem(STORAGE_KEYS.USERS, usersList);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'users');
-        }
-      );
-      this.unsubscribers.push(unsubUsers);
-    } catch (err) {
-      console.warn('Failed to attach users listener:', err);
-    }
-
-    // 5. Real-time Test Results Listener
-    try {
-      const unsubResults = onSnapshot(
-        collection(db, 'results'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const resultsList: TestSessionResult[] = [];
-            snapshot.forEach((docSnap) => {
-              resultsList.push({ ...docSnap.data(), id: docSnap.id } as TestSessionResult);
-            });
-            this.setItem(STORAGE_KEYS.RESULTS, resultsList);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'results');
-        }
-      );
-      this.unsubscribers.push(unsubResults);
-    } catch (err) {
-      console.warn('Failed to attach results listener:', err);
-    }
-
-    // 6. Real-time Study Materials Listener
-    try {
-      const unsubMaterials = onSnapshot(
-        collection(db, 'materials'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const matList: StudyMaterial[] = [];
-            snapshot.forEach((docSnap) => {
-              matList.push({ ...docSnap.data(), id: docSnap.id } as StudyMaterial);
-            });
-            this.setItem(STORAGE_KEYS.MATERIALS, matList);
-          } else {
-            this.setItem(STORAGE_KEYS.MATERIALS, SEED_STUDY_MATERIALS);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'materials');
-        }
-      );
-      this.unsubscribers.push(unsubMaterials);
-    } catch (err) {
-      console.warn('Failed to attach materials listener:', err);
-    }
-
-    // 7. Real-time Payment Transactions Listener
-    try {
-      const unsubTransactions = onSnapshot(
-        collection(db, 'transactions'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const txList: PaymentTransaction[] = [];
-            snapshot.forEach((docSnap) => {
-              txList.push({ ...docSnap.data(), id: docSnap.id } as PaymentTransaction);
-            });
-            this.setItem(STORAGE_KEYS.TRANSACTIONS, txList);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'transactions');
-        }
-      );
-      this.unsubscribers.push(unsubTransactions);
-    } catch (err) {
-      console.warn('Failed to attach transactions listener:', err);
-    }
-
-    // 8. Real-time Notifications Listener
-    try {
-      const unsubNotifs = onSnapshot(
-        collection(db, 'notifications'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const notifList: AppNotification[] = [];
-            snapshot.forEach((docSnap) => {
-              notifList.push({ ...docSnap.data(), id: docSnap.id } as AppNotification);
-            });
-            this.setItem(STORAGE_KEYS.NOTIFICATIONS, notifList);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'notifications');
-        }
-      );
-      this.unsubscribers.push(unsubNotifs);
-    } catch (err) {
-      console.warn('Failed to attach notifications listener:', err);
-    }
-
-    // 9. Real-time Ranking History Listener
-    try {
-      const unsubRanking = onSnapshot(
-        collection(db, 'ranking_history'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const rhList: RankingHistoryRecord[] = [];
-            snapshot.forEach((docSnap) => {
-              rhList.push({ ...docSnap.data(), id: docSnap.id } as RankingHistoryRecord);
-            });
-            this.setItem(STORAGE_KEYS.RANKING_HISTORY, rhList);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'ranking_history');
-        }
-      );
-      this.unsubscribers.push(unsubRanking);
-    } catch (err) {
-      console.warn('Failed to attach ranking history listener:', err);
-    }
-
-    // 10. Real-time Subscription Plans Listener
-    try {
-      const unsubPlans = onSnapshot(
-        collection(db, 'plans'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const planList: SubscriptionPlan[] = [];
-            snapshot.forEach((docSnap) => {
-              planList.push({ ...docSnap.data(), id: docSnap.id } as SubscriptionPlan);
-            });
-            this.setItem(STORAGE_KEYS.PLANS, planList);
-          } else {
-            this.setItem(STORAGE_KEYS.PLANS, DEFAULT_PLANS);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'plans');
-        }
-      );
-      this.unsubscribers.push(unsubPlans);
-    } catch (err) {
-      console.warn('Failed to attach plans listener:', err);
-    }
-
-    // 11. Real-time System Settings Listener
-    try {
-      const unsubSettings = onSnapshot(
-        doc(db, 'system_configs', 'global_settings'),
-        (docSnap) => {
-          if (docSnap.exists()) {
-            const payload = docSnap.data() as SystemSettingsPayload;
-            this.setItem(STORAGE_KEYS.SYSTEM_SETTINGS, payload);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'system_configs/global_settings');
-        }
-      );
-      this.unsubscribers.push(unsubSettings);
-    } catch (err) {
-      console.warn('Failed to attach settings listener:', err);
-    }
-
-    // 12. Real-time Topic Requests Listener
-    try {
-      const unsubTopicRequests = onSnapshot(
-        collection(db, 'topic_requests'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const reqs: TopicRequest[] = [];
-            snapshot.forEach((docSnap) => {
-              reqs.push({ ...docSnap.data(), id: docSnap.id } as TopicRequest);
-            });
-            this.setItem(STORAGE_KEYS.TOPIC_REQUESTS, reqs);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'topic_requests');
-        }
-      );
-      this.unsubscribers.push(unsubTopicRequests);
-    } catch (err) {
-      console.warn('Failed to attach topic_requests listener:', err);
-    }
-
-    // 13. Real-time Tutorial Videos Listener
-    try {
-      const unsubTutorialVideos = onSnapshot(
-        collection(db, 'tutorial_videos'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const vids: TutorialVideo[] = [];
-            snapshot.forEach((docSnap) => {
-              vids.push({ ...docSnap.data(), id: docSnap.id } as TutorialVideo);
-            });
-            this.setItem(STORAGE_KEYS.TUTORIAL_VIDEOS, vids);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'tutorial_videos');
-        }
-      );
-      this.unsubscribers.push(unsubTutorialVideos);
-    } catch (err) {
-      console.warn('Failed to attach tutorial_videos listener:', err);
-    }
-
-    // 14. Real-time Community Posts Listener
-    try {
-      const unsubPosts = onSnapshot(
-        collection(db, 'community_posts'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const posts: CommunityDiscussionPost[] = [];
-            snapshot.forEach((docSnap) => {
-              posts.push({ ...docSnap.data(), id: docSnap.id } as CommunityDiscussionPost);
-            });
-            this.setItem(STORAGE_KEYS.COMMUNITY_POSTS, posts);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'community_posts');
-        }
-      );
-      this.unsubscribers.push(unsubPosts);
-    } catch (err) {
-      console.warn('Failed to attach community_posts listener:', err);
-    }
-
-    // 15. Real-time Topic Collection Config Listener
-    try {
-      const unsubTopicConfig = onSnapshot(
-        doc(db, 'system_configs', 'topic_collection_status'),
-        (docSnap) => {
-          if (docSnap.exists()) {
-            const cfg = docSnap.data() as TopicCollectionConfig;
-            this.setItem(STORAGE_KEYS.TOPIC_COLLECTION_CONFIG, cfg);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'system_configs/topic_collection_status');
-        }
-      );
-      this.unsubscribers.push(unsubTopicConfig);
-    } catch (err) {
-      console.warn('Failed to attach topic_collection_status listener:', err);
-    }
-
-    // 16. Real-time Referral Leaderboard Config Listener
-    try {
-      const unsubReferralLeaderboardConfig = onSnapshot(
-        doc(db, 'system_configs', 'referral_leaderboard'),
-        (docSnap) => {
-          if (docSnap.exists()) {
-            const cfg = docSnap.data() as ReferralLeaderboardConfig;
-            this.setItem(STORAGE_KEYS.REFERRAL_LEADERBOARD_CONFIG, cfg);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'system_configs/referral_leaderboard');
-        }
-      );
-      this.unsubscribers.push(unsubReferralLeaderboardConfig);
-    } catch (err) {
-      console.warn('Failed to attach referral_leaderboard listener:', err);
-    }
-
-    // 17. Real-time Face Arena Settings Listener
-    try {
-      const unsubFaceArenaSettings = onSnapshot(
-        doc(db, 'system_configs', 'face_arena_settings'),
-        (docSnap) => {
-          if (docSnap.exists()) {
-            this.setItem(STORAGE_KEYS.FACE_ARENA_SETTINGS, docSnap.data() as FaceArenaSettings);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'system_configs/face_arena_settings');
-        }
-      );
-      this.unsubscribers.push(unsubFaceArenaSettings);
-    } catch (err) {
-      console.warn('Failed to attach face_arena_settings listener:', err);
-    }
-
-    // 18. Real-time Face Arena Questions Listener
-    try {
-      const unsubFaceArenaQuestions = onSnapshot(
-        collection(db, 'face_arena_questions'),
-        (snapshot) => {
-          const list: FaceArenaQuestion[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...docSnap.data() } as FaceArenaQuestion);
-          });
-          if (list.length > 0) {
-            this.setItem(STORAGE_KEYS.FACE_ARENA_QUESTIONS, list);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'face_arena_questions');
-        }
-      );
-      this.unsubscribers.push(unsubFaceArenaQuestions);
-    } catch (err) {
-      console.warn('Failed to attach face_arena_questions listener:', err);
-    }
-
-    // 19. Real-time Face Arena Participants Listener
-    try {
-      const unsubFaceArenaParticipants = onSnapshot(
-        collection(db, 'face_arena_participants'),
-        (snapshot) => {
-          const list: FaceArenaParticipant[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...docSnap.data() } as FaceArenaParticipant);
-          });
-          this.setItem(STORAGE_KEYS.FACE_ARENA_PARTICIPANTS, list);
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'face_arena_participants');
-        }
-      );
-      this.unsubscribers.push(unsubFaceArenaParticipants);
-    } catch (err) {
-      console.warn('Failed to attach face_arena_participants listener:', err);
-    }
-
-    // 20. Real-time Face Arena Archives Listener
-    try {
-      const unsubFaceArenaArchives = onSnapshot(
-        collection(db, 'face_arena_archives'),
-        (snapshot) => {
-          const list: FaceArenaArchive[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...docSnap.data() } as FaceArenaArchive);
-          });
-          this.setItem(STORAGE_KEYS.FACE_ARENA_ARCHIVES, list);
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'face_arena_archives');
-        }
-      );
-      this.unsubscribers.push(unsubFaceArenaArchives);
-    } catch (err) {
-      console.warn('Failed to attach face_arena_archives listener:', err);
-    }
-
-    // 21. Real-time Admin Notifications Listener
-    try {
-      const unsubAdminNotifications = onSnapshot(
-        collection(db, 'admin_notifications'),
-        (snapshot) => {
-          const list: AdminNotification[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push({ id: docSnap.id, ...docSnap.data() } as AdminNotification);
-          });
-          if (list.length > 0) {
-            this.setItem(STORAGE_KEYS.ADMIN_NOTIFICATIONS, list);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'admin_notifications');
-        }
-      );
-      this.unsubscribers.push(unsubAdminNotifications);
-    } catch (err) {
-      console.warn('Failed to attach admin_notifications listener:', err);
-    }
-
-    // 22. Real-time Community Announcements Listener
-    try {
-      const unsubCommunityAnnouncements = onSnapshot(
-        collection(db, 'community_announcements'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const announcements: CommunityAnnouncement[] = [];
-            snapshot.forEach((docSnap) => {
-              announcements.push({ ...docSnap.data(), id: docSnap.id } as CommunityAnnouncement);
-            });
-            this.setItem(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, announcements);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'community_announcements');
-        }
-      );
-      this.unsubscribers.push(unsubCommunityAnnouncements);
-    } catch (err) {
-      console.warn('Failed to attach community_announcements listener:', err);
-    }
-
-    // 23. Real-time Learning Resources Listener
-    try {
-      const unsubLearningResources = onSnapshot(
-        collection(db, 'learning_resources'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const resources: LearningResourceItem[] = [];
-            snapshot.forEach((docSnap) => {
-              resources.push({ ...docSnap.data(), id: docSnap.id } as LearningResourceItem);
-            });
-            this.setItem(STORAGE_KEYS.LEARNING_RESOURCES, resources);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'learning_resources');
-        }
-      );
-      this.unsubscribers.push(unsubLearningResources);
-    } catch (err) {
-      console.warn('Failed to attach learning_resources listener:', err);
-    }
-
-    // 24. Real-time Quick Links Listener
-    try {
-      const unsubQuickLinks = onSnapshot(
-        collection(db, 'quick_links'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const links: QuickLinkItem[] = [];
-            snapshot.forEach((docSnap) => {
-              links.push({ ...docSnap.data(), id: docSnap.id } as QuickLinkItem);
-            });
-            this.setItem(STORAGE_KEYS.QUICK_LINKS, links);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.GET, 'quick_links');
-        }
-      );
-      this.unsubscribers.push(unsubQuickLinks);
-    } catch (err) {
-      console.warn('Failed to attach quick_links listener:', err);
-    }
   }
 
   private static getItem<T>(key: string, defaultValue: T): T {
-    this.initRealtimeListeners();
+    if (this.memoryCache.has(key)) {
+      return this.memoryCache.get(key) as T;
+    }
     try {
       const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : defaultValue;
+      if (data) {
+        const parsed = JSON.parse(data);
+        this.memoryCache.set(key, parsed);
+        return parsed as T;
+      }
     } catch {
-      return defaultValue;
+      // fallback
     }
+    this.memoryCache.set(key, defaultValue);
+    return defaultValue;
   }
 
   private static setItem<T>(key: string, value: T): void {
-    try {
-      localStorage.setItem(key, safeStringify(value));
-      this.pendingChangedKeys.add(key);
-      if (this.storageDispatchTimer) {
-        clearTimeout(this.storageDispatchTimer);
-      }
-      this.storageDispatchTimer = setTimeout(() => {
-        this.storageDispatchTimer = null;
-        const keys = Array.from(this.pendingChangedKeys);
-        this.pendingChangedKeys.clear();
-        try {
-          window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: keys[0] || key, keys, timestamp: Date.now() } }));
-        } catch {
-          window.dispatchEvent(new Event('cbt_storage_change'));
-        }
-      }, 50);
-    } catch (e) {
-      console.error('Storage write error:', e);
+    this.memoryCache.set(key, value);
+    this.pendingChangedKeys.add(key);
+
+    if (this.storageDispatchTimer) {
+      clearTimeout(this.storageDispatchTimer);
     }
+    this.storageDispatchTimer = setTimeout(() => {
+      this.storageDispatchTimer = null;
+      const keysToWrite = Array.from(this.pendingChangedKeys);
+      this.pendingChangedKeys.clear();
+
+      for (const k of keysToWrite) {
+        try {
+          const val = this.memoryCache.get(k);
+          if (val !== undefined) {
+            localStorage.setItem(k, safeStringify(val));
+          }
+        } catch (e) {
+          console.warn('Storage write notice for key ' + k, e);
+        }
+      }
+
+      try {
+        window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: keysToWrite[0] || key, keys: keysToWrite, timestamp: Date.now() } }));
+      } catch {
+        window.dispatchEvent(new Event('cbt_storage_change'));
+      }
+    }, 150);
   }
 
   // Helper to check and enforce subscription status (30-question limit for non-subscribed, unlimited for active premium)
@@ -1421,9 +906,12 @@ export class StorageService {
     return updatedUsers;
   }
 
-  static saveUsers(users: UserProfile[]): void {
+  static saveUsers(users: UserProfile[], syncToFirestore: boolean = true): void {
     const previous = this.getUsers();
     this.setItem(STORAGE_KEYS.USERS, users);
+
+    if (!syncToFirestore) return;
+
     users.forEach((u) => {
       setDoc(doc(db, 'users', u.id), safeClone(u), { merge: true }).catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, `users/${u.id}`)
@@ -1439,6 +927,10 @@ export class StorageService {
         );
       }
     });
+  }
+
+  static saveLocalUsersOnly(users: UserProfile[]): void {
+    this.saveUsers(users, false);
   }
 
   static deleteUser(userId: string): void {
@@ -1473,13 +965,14 @@ export class StorageService {
 
   static clearUserSession(): void {
     try {
+      this.memoryCache.delete(STORAGE_KEYS.USER);
       localStorage.removeItem(STORAGE_KEYS.USER);
     } catch (e) {
       console.error('Storage error:', e);
     }
   }
 
-  static saveUser(user: UserProfile): void {
+  static saveUser(user: UserProfile, syncToFirestore: boolean = true): void {
     const users = this.getUsers();
     const userWithReferral = ensureReferralFields(user, users);
 
@@ -1495,6 +988,8 @@ export class StorageService {
       users.unshift(userWithReferral);
     }
     this.setItem(STORAGE_KEYS.USERS, users);
+
+    if (!syncToFirestore) return;
 
     // Secure Firestore Sync
     try {
@@ -1524,6 +1019,10 @@ export class StorageService {
     } catch (e) {
       console.warn('Firestore write user error:', e);
     }
+  }
+
+  static saveLocalUserOnly(user: UserProfile): void {
+    this.saveUser(user, false);
   }
 
   // Questions
@@ -1699,8 +1198,9 @@ export class StorageService {
     return this.getPlans();
   }
 
-  static savePlans(plans: SubscriptionPlan[]): void {
+  static savePlans(plans: SubscriptionPlan[], syncToFirestore: boolean = true): void {
     this.setItem(STORAGE_KEYS.PLANS, plans);
+    if (!syncToFirestore) return;
     plans.forEach((p) => {
       const payload = safeClone({
         ...p,
@@ -1711,6 +1211,10 @@ export class StorageService {
         handleFirestoreError(err, OperationType.WRITE, `subscription_plans/${p.id}`)
       );
     });
+  }
+
+  static saveLocalPlansOnly(plans: SubscriptionPlan[]): void {
+    this.savePlans(plans, false);
   }
 
   static saveSubscriptionPlans(plans: SubscriptionPlan[]): void {
