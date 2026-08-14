@@ -184,7 +184,7 @@ export const TutorialVideosSection: React.FC<TutorialVideosSectionProps> = ({
             <option value="">All Universities</option>
             {universities.map((u) => (
               <option key={u.id} value={u.id}>
-                {u.shortName} - {u.name}
+                {u.abbreviation || u.name} - {u.name}
               </option>
             ))}
           </select>

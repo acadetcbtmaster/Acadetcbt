@@ -488,66 +488,12 @@ export function safeStringify(obj: any, indent?: number): string {
 
   try {
     const clean = sanitizeForJSON(obj);
-    if (typeof clean === 'string') {
-      return clean;
-    }
-    const seenSet = new WeakSet();
-    const result = JSON.stringify(
-      clean,
-      (key: string, value: any) => {
-        if (key === 'toJSON') return undefined;
-        if (typeof value === 'function' || typeof value === 'symbol') return undefined;
-        if (typeof value === 'object' && value !== null) {
-          if (seenSet.has(value)) {
-            return '[Circular]';
-          }
-          let cName = '';
-          try {
-            cName = value?.constructor?.name || '';
-          } catch {
-            cName = '';
-          }
-          if (
-            cName === 'Y2' ||
-            cName === 'Ka' ||
-            cName === 'UserImpl' ||
-            cName === 'AuthImpl' ||
-            cName === 'Firestore' ||
-            (cName.length > 0 && cName.length <= 3 && cName !== 'Object' && cName !== 'Array' && cName !== 'Set' && cName !== 'Map' && cName !== 'Date')
-          ) {
-            return `[SDK Object: ${cName || 'Internal'}]`;
-          }
-          try {
-            seenSet.add(value);
-          } catch {
-            // ignore
-          }
-        }
-        return value;
-      },
-      indent
-    );
-    return result !== undefined ? result : 'null';
+    const result = JSON.stringify(clean, null, indent);
+    return result !== undefined ? result : '{}';
   } catch {
     try {
       const stripped = stripNonSerializable(obj);
-      if (typeof stripped === 'string') return stripped;
-      const seenSet = new WeakSet();
-      const res = JSON.stringify(
-        stripped,
-        (key: string, value: any) => {
-          if (key === 'toJSON') return undefined;
-          if (typeof value === 'function' || typeof value === 'symbol') return undefined;
-          if (typeof value === 'object' && value !== null) {
-            if (seenSet.has(value)) return '[Circular]';
-            try {
-              seenSet.add(value);
-            } catch {}
-          }
-          return value;
-        },
-        indent
-      );
+      const res = JSON.stringify(stripped, null, indent);
       return res !== undefined ? res : '{}';
     } catch {
       return '{}';
@@ -558,16 +504,26 @@ export function safeStringify(obj: any, indent?: number): string {
 export function safeClone<T>(obj: T): T {
   if (obj === null || obj === undefined || typeof obj !== 'object') return obj;
   try {
-    const jsonStr = safeStringify(obj);
-    if (jsonStr && jsonStr !== 'undefined' && jsonStr !== 'null') {
-      const parsed = JSON.parse(jsonStr);
-      if (typeof parsed === 'object' && parsed !== null) {
-        return parsed as T;
+    const clean = sanitizeForJSON(obj);
+    if (clean === undefined || clean === null) {
+      return (Array.isArray(obj) ? [] : {}) as any;
+    }
+    if (typeof clean !== 'object') {
+      return clean as any;
+    }
+    return JSON.parse(JSON.stringify(clean)) as T;
+  } catch {
+    try {
+      const stripped = stripNonSerializable(obj);
+      return JSON.parse(JSON.stringify(stripped)) as T;
+    } catch {
+      try {
+        const jsonStr = safeStringify(obj);
+        return JSON.parse(jsonStr) as T;
+      } catch {
+        return (Array.isArray(obj) ? [] : {}) as T;
       }
     }
-    return (Array.isArray(obj) ? [] : {}) as T;
-  } catch {
-    return (Array.isArray(obj) ? [] : {}) as T;
   }
 }
 
@@ -796,6 +752,8 @@ const DEFAULT_SETTINGS: SystemSettings = {
 export class StorageService {
   private static isInitialized = false;
   private static unsubscribers: Unsubscribe[] = [];
+  private static storageDispatchTimer: any = null;
+  private static pendingChangedKeys = new Set<string>();
 
   // Initialize live Firebase Cloud Firestore real-time listeners for questions, universities, courses, etc.
   static initRealtimeListeners(): void {
@@ -814,12 +772,6 @@ export class StorageService {
             });
             this.setItem(STORAGE_KEYS.QUESTIONS, qs);
           } else {
-            // Seed Firestore with initial questions if collection is empty
-            SEED_QUESTIONS.forEach((q) => {
-              setDoc(doc(db, 'questions', q.id), safeClone(q), { merge: true }).catch((err) =>
-                handleFirestoreError(err, OperationType.WRITE, `questions/${q.id}`)
-              );
-            });
             this.setItem(STORAGE_KEYS.QUESTIONS, SEED_QUESTIONS);
           }
         },
@@ -844,11 +796,6 @@ export class StorageService {
             });
             this.setItem(STORAGE_KEYS.UNIVERSITIES, unis);
           } else {
-            SEED_UNIVERSITIES.forEach((u) => {
-              setDoc(doc(db, 'universities', u.id), safeClone(u), { merge: true }).catch((err) =>
-                handleFirestoreError(err, OperationType.WRITE, `universities/${u.id}`)
-              );
-            });
             this.setItem(STORAGE_KEYS.UNIVERSITIES, SEED_UNIVERSITIES);
           }
         },
@@ -873,11 +820,6 @@ export class StorageService {
             });
             this.setItem(STORAGE_KEYS.COURSES, crs);
           } else {
-            SEED_COURSES.forEach((c) => {
-              setDoc(doc(db, 'courses', c.id), safeClone(c), { merge: true }).catch((err) =>
-                handleFirestoreError(err, OperationType.WRITE, `courses/${c.id}`)
-              );
-            });
             this.setItem(STORAGE_KEYS.COURSES, SEED_COURSES);
           }
         },
@@ -958,11 +900,6 @@ export class StorageService {
             });
             this.setItem(STORAGE_KEYS.MATERIALS, matList);
           } else {
-            SEED_STUDY_MATERIALS.forEach((m) => {
-              setDoc(doc(db, 'materials', m.id), safeClone(m), { merge: true }).catch((err) =>
-                handleFirestoreError(err, OperationType.WRITE, `materials/${m.id}`)
-              );
-            });
             this.setItem(STORAGE_KEYS.MATERIALS, SEED_STUDY_MATERIALS);
           }
         },
@@ -1053,11 +990,6 @@ export class StorageService {
             });
             this.setItem(STORAGE_KEYS.PLANS, planList);
           } else {
-            DEFAULT_PLANS.forEach((p) => {
-              setDoc(doc(db, 'plans', p.id), safeClone(p), { merge: true }).catch((err) =>
-                handleFirestoreError(err, OperationType.WRITE, `plans/${p.id}`)
-              );
-            });
             this.setItem(STORAGE_KEYS.PLANS, DEFAULT_PLANS);
           }
         },
@@ -1375,9 +1307,20 @@ export class StorageService {
   private static setItem<T>(key: string, value: T): void {
     try {
       localStorage.setItem(key, safeStringify(value));
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key, timestamp: Date.now() } }));
-      }, 0);
+      this.pendingChangedKeys.add(key);
+      if (this.storageDispatchTimer) {
+        clearTimeout(this.storageDispatchTimer);
+      }
+      this.storageDispatchTimer = setTimeout(() => {
+        this.storageDispatchTimer = null;
+        const keys = Array.from(this.pendingChangedKeys);
+        this.pendingChangedKeys.clear();
+        try {
+          window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: keys[0] || key, keys, timestamp: Date.now() } }));
+        } catch {
+          window.dispatchEvent(new Event('cbt_storage_change'));
+        }
+      }, 50);
     } catch (e) {
       console.error('Storage write error:', e);
     }

@@ -123,7 +123,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         durationDays,
         email: (user.email && user.email.includes('@') && !user.email.endsWith('.cbt')) ? user.email : 'student@gmail.com',
         userId: user.id || 'usr-student',
-        userName: user.fullName || user.name || 'Acadet Student',
+        userName: user.name || (user as any).fullName || 'Acadet Student',
       });
 
       const totalFrontEndDuration = (performance.now() - btnClickTime).toFixed(2);

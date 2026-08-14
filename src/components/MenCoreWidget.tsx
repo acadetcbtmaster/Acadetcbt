@@ -95,16 +95,18 @@ export const MenCoreWidget: React.FC<MenCoreWidgetProps> = ({
     }
   }, [messages, isOpen, isMinimized, isTyping]);
 
-  // Refresh settings periodically or on focus
+  // Refresh settings periodically or on focus / storage change
   useEffect(() => {
     const updateState = () => {
       setSettings(MenCoreService.getSettings());
       setAnnouncements(MenCoreService.getAnnouncements());
     };
     window.addEventListener('storage', updateState);
-    const interval = setInterval(updateState, 5000);
+    window.addEventListener('cbt_storage_change', updateState);
+    const interval = setInterval(updateState, 30000);
     return () => {
       window.removeEventListener('storage', updateState);
+      window.removeEventListener('cbt_storage_change', updateState);
       clearInterval(interval);
     };
   }, []);

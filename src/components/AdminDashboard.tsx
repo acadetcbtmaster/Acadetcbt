@@ -740,13 +740,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleAddMaterial = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMatTitle.trim()) return;
-    const newM = {
+    const newM: StudyMaterial = {
       id: `mat-${Date.now()}`,
+      universityId: 'uni-ful',
+      universityName: 'Federal University Lokoja (FUL)',
+      courseId: 'c-1',
+      courseCode: newMatCourse,
+      courseTitle: newMatCourse,
+      accessLevel: (newMatTier === 'Free' ? 'Free Trial' : 'Premium Only') as any,
+      totalDownloads: 0,
       title: newMatTitle,
-      type: newMatType,
-      course: newMatCourse,
-      access: newMatTier,
-      uploaded: new Date().toLocaleDateString()
+      type: (newMatType as any) || 'PDF',
+      uploadedBy: activePersona.fullName || 'Admin',
+      uploadDate: new Date().toISOString().split('T')[0],
+      status: 'Active',
+      fileUrl: '',
+      fileSize: '1.2 MB',
+      fileSizeBytes: 1258291
     };
     setMaterialsList([newM, ...materialsList]);
     setNewMatTitle('');
@@ -1011,7 +1021,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     // Mark Transaction as Success
     const updatedTxs = transactions.map((t) =>
-      t.id === txId ? { ...t, status: 'Success' as const } : t
+      t.id === txId ? { ...t, status: 'Successful' as const } : t
     );
     StorageService.saveTransactions(updatedTxs);
 
@@ -3147,7 +3157,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       View Students
                     </button>
                     <button
-                      onClick={() => { setSelectedUniversityDetail(null); setActiveCategory('analytics'); }}
+                      onClick={() => { setSelectedUniversityDetail(null); setActiveCategory('reports'); }}
                       className="p-2.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-xs font-bold rounded-xl text-center cursor-pointer"
                     >
                       View Reports
@@ -3498,7 +3508,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       View Students
                     </button>
                     <button
-                      onClick={() => { setSelectedCourseDetail(null); setActiveCategory('analytics'); }}
+                      onClick={() => { setSelectedCourseDetail(null); setActiveCategory('reports'); }}
                       className="p-2.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-xs font-bold rounded-xl text-center cursor-pointer"
                     >
                       View Reports
@@ -4013,7 +4023,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* --- Feedback & Support Interface --- */}
       {activeCategory === 'feedback_support' && (
-        <FeedbackSupportModule studentsList={studentsList} questions={questions} />
+        <FeedbackSupportModule studentsList={studentsList} />
       )}
 
       {/* --- Topic Requests & Community Management Interface --- */}

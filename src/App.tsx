@@ -263,6 +263,14 @@ export default function App() {
       checkAndVerifyPendingPayments();
     };
 
+    let syncTimeout: any = null;
+    const debouncedSyncAllData = () => {
+      if (syncTimeout) clearTimeout(syncTimeout);
+      syncTimeout = setTimeout(() => {
+        syncAllData();
+      }, 100);
+    };
+
     // Initial sync
     syncAllData();
 
@@ -290,9 +298,9 @@ export default function App() {
       }
     );
 
-    window.addEventListener('focus', syncAllData);
-    window.addEventListener('storage', syncAllData);
-    window.addEventListener('cbt_storage_change', syncAllData);
+    window.addEventListener('focus', debouncedSyncAllData);
+    window.addEventListener('storage', debouncedSyncAllData);
+    window.addEventListener('cbt_storage_change', debouncedSyncAllData);
 
     // Real-time Firestore subscription_plans listener
     const unsubPlans = onSnapshot(collection(db, 'subscription_plans'), (snapshot) => {
@@ -318,27 +326,18 @@ export default function App() {
           setPlans(livePlans);
           StorageService.savePlans(livePlans);
         }
-      } else {
-        // Seed default plans into Firestore subscription_plans collection
-        DEFAULT_PLANS.forEach((p) => {
-          setDoc(doc(db, 'subscription_plans', p.id), {
-            ...p,
-            active: true,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          }, { merge: true }).catch(console.warn);
-        });
       }
     }, (err) => {
-      console.warn('subscription_plans snapshot listener error:', err);
+      console.warn('subscription_plans snapshot listener notice:', err?.message || err);
     });
 
     return () => {
+      if (syncTimeout) clearTimeout(syncTimeout);
       unsubscribe();
       unsubPlans();
-      window.removeEventListener('focus', syncAllData);
-      window.removeEventListener('storage', syncAllData);
-      window.removeEventListener('cbt_storage_change', syncAllData);
+      window.removeEventListener('focus', debouncedSyncAllData);
+      window.removeEventListener('storage', debouncedSyncAllData);
+      window.removeEventListener('cbt_storage_change', debouncedSyncAllData);
     };
   }, []);
 
@@ -491,8 +490,8 @@ export default function App() {
 
   const handleRecordQuestionAttempt = () => {
     if (!currentUser) return;
-    const sysLimit = settings.subscription?.freeTrialQuestionLimit ?? 30;
-    const warnThreshold = settings.subscription?.warningThreshold ?? 25;
+    const sysLimit = (settings as any).subscription?.freeTrialQuestionLimit ?? settings.freeQuestionLimit ?? 30;
+    const warnThreshold = (settings as any).subscription?.warningThreshold ?? 25;
 
     const sub = currentUser.subscription || {
       isPremium: false,

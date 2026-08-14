@@ -1477,14 +1477,13 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
                 </label>
                 <select
                   value={annCategory}
-                  onChange={(e) => setAnnCategory(e.target.value)}
+                  onChange={(e) => setAnnCategory(e.target.value as any)}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
                 >
                   <option value="Academic Update">Academic Update</option>
-                  <option value="CBT Exam Prep">CBT Exam Prep</option>
-                  <option value="Live Stream">Live Stream</option>
-                  <option value="Study Tip">Study Tip</option>
-                  <option value="Community Notice">Community Notice</option>
+                  <option value="New Tutorial">New Tutorial</option>
+                  <option value="CBT Notice">CBT Notice</option>
+                  <option value="Weekly Tip">Weekly Tip</option>
                 </select>
               </div>
 
@@ -1592,14 +1591,14 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
                   </label>
                   <select
                     value={resType}
-                    onChange={(e) => setResType(e.target.value)}
+                    onChange={(e) => setResType(e.target.value as any)}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
                   >
                     <option value="PDF Summary">PDF Summary</option>
                     <option value="Formula Sheet">Formula Sheet</option>
-                    <option value="Past Questions PDF">Past Questions PDF</option>
-                    <option value="Diagram Sheet">Diagram Sheet</option>
-                    <option value="Revision Checklist">Revision Checklist</option>
+                    <option value="Revision Outline">Revision Outline</option>
+                    <option value="Diagram">Diagram</option>
+                    <option value="Past Q&A Note">Past Q&A Note</option>
                   </select>
                 </div>
               </div>

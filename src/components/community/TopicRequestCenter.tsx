@@ -228,7 +228,7 @@ export const TopicRequestCenter: React.FC<TopicRequestCenterProps> = ({
                   <option value="">Select University</option>
                   {universities.map((uni) => (
                     <option key={uni.id} value={uni.id}>
-                      {uni.shortName} - {uni.name}
+                      {uni.abbreviation || uni.name} - {uni.name}
                     </option>
                   ))}
                 </select>

@@ -222,14 +222,14 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
     const now = new Date();
     const activeSubscribersCount = students.filter((s) => {
       if (s.subscription?.isPremium || s.subscriptionStatus === 'active') {
-        const exp = s.subscription?.expiryDate || s.subscriptionExpiryDate;
+        const exp = s.subscription?.expiryDate;
         return !exp || new Date(exp).getTime() >= now.getTime();
       }
       return false;
     }).length;
 
     const expiredSubscribersCount = students.filter((s) => {
-      const exp = s.subscription?.expiryDate || s.subscriptionExpiryDate;
+      const exp = s.subscription?.expiryDate;
       if (exp && new Date(exp).getTime() < now.getTime()) {
         return true;
       }
@@ -275,9 +275,9 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
     return students
       .map((std) => {
         const isPremium = std.subscription?.isPremium || std.subscriptionStatus === 'active';
-        const planName = std.subscription?.plan || std.subscriptionPlan || 'Free Trial';
-        const startDate = std.subscription?.startDate || std.subscriptionStartDate || std.createdDate || '';
-        const expiryDate = std.subscription?.expiryDate || std.subscriptionExpiryDate || null;
+        const planName = std.subscription?.plan || (std as any).subscriptionPlan || 'Free Trial';
+        const startDate = std.subscription?.startDate || std.createdDate || '';
+        const expiryDate = std.subscription?.expiryDate || null;
 
         let daysRemaining = 0;
         let status: 'Active' | 'Expired' | 'Free Trial' = 'Free Trial';
@@ -300,7 +300,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
         return {
           student: std,
           id: std.id,
-          name: std.name || std.fullName || 'Student',
+          name: std.name || (std as any).fullName || 'Student',
           email: std.email || '',
           plan: planName,
           status,
@@ -453,14 +453,17 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
       // 2. Activate Premium Subscription for Student
       const targetStudent = students.find((s) => s.id === tx.userId || s.email === tx.userEmail);
       if (targetStudent) {
-        const updatedStudents = students.map((s) => {
+        const updatedStudents: UserProfile[] = students.map((s) => {
           if (s.id === targetStudent.id) {
             return {
               ...s,
               subscription: {
                 isPremium: true,
                 plan: tx.planName,
+                startDate: s.subscription?.startDate || new Date().toISOString(),
                 expiryDate: expiryDateISO,
+                questionsAttemptedCount: s.subscription?.questionsAttemptedCount || 0,
+                freeLimit: s.subscription?.freeLimit || 30,
               },
             };
           }
@@ -555,11 +558,16 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
         : Date.now();
       const newExpiryISO = new Date(Math.max(Date.now(), currentExpiry) + extensionDays * 86400000).toISOString();
 
-      const updatedStudents = students.map((s) => {
+      const updatedStudents: UserProfile[] = students.map((s) => {
         if (s.id === extendStudent.id) {
           return {
             ...s,
             subscription: {
+              ...(s.subscription || {
+                startDate: new Date().toISOString(),
+                questionsAttemptedCount: 0,
+                freeLimit: 30,
+              }),
               isPremium: true,
               plan: extensionPlanName,
               expiryDate: newExpiryISO,
@@ -606,11 +614,16 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
     if (!student) return;
 
     if (confirm(`Are you sure you want to cancel the active subscription for ${student.name}?`)) {
-      const updatedStudents = students.map((s) => {
+      const updatedStudents: UserProfile[] = students.map((s) => {
         if (s.id === studentId) {
           return {
             ...s,
             subscription: {
+              ...(s.subscription || {
+                startDate: new Date().toISOString(),
+                questionsAttemptedCount: 0,
+                freeLimit: 30,
+              }),
               isPremium: false,
               plan: 'Cancelled',
               expiryDate: new Date().toISOString(),
@@ -2025,8 +2038,8 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
               <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-1">
                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Start Date</span>
                 <p className="font-mono text-slate-300">
-                  {(viewSubDetailStudent.subscription?.startDate || viewSubDetailStudent.subscriptionStartDate)
-                    ? new Date(viewSubDetailStudent.subscription?.startDate || viewSubDetailStudent.subscriptionStartDate!).toLocaleDateString()
+                  {viewSubDetailStudent.subscription?.startDate
+                    ? new Date(viewSubDetailStudent.subscription.startDate).toLocaleDateString()
                     : 'N/A'}
                 </p>
               </div>
@@ -2034,8 +2047,8 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
               <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-1">
                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Expiry Date</span>
                 <p className="font-mono text-slate-300">
-                  {(viewSubDetailStudent.subscription?.expiryDate || viewSubDetailStudent.subscriptionExpiryDate)
-                    ? new Date(viewSubDetailStudent.subscription?.expiryDate || viewSubDetailStudent.subscriptionExpiryDate!).toLocaleDateString()
+                  {viewSubDetailStudent.subscription?.expiryDate
+                    ? new Date(viewSubDetailStudent.subscription.expiryDate).toLocaleDateString()
                     : 'N/A'}
                 </p>
               </div>
@@ -2044,7 +2057,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Days Remaining</span>
                 <p className="font-bold text-emerald-400">
                   {(() => {
-                    const exp = viewSubDetailStudent.subscription?.expiryDate || viewSubDetailStudent.subscriptionExpiryDate;
+                    const exp = viewSubDetailStudent.subscription?.expiryDate;
                     if (!exp) return '0 Days';
                     const diff = new Date(exp).getTime() - Date.now();
                     return diff > 0 ? `${Math.ceil(diff / (1000 * 3600 * 24))} Days Left` : 'Expired';
