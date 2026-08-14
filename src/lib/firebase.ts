@@ -34,12 +34,13 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 // Initialize Firebase Storage
 export const storage = getStorage(app);
 
-// Initialize Firestore with auto-detected long polling for sandbox reliability
+// Initialize Firestore with forced long polling for preview and iframe sandboxes
 const configuredDbId = firebaseConfigData.firestoreDatabaseId || '(default)';
 const dbId = configuredDbId === 'ai-studio-aicbtsimulator-24029710-e20e-4e1e-a3cf-846d58bd47cf' ? '(default)' : configuredDbId;
 
 export const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
+  experimentalForceLongPolling: true,
+  ignoreUndefinedProperties: true,
 }, dbId);
 
 export {

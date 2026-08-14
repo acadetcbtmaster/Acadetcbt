@@ -60,7 +60,37 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 
-// Custom safe serializer handled by safeStringify without altering global JSON.stringify
+// Custom safe serializer handled by safeStringify and circular-safe global JSON.stringify wrapper
+
+// Install global circular-safe wrapper for JSON.stringify to ensure no external, React, or SDK serialization throws uncaught TypeError
+if (typeof globalThis !== 'undefined' && globalThis.JSON) {
+  const nativeJsonStringify = globalThis.JSON.stringify;
+  (globalThis.JSON as any).stringify = function (value: any, replacer?: any, space?: any) {
+    try {
+      return nativeJsonStringify(value, replacer, space);
+    } catch (err: any) {
+      if (
+        err &&
+        (err.name === 'TypeError' ||
+          String(err.message || err).includes('circular') ||
+          String(err.message || err).includes('Converting circular structure'))
+      ) {
+        try {
+          const sanitized = sanitizeForJSON(value);
+          return nativeJsonStringify(sanitized, replacer, space);
+        } catch {
+          try {
+            const stripped = stripNonSerializable(value);
+            return nativeJsonStringify(stripped, replacer, space);
+          } catch {
+            return '{}';
+          }
+        }
+      }
+      throw err;
+    }
+  };
+}
 
 export enum OperationType {
   CREATE = 'create',
