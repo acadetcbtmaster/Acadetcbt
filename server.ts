@@ -6,6 +6,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { initializeApp as initFirebaseApp, getApps as getFirebaseApps, getApp as getFirebaseApp } from "firebase/app";
+import { getAuth as getFirebaseAuth, signInWithEmailAndPassword as signInFirebaseEmail, createUserWithEmailAndPassword as createFirebaseUser } from "firebase/auth";
 import { initializeFirestore, doc, setDoc, getDoc, getDocs, collection } from "firebase/firestore";
 
 dotenv.config();
@@ -18,6 +19,7 @@ app.use(express.json({ limit: "10mb" }));
 
 // Initialize Server-side Firestore Connection
 let dbServer: any = null;
+let authServer: any = null;
 try {
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(firebaseConfigPath)) {
@@ -25,6 +27,18 @@ try {
     const fbApp = getFirebaseApps().length > 0 ? getFirebaseApp() : initFirebaseApp(firebaseConfig);
     const dbId = firebaseConfig.firestoreDatabaseId === 'ai-studio-aicbtsimulator-24029710-e20e-4e1e-a3cf-846d58bd47cf' ? '(default)' : (firebaseConfig.firestoreDatabaseId || '(default)');
     dbServer = initializeFirestore(fbApp, {}, dbId);
+    authServer = getFirebaseAuth(fbApp);
+
+    // Authenticate backend server as Administrator
+    const adminEmail = "admin@menmex.ng";
+    const adminPass = process.env.ADMIN_PASSWORD || "joyce@menmex";
+    signInFirebaseEmail(authServer, adminEmail, adminPass)
+      .then(() => console.log("[Firestore Server] Authenticated backend as Administrator"))
+      .catch(() => {
+        createFirebaseUser(authServer, adminEmail, adminPass)
+          .then(() => console.log("[Firestore Server] Created & Authenticated Admin user in Firebase Auth"))
+          .catch((err) => console.warn("[Firestore Server] Admin Auth note:", err.message || err));
+      });
   }
 } catch (e) {
   console.warn("Server-side Firestore initialization warning:", e);
@@ -1762,6 +1776,9 @@ export { apiExport as api, app };
 
 async function startServer() {
   try {
+    const publicPath = path.join(process.cwd(), "public");
+    app.use(express.static(publicPath));
+
     if (process.env.NODE_ENV !== "production") {
       const vite = await createViteServer({
         server: { middlewareMode: true, allowedHosts: true },

@@ -882,6 +882,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         localStorage.setItem('cbt_admin_token', data.token);
         const adminUser: UserProfile = data.adminUser;
         StorageService.saveUser(adminUser);
+
+        // Sync Admin Firebase Auth session for Firestore security permissions
+        const adminEmail = adminUser.email || 'admin@menmex.ng';
+        signInWithEmailAndPassword(auth, adminEmail, adminPassword)
+          .catch(() => createUserWithEmailAndPassword(auth, adminEmail, adminPassword))
+          .catch(() => {});
+
         onLoginSuccess(adminUser, "Access granted to Admin Dashboard.");
         onClose();
       } else {

@@ -37,6 +37,7 @@ interface LandingPageProps {
   onOpenSubscribe: () => void;
   plans: SubscriptionPlan[];
   currentUser?: UserProfile | null;
+  onOpenFounder?: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
@@ -45,6 +46,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   onOpenSubscribe,
   plans,
   currentUser,
+  onOpenFounder,
 }) => {
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -129,9 +131,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="text-center max-w-3xl mx-auto">
             
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold mb-6 animate-pulse">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold mb-6">
               <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
               <span>CBT Exam Practice Engine for Nigerian Universities</span>
+            </div>
+
+            {/* Indexable Founder Recognition Banner */}
+            <div className="mb-6 mx-auto max-w-2xl px-4 py-2 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 text-xs sm:text-sm text-slate-300 flex items-center justify-center gap-2 shadow-inner" id="hero-founder-recognition">
+              <Award className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                <strong>Acadet CBT Master</strong> is a modern CBT learning and examination preparation platform founded by{' '}
+                <button
+                  onClick={onOpenFounder}
+                  className="text-amber-400 hover:text-amber-300 font-bold underline underline-offset-2 cursor-pointer transition-colors"
+                  id="hero-founder-link"
+                >
+                  Menmex
+                </button>
+                .
+              </span>
             </div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight leading-[1.15] mb-6">
@@ -543,13 +561,30 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           {/* About Text Content */}
           <div className="bg-slate-950/80 border border-slate-800 rounded-3xl p-6 sm:p-10 space-y-6 text-slate-300 text-sm sm:text-base leading-relaxed shadow-xl">
             <p>
-              Acadet is a modern university learning and CBT practice platform designed to help students prepare smarter, practice confidently, and achieve academic success. The platform provides organized course materials, practice questions, mock examinations, performance tracking, and interactive learning tools tailored to each university, level, semester, and course.
+              <strong>Acadet CBT Master</strong> is a modern CBT learning and examination preparation platform founded by{' '}
+              <button
+                onClick={onOpenFounder}
+                className="text-amber-400 hover:text-amber-300 font-bold underline underline-offset-2 cursor-pointer transition-colors"
+              >
+                Menmex
+              </button>
+              . Acadet CBT Master was founded and developed by{' '}
+              <button
+                onClick={onOpenFounder}
+                className="text-indigo-400 hover:text-indigo-300 font-bold underline underline-offset-2 cursor-pointer transition-colors"
+              >
+                Menmex
+              </button>
+              , a Computer Science student at <strong>Federal University Lokoja</strong> and a digital technology enthusiast.
+            </p>
+            <p>
+              Acadet is designed to help university students prepare smarter, practice confidently, and achieve academic success. The platform provides organized course materials, past questions, mock examinations, performance tracking, and interactive learning tools tailored to each university, level, semester, and course.
             </p>
             <p>
               Built with reliability, simplicity, and innovation in mind, Acadet offers a seamless learning experience where students can access quality academic resources, monitor their progress, and strengthen their knowledge through structured practice. Every feature is designed to deliver accurate, real-time content while providing a secure and user-friendly environment.
             </p>
             <p>
-              Whether you're preparing for tests, examinations, or improving your understanding of a course, Acadet is built to support your academic journey every step of the way.
+              Whether you're preparing for semester tests, faculty examinations, or mastering challenging course topics, Acadet is built to support your academic journey every step of the way.
             </p>
 
             {/* Mission & Vision Cards */}
@@ -577,23 +612,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             {/* Creators & Support */}
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl grid grid-cols-1 sm:grid-cols-2 gap-6 items-center">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+              <div
+                onClick={onOpenFounder}
+                className="flex items-center gap-4 cursor-pointer group hover:bg-slate-800/60 p-3 rounded-2xl transition-colors border border-transparent hover:border-amber-500/30"
+                id="about-founder-card-link"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 group-hover:scale-105 transition-transform">
                   <Award className="w-6 h-6" />
                 </div>
                 <div>
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Created By</span>
-                  <span className="text-xl font-extrabold text-white">Menmex</span>
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Founder & Creator</span>
+                  <span className="text-xl font-extrabold text-white group-hover:text-amber-300 transition-colors flex items-center gap-1.5">
+                    Menmex
+                    <span className="text-xs text-amber-400 font-semibold underline underline-offset-2">View Profile →</span>
+                  </span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">Computer Science, Federal University Lokoja</span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 p-3">
                 <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
                   <Heart className="w-6 h-6" />
                 </div>
                 <div>
                   <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">With the Support of</span>
                   <span className="text-xl font-extrabold text-white">Joyce & Video Tutorial Team</span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">High-Yield Video Tutorials & Explanations</span>
                 </div>
               </div>
             </div>
@@ -679,8 +723,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       {/* Footer */}
       <footer className="py-8 bg-slate-950 border-t border-slate-900 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© 2026 Acadet CBT MASTER. Created by Menmex with the support of Joyce and the video tutorial team. All rights reserved.</p>
+          <p>
+            © 2026 Acadet CBT MASTER.{' '}
+            <button
+              onClick={onOpenFounder}
+              className="text-amber-400 hover:text-amber-300 font-bold underline underline-offset-2 cursor-pointer transition-colors"
+              id="landing-footer-founder-link"
+            >
+              Founder: Menmex
+            </button>
+            {' '}(Computer Science, FULokoja) with the support of Joyce and the video tutorial team. All rights reserved.
+          </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
+            <button
+              onClick={onOpenFounder}
+              className="text-amber-400 hover:text-amber-300 font-bold cursor-pointer flex items-center gap-1"
+            >
+              <Award className="w-3.5 h-3.5" />
+              <span>Founder: Menmex</span>
+            </button>
             <a
               href="https://youtube.com/@acadetcbtmaster?si=Z05Z-87Vtar00lsr"
               target="_blank"
@@ -699,8 +760,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <MessageSquare className="w-3.5 h-3.5" />
               <span>AcadetCBT Learning HUB</span>
             </a>
-            <span className="hover:text-slate-300 cursor-pointer">Privacy Policy</span>
-            <span className="hover:text-slate-300 cursor-pointer">Terms of Service</span>
+            <button onClick={onOpenSubscribe} className="hover:text-slate-300 cursor-pointer">
+              Subscription Plans
+            </button>
           </div>
         </div>
       </footer>

@@ -28,6 +28,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   onClose,
   user,
   plans: propsPlans,
+  onPaymentSuccess,
+  onUpdateUser,
 }) => {
   const allPlans = (propsPlans && propsPlans.length > 0) ? propsPlans : StorageService.getSubscriptionPlans();
   const activePlans = allPlans.filter((p) => p.active !== false && p.status !== 'Inactive' && p.status !== 'Disabled');

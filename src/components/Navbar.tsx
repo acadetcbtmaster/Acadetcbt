@@ -251,6 +251,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                   >
                     About Acadet
                   </button>
+                  <button
+                    onClick={() => onNavigate('founder')}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                      activeTab === 'founder'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold'
+                        : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
+                    }`}
+                    id="nav-btn-founder-student"
+                  >
+                    <Award className="w-3.5 h-3.5" />
+                    <span>Founder</span>
+                  </button>
                 </>
               ) : (
                 <>
@@ -270,6 +282,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                     id="nav-btn-about-admin"
                   >
                     About Acadet
+                  </button>
+                  <button
+                    onClick={() => onNavigate('founder')}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                      activeTab === 'founder'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold'
+                        : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
+                    }`}
+                    id="nav-btn-founder-admin"
+                  >
+                    <Award className="w-3.5 h-3.5" />
+                    <span>Founder</span>
                   </button>
                 </>
               )}
@@ -296,6 +320,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                 id="nav-btn-about"
               >
                 About Acadet
+              </button>
+              <button
+                onClick={() => onNavigate('founder')}
+                className={`px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 ${
+                  activeTab === 'founder'
+                    ? 'text-amber-300 bg-amber-500/20 border border-amber-500/30 font-bold'
+                    : 'text-amber-400 hover:text-amber-300'
+                }`}
+                id="nav-btn-founder"
+              >
+                <Award className="w-3.5 h-3.5" />
+                <span>Founder</span>
               </button>
               <button
                 onClick={() => {
@@ -606,6 +642,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
               <button
+                onClick={() => { onNavigate('founder'); setMobileMenuOpen(false); }}
+                className="block w-full text-left px-3 py-2 text-sm text-amber-400 font-bold hover:bg-slate-800 rounded-lg"
+              >
+                🏆 Founder: Menmex
+              </button>
+              <button
                 onClick={() => { onOpenSubscribe(); setMobileMenuOpen(false); }}
                 className="block w-full text-left px-3 py-2 text-sm text-indigo-400 hover:bg-slate-800 rounded-lg font-medium"
               >
@@ -620,6 +662,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             </>
           ) : (
             <div className="flex flex-col gap-2 pt-2">
+              <button
+                onClick={() => { onNavigate('founder'); setMobileMenuOpen(false); }}
+                className="w-full text-center px-4 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-bold rounded-lg border border-amber-500/30 text-xs flex items-center justify-center gap-1.5"
+              >
+                <Award className="w-3.5 h-3.5" />
+                <span>Founder: Menmex</span>
+              </button>
               <button
                 onClick={() => { onOpenAuth('login'); setMobileMenuOpen(false); }}
                 className="w-full text-center px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-lg border border-slate-700 text-xs"

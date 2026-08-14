@@ -4,11 +4,16 @@ import {
   TopicCollectionConfig,
   TutorialVideo,
   University,
-  Course
+  Course,
+  CommunityDiscussionPost,
+  CommunityAnnouncement,
+  LearningResourceItem,
 } from '../../types';
 import { StorageService } from '../../services/storage';
 import {
   MessageSquarePlus,
+  MessageSquare,
+  Bell,
   Video,
   Search,
   Filter,
@@ -284,6 +289,10 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
     StorageService.saveTutorialVideo(videoObj);
     setShowVideoModal(false);
     refreshData();
+  };
+
+  const handleSaveVideo = (e: React.FormEvent) => {
+    handleSaveVideoWithStatus(e, videoApprovalStatus, videoVisibility);
   };
 
   const handleUpdateVideoPublishing = (

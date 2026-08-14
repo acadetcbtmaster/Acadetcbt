@@ -2,88 +2,282 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Dynamic Interface Editor & System Settings
-    match /interface_settings/{docId} {
-      allow read, write: if true;
+    // =========================================================================
+    // HELPER FUNCTIONS & AUTHENTICATION VALIDATION
+    // =========================================================================
+
+    // Verify request is made by a signed-in Firebase user
+    function isAuthenticated() {
+      return request.auth != null;
     }
 
-    match /system_configs/{configId} {
-      allow read, write: if true;
+    // Verify user owns the specific document ID
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    match /quick_links/{linkId} {
-      allow read, write: if true;
+    // Comprehensive Administrator Verification:
+    // 1. Firebase Auth Custom Claims (token.role == 'admin' or token.admin == true)
+    // 2. Verified admin email addresses
+    // 3. Firestore user document with role == 'admin'
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' ||
+        request.auth.token.admin == true ||
+        request.auth.token.email == 'admin@menmex.ng' ||
+        request.auth.token.email == 'idrisanderumohammed2521@gmail.com' ||
+        request.auth.token.email == 'clement.adebayo@cbtexport.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
     }
 
-    match /homepage_sections/{sectionId} {
-      allow read, write: if true;
+    // =========================================================================
+    // 1. USER PROFILES & ACCOUNTS
+    // =========================================================================
+    match /users/{userId} {
+      // Students can read only their own profile; Administrators can read all
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Student registration: can only create their own profile with 'student' role
+      // Cannot self-grant active paid subscriptions on initial creation
+      allow create: if isOwner(userId) && (
+        (!('role' in request.resource.data) || request.resource.data.role == 'student' || isAdmin()) &&
+        (!('subscription' in request.resource.data) || 
+         request.resource.data.subscription.isPremium == false || 
+         request.resource.data.subscription.plan == 'Free Trial' || 
+         isAdmin()) &&
+        (!('subscriptionStatus' in request.resource.data) || 
+         request.resource.data.subscriptionStatus == 'Free Trial' || 
+         request.resource.data.subscriptionStatus == 'inactive' || 
+         isAdmin())
+      );
+
+      // Student updates: can only update their own profile and CANNOT alter role or subscription status
+      allow update: if (isOwner(userId) && (
+        (!('role' in request.resource.data) || request.resource.data.role == resource.data.role) &&
+        (!('subscription' in request.resource.data) || request.resource.data.subscription == resource.data.subscription) &&
+        (!('subscriptionStatus' in request.resource.data) || request.resource.data.subscriptionStatus == resource.data.subscriptionStatus) &&
+        (!('isPremium' in request.resource.data) || request.resource.data.isPremium == resource.data.isPremium)
+      )) || isAdmin();
+
+      // Only administrators can delete user accounts
+      allow delete: if isAdmin();
     }
 
-    // Questions, Universities, Courses, Materials
+    // =========================================================================
+    // 2. CORE ACADEMIC CONTENT (Questions, Universities, Courses, Materials)
+    // =========================================================================
     match /questions/{questionId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /universities/{uniId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /courses/{courseId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /study_materials/{materialId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
-    // Subscription Plans & Payments
+    match /materials/{materialId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // =========================================================================
+    // 3. SYSTEM SETTINGS & DYNAMIC INTERFACE EDITOR
+    // =========================================================================
+    match /interface_settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /system_configs/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /quick_links/{linkId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /homepage_sections/{sectionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // =========================================================================
+    // 4. SUBSCRIPTION PLANS, PAYMENTS & SUBSCRIPTIONS
+    // =========================================================================
     match /subscription_plans/{planId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /plans/{planId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /payments/{paymentId} {
-      allow read, write: if true;
+      // Users can read only their own payment records
+      allow read: if (isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.email == request.auth.token.email)) || isAdmin();
+      // Only Admin / Server backend can create or modify payment records
+      allow write: if isAdmin();
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if (isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.email == request.auth.token.email)) || isAdmin();
+      allow write: if isAdmin();
     }
 
     match /subscriptions/{subscriptionId} {
-      allow read, write: if true;
+      // Users can read only their own subscription record
+      allow read: if (isAuthenticated() && (resource.data.userId == request.auth.uid || subscriptionId == request.auth.uid)) || isAdmin();
+      // Only Admin / Server backend can activate or modify subscriptions
+      allow write: if isAdmin();
     }
 
-    // Community & Publishing System
-    match /tutorial_videos/{videoId} {
-      allow read, write: if true;
+    // =========================================================================
+    // 5. TEST SESSIONS, RESULTS & ACTIVE USER ACTIVITY
+    // =========================================================================
+    match /results/{resultId} {
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
 
+    match /active_sessions/{sessionId} {
+      allow read: if (isAuthenticated() && (resource.data.userId == request.auth.uid || sessionId == request.auth.uid)) || isAdmin();
+      allow create, update: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || sessionId == request.auth.uid) || isAdmin();
+      allow delete: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+    }
+
+    match /ranking_history/{rankingId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || rankingId == request.auth.uid) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 6. NOTIFICATIONS & SUPPORT TICKETS
+    // =========================================================================
+    match /notifications/{notificationId} {
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow update: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow create, delete: if isAdmin();
+    }
+
+    match /support_tickets/{ticketId} {
+      allow read: if (isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.userEmail == request.auth.token.email)) || isAdmin();
+      allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || request.resource.data.userEmail == request.auth.token.email);
+      allow update, delete: if isAdmin();
+    }
+
+    match /content_reports/{reportId} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /report_records/{reportId} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 7. COMMUNITY, TUTORIALS & RESOURCES
+    // =========================================================================
     match /community_posts/{postId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (request.resource.data.authorId == request.auth.uid || isAdmin());
+      allow update: if (isAuthenticated() && (resource.data.authorId == request.auth.uid || isAdmin())) ||
+                       (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likeCount', 'commentCount', 'repliesCount']));
+      allow delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isAdmin());
+    }
+
+    match /community_replies/{replyId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if (isAuthenticated() && resource.data.authorId == request.auth.uid) || isAdmin();
     }
 
     match /community_announcements/{announcementId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /tutorial_videos/{videoId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /learning_resources/{resourceId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     match /topic_requests/{requestId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
     }
 
-    // Users
-    match /users/{userId} {
-      allow read, write: if true;
+    // =========================================================================
+    // 8. FACE ARENA MULTIPLAYER CHALLENGES
+    // =========================================================================
+    match /face_arena_questions/{questionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
-    // Catch-all default rule
-    match /{document=**} {
-      allow read, write: if true;
+    match /face_arena_participants/{participantId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /face_arena_archives/{archiveId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // =========================================================================
+    // 9. AUDIT LOGS, BACKUPS & ADMINISTRATIVE TELEMETRY (ADMIN ONLY)
+    // =========================================================================
+    match /admin_notifications/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /activity_logs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /full_activity_logs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /backups/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /restore_logs/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /webhook_logs/{docId} {
+      allow read, write: if isAdmin();
     }
   }
 }
+
 
 

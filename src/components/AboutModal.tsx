@@ -5,10 +5,18 @@ import { X, GraduationCap, Target, Eye, Heart, MessageSquare, ExternalLink, Spar
 interface AboutModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenFounder?: () => void;
 }
 
-export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
+export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, onOpenFounder }) => {
   if (!isOpen) return null;
+
+  const handleFounderClick = () => {
+    onClose();
+    if (onOpenFounder) {
+      onOpenFounder();
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-in fade-in" id="about-acadet-modal">
@@ -62,6 +70,16 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
               About Acadet
             </h3>
             <p>
+              <strong>Acadet CBT Master was founded and developed by{' '}
+              <button
+                onClick={handleFounderClick}
+                className="text-amber-400 hover:text-amber-300 font-bold underline underline-offset-2 cursor-pointer transition-colors"
+              >
+                Menmex
+              </button>
+              </strong>, a Computer Science student at <strong>Federal University Lokoja</strong> and a digital technology enthusiast.
+            </p>
+            <p>
               Acadet is a modern university learning and CBT practice platform designed to help students prepare smarter, practice confidently, and achieve academic success. The platform provides organized course materials, practice questions, mock examinations, performance tracking, and interactive learning tools tailored to each university, level, semester, and course.
             </p>
             <p>
@@ -99,23 +117,32 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
 
           {/* Created By & Supported By */}
           <div className="bg-slate-950/60 border border-slate-800 p-5 rounded-2xl grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+            <div
+              onClick={handleFounderClick}
+              className="flex items-center gap-3 cursor-pointer group hover:bg-slate-800/60 p-2 rounded-xl transition-colors"
+              id="about-modal-founder-card"
+            >
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 group-hover:scale-105 transition-transform">
                 <Award className="w-5 h-5" />
               </div>
               <div>
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Created By</span>
-                <span className="text-base font-extrabold text-white">Menmex</span>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Founder & Creator</span>
+                <span className="text-base font-extrabold text-white group-hover:text-amber-300 transition-colors flex items-center gap-1">
+                  Menmex
+                  <span className="text-xs text-amber-400 font-medium">→ Profile</span>
+                </span>
+                <span className="text-[10px] text-slate-400 block">Computer Science, FULokoja</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+            <div className="flex items-center gap-3 p-2">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
                 <Heart className="w-5 h-5" />
               </div>
               <div>
                 <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">With the Support of</span>
                 <span className="text-base font-extrabold text-white">Joyce & Video Tutorial Team</span>
+                <span className="text-[10px] text-slate-400 block">High-Yield Video Tutorials</span>
               </div>
             </div>
           </div>

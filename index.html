@@ -21,13 +21,85 @@
     <meta name="theme-color" content="#020617" />
     
     <!-- Open Graph & Search Metadata -->
-    <meta name="description" content="Acadet is a modern university learning and CBT practice platform designed to help students prepare smarter, practice confidently, and ace exams." />
+    <meta name="author" content="Menmex" />
+    <meta name="description" content="Acadet CBT Master is a modern CBT learning and examination preparation platform founded by Menmex. Practice verified past questions, simulate timed CBT exams, and access university course materials." />
     <meta property="og:title" content="Acadet CBT MASTER" />
-    <meta property="og:description" content="Acadet is a modern university learning and CBT practice platform designed to help students prepare smarter, practice confidently, and ace exams." />
+    <meta property="og:description" content="Acadet CBT Master is a modern CBT learning and examination preparation platform founded by Menmex." />
     <meta property="og:image" content="/favicon-512x512.png" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Acadet CBT MASTER" />
+    <meta name="twitter:description" content="Acadet CBT Master is a modern CBT learning and examination preparation platform founded by Menmex." />
     <meta name="twitter:image" content="/favicon-512x512.png" />
+
+    <!-- Structured Data: Knowledge Graph Schema for Founder & Organization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "EducationalOrganization",
+          "@id": "https://acadetcbt.website/#organization",
+          "name": "Acadet CBT Master",
+          "alternateName": ["Acadet", "AcadetCBT", "Acadet CBT"],
+          "url": "https://acadetcbt.website",
+          "logo": "https://acadetcbt.website/favicon-512x512.png",
+          "description": "Acadet CBT Master is a modern university learning and CBT practice platform designed to help students prepare smarter, practice confidently, and achieve academic success.",
+          "founder": {
+            "@id": "https://acadetcbt.website/#founder"
+          },
+          "creator": {
+            "@id": "https://acadetcbt.website/#founder"
+          },
+          "sameAs": [
+            "https://youtube.com/@acadetcbtmaster?si=Z05Z-87Vtar00lsr",
+            "https://whatsapp.com/channel/0029VbD0s0Y7oQhXIlLM4c3K"
+          ]
+        },
+        {
+          "@type": "Person",
+          "@id": "https://acadetcbt.website/#founder",
+          "name": "Menmex",
+          "url": "https://acadetcbt.website/founder",
+          "jobTitle": "Founder & Website Developer",
+          "alumniOf": {
+            "@type": "CollegeOrUniversity",
+            "name": "Federal University Lokoja",
+            "sameAs": "https://fulokoja.edu.ng"
+          },
+          "affiliation": {
+            "@id": "https://acadetcbt.website/#organization"
+          },
+          "knowsAbout": [
+            "Computer Science",
+            "Computer-Based Testing Systems",
+            "Web Development",
+            "Software Engineering",
+            "Social Media Management",
+            "Digital Content Creation",
+            "Online Examination Platforms"
+          ],
+          "sameAs": [
+            "https://acadetcbt.website/founder",
+            "https://youtube.com/@acadetcbtmaster?si=Z05Z-87Vtar00lsr",
+            "https://whatsapp.com/channel/0029VbD0s0Y7oQhXIlLM4c3K"
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://acadetcbt.website/#website",
+          "url": "https://acadetcbt.website",
+          "name": "Acadet CBT MASTER",
+          "publisher": {
+            "@id": "https://acadetcbt.website/#organization"
+          },
+          "author": {
+            "@id": "https://acadetcbt.website/#founder"
+          }
+        }
+      ]
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>

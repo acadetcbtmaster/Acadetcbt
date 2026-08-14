@@ -44,6 +44,7 @@ import { FaceArenaView } from './components/FaceArenaView';
 import { InAppNotificationOverlay } from './components/InAppNotificationOverlay';
 import { NotificationCenterModal } from './components/NotificationCenterModal';
 import { PaymentSuccessView } from './components/PaymentSuccessView';
+import { FounderPage } from './components/FounderPage';
 
 export default function App() {
   const [isNotifCenterOpen, setIsNotifCenterOpen] = useState<boolean>(false);
@@ -88,6 +89,9 @@ export default function App() {
 
   // UI Navigation & Modals State
   const [activeTab, setActiveTab] = useState<string>(() => {
+    if (window.location.pathname === '/founder' || window.location.pathname.startsWith('/founder')) {
+      return 'founder';
+    }
     const isPaymentReturn =
       window.location.pathname.includes('/payment') ||
       window.location.search.includes('reference=') ||
@@ -102,6 +106,24 @@ export default function App() {
     }
     return 'landing';
   });
+
+  // Handle URL changes & popstate
+  useEffect(() => {
+    const handlePopState = () => {
+      if (window.location.pathname === '/founder' || window.location.pathname.startsWith('/founder')) {
+        setActiveTab('founder');
+      } else if (window.location.pathname === '/' || window.location.pathname === '') {
+        const saved = StorageService.getUser();
+        if (saved) {
+          setActiveTab(saved.role === 'admin' ? 'admin' : 'dashboard');
+        } else {
+          setActiveTab('landing');
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'register' | 'login' | 'admin' | 'forgot'>('register');
   const [subModalOpen, setSubModalOpen] = useState<boolean>(false);
@@ -312,7 +334,7 @@ export default function App() {
 
   // Automatic Navigation Protection & Homepage Determination
   useEffect(() => {
-    if (activeTab === 'payment_result') return;
+    if (activeTab === 'payment_result' || activeTab === 'founder') return;
 
     if (currentUser) {
       // Authenticated User: Prevent returning to the visitor public landing page
@@ -325,7 +347,7 @@ export default function App() {
       }
     } else {
       // Unauthenticated Visitor: Protect student and admin pages
-      if (activeTab !== 'landing') {
+      if (activeTab !== 'landing' && activeTab !== 'founder') {
         setActiveTab('landing');
       }
     }
@@ -333,12 +355,25 @@ export default function App() {
 
   // Secure navigation guard
   const handleNavigate = (tab: string) => {
+    if (tab === 'founder') {
+      setActiveTab('founder');
+      try {
+        window.history.pushState({}, '', '/founder');
+      } catch (e) {}
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     if (tab === 'landing') {
       if (currentUser) {
         setActiveTab(currentUser.role === 'admin' ? 'admin' : 'dashboard');
       } else {
         setActiveTab('landing');
+        try {
+          window.history.pushState({}, '', '/');
+        } catch (e) {}
       }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -360,6 +395,7 @@ export default function App() {
     }
 
     setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleLogout = () => {
@@ -526,6 +562,15 @@ export default function App() {
             onOpenAuth={(mode) => handleOpenAuth(mode || 'register')}
             onOpenSubscribe={() => setSubModalOpen(true)}
             plans={plans}
+            onOpenFounder={() => handleNavigate('founder')}
+          />
+        )}
+
+        {activeTab === 'founder' && (
+          <FounderPage
+            onNavigate={handleNavigate}
+            onOpenAuth={(mode) => handleOpenAuth(mode || 'register')}
+            currentUser={currentUser}
           />
         )}
 
@@ -668,6 +713,13 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p>© 2026 Acadet CBT MASTER. Created by Menmex with the support of Joyce and the video tutorial team. All rights reserved.</p>
           <div className="flex flex-wrap items-center gap-4 text-slate-400">
+            <button
+              onClick={() => handleNavigate('founder')}
+              className="text-amber-400 hover:text-amber-300 font-bold cursor-pointer flex items-center gap-1"
+              id="global-footer-founder-btn"
+            >
+              Founder: Menmex
+            </button>
             <button
               onClick={() => setAboutModalOpen(true)}
               className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
@@ -818,6 +870,7 @@ export default function App() {
       <AboutModal
         isOpen={aboutModalOpen}
         onClose={() => setAboutModalOpen(false)}
+        onOpenFounder={() => handleNavigate('founder')}
       />
 
       {/* Features PDF Modal */}
