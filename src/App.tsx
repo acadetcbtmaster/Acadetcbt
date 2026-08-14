@@ -107,23 +107,6 @@ export default function App() {
     return 'landing';
   });
 
-  // Handle URL changes & popstate
-  useEffect(() => {
-    const handlePopState = () => {
-      if (window.location.pathname === '/founder' || window.location.pathname.startsWith('/founder')) {
-        setActiveTab('founder');
-      } else if (window.location.pathname === '/' || window.location.pathname === '') {
-        const saved = StorageService.getUser();
-        if (saved) {
-          setActiveTab(saved.role === 'admin' ? 'admin' : 'dashboard');
-        } else {
-          setActiveTab('landing');
-        }
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'register' | 'login' | 'admin' | 'forgot'>('register');
   const [subModalOpen, setSubModalOpen] = useState<boolean>(false);
@@ -142,6 +125,82 @@ export default function App() {
     freeLimit: 30,
   });
   const [registrationMessage, setRegistrationMessage] = useState<string | null>(null);
+
+  // Handle URL changes & popstate (browser back/forward button)
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      // If any modal is open, back action dismisses the top modal first
+      if (
+        authModalOpen ||
+        subModalOpen ||
+        editProfileModalOpen ||
+        aboutModalOpen ||
+        featuresPdfModalOpen ||
+        isNotifCenterOpen ||
+        trialAlertState.isOpen
+      ) {
+        setAuthModalOpen(false);
+        setSubModalOpen(false);
+        setEditProfileModalOpen(false);
+        setAboutModalOpen(false);
+        setFeaturesPdfModalOpen(false);
+        setIsNotifCenterOpen(false);
+        setTrialAlertState((prev) => ({ ...prev, isOpen: false }));
+        return;
+      }
+
+      if (window.location.pathname === '/founder' || window.location.pathname.startsWith('/founder')) {
+        setActiveTab('founder');
+        return;
+      }
+
+      const hash = window.location.hash.replace(/^#/, '');
+      if (hash) {
+        const validTabs = [
+          'dashboard',
+          'practice',
+          'mock_cbt',
+          'materials',
+          'leaderboard',
+          'performance',
+          'bookmarks',
+          'community',
+          'face_arena',
+          'admin',
+          'founder',
+        ];
+        if (validTabs.includes(hash)) {
+          const saved = StorageService.getUser();
+          if (saved) {
+            if (hash === 'admin' && saved.role !== 'admin') {
+              setActiveTab('dashboard');
+            } else {
+              setActiveTab(hash);
+            }
+            return;
+          }
+        }
+      }
+
+      const saved = StorageService.getUser();
+      if (saved) {
+        setActiveTab(saved.role === 'admin' ? 'admin' : 'dashboard');
+      } else {
+        setActiveTab('landing');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [
+    authModalOpen,
+    subModalOpen,
+    editProfileModalOpen,
+    aboutModalOpen,
+    featuresPdfModalOpen,
+    isNotifCenterOpen,
+    trialAlertState.isOpen,
+  ]);
 
   const handleOpenAuth = (mode: 'register' | 'login' | 'admin' | 'forgot' = 'register') => {
     setAuthModalMode(mode);
@@ -395,6 +454,9 @@ export default function App() {
     }
 
     setActiveTab(tab);
+    try {
+      window.history.pushState({ tab }, '', tab === 'founder' ? '/founder' : tab === 'landing' ? '/' : `/#${tab}`);
+    } catch (e) {}
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -652,6 +714,7 @@ export default function App() {
             currentUser={currentUser}
             universities={universities}
             courses={courses}
+            onNavigate={handleNavigate}
           />
         )}
 

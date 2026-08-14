@@ -11,7 +11,9 @@ import {
   RotateCcw,
   Sparkles,
   BookOpen,
-  Filter
+  Filter,
+  ArrowLeft,
+  X
 } from 'lucide-react';
 
 interface CbtResultsViewProps {
@@ -90,8 +92,30 @@ export const CbtResultsView: React.FC<CbtResultsViewProps> = ({
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-8" id="cbt-results-container">
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6" id="cbt-results-container">
       
+      {/* Top Header Controls: Back Arrow (Top Left) & Cancel X Button (Top Right) */}
+      <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+        <button
+          onClick={onBackToDashboard}
+          className="px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-slate-700 cursor-pointer shadow-sm"
+          id="results-top-back-btn"
+          title="Back to Dashboard"
+        >
+          <ArrowLeft className="w-4 h-4 text-indigo-400" />
+          <span>Back to Dashboard</span>
+        </button>
+
+        <button
+          onClick={onBackToDashboard}
+          className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all border border-slate-700 cursor-pointer shadow-sm"
+          id="results-top-cancel-btn"
+          title="Cancel / Close Results"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
       {/* Top Banner Card */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">

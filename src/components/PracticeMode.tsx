@@ -514,6 +514,29 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
       {/* Step 1: Configuration Screen */}
       {step === 'config' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+          
+          {/* Top Navigation Bar */}
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <button
+              onClick={() => onNavigate ? onNavigate('dashboard') : window.history.back()}
+              className="px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-slate-700 cursor-pointer shadow-sm"
+              id="practice-top-back-btn"
+              title="Back to Dashboard"
+            >
+              <ArrowLeft className="w-4 h-4 text-indigo-400" />
+              <span>Back to Dashboard</span>
+            </button>
+
+            <button
+              onClick={() => onNavigate ? onNavigate('dashboard') : window.history.back()}
+              className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all border border-slate-700 cursor-pointer shadow-sm"
+              id="practice-top-cancel-btn"
+              title="Cancel / Close Practice"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
           <div className="flex items-center space-x-3 pb-4 border-b border-slate-800">
             <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center">
               <Sliders className="w-6 h-6" />

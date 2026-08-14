@@ -31,19 +31,36 @@ import {
   TrendingUp,
 } from 'lucide-react';
 
+import { UserProfile } from '../types';
+
 interface FounderPageProps {
-  onNavigateHome: () => void;
+  onNavigateHome?: () => void;
   onNavigateTab?: (tab: string) => void;
+  onNavigate?: (tab: string) => void;
   onOpenSubscribe?: () => void;
+  onOpenAuth?: (mode?: 'login' | 'register') => void;
+  currentUser?: UserProfile | null;
   themeMode?: 'dark' | 'light';
 }
 
 export const FounderPage: React.FC<FounderPageProps> = ({
   onNavigateHome,
   onNavigateTab,
+  onNavigate,
   onOpenSubscribe,
+  onOpenAuth,
+  currentUser,
   themeMode = 'dark',
 }) => {
+  const handleGoBack = () => {
+    if (onNavigateHome) {
+      onNavigateHome();
+    } else if (onNavigate) {
+      onNavigate(currentUser ? 'dashboard' : 'landing');
+    } else {
+      window.history.back();
+    }
+  };
   // Update document title and dynamic meta for SEO & Knowledge Graph
   useEffect(() => {
     const originalTitle = document.title;
@@ -243,7 +260,7 @@ export const FounderPage: React.FC<FounderPageProps> = ({
         {/* Navigation Top Bar */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <button
-            onClick={onNavigateHome}
+            onClick={handleGoBack}
             className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white rounded-xl border border-slate-700 transition-all flex items-center gap-2 text-xs sm:text-sm font-semibold cursor-pointer shadow-sm group"
             id="founder-back-to-home-btn"
           >
@@ -661,7 +678,7 @@ export const FounderPage: React.FC<FounderPageProps> = ({
 
           <div className="pt-4 flex flex-wrap items-center justify-center gap-4">
             <button
-              onClick={onNavigateHome}
+              onClick={handleGoBack}
               className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold shadow-lg transition-all flex items-center gap-2 cursor-pointer"
               id="founder-cta-start-practice-btn"
             >

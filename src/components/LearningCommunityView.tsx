@@ -28,6 +28,8 @@ import {
   FileSpreadsheet,
   Sparkles,
   ArrowRight,
+  ArrowLeft,
+  X,
   TrendingUp,
   Heart,
   Youtube,
@@ -40,6 +42,7 @@ interface LearningCommunityViewProps {
   courses: Course[];
   initialTab?: 'feed' | 'topic_requests' | 'tutorials' | 'discussions' | 'announcements' | 'resources';
   initialPreviewVideo?: TutorialVideo | null;
+  onNavigate?: (tab: string) => void;
 }
 
 export const LearningCommunityView: React.FC<LearningCommunityViewProps> = ({
@@ -48,6 +51,7 @@ export const LearningCommunityView: React.FC<LearningCommunityViewProps> = ({
   courses,
   initialTab = 'feed',
   initialPreviewVideo = null,
+  onNavigate,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
     'feed' | 'topic_requests' | 'tutorials' | 'discussions' | 'announcements' | 'resources'
@@ -91,7 +95,30 @@ export const LearningCommunityView: React.FC<LearningCommunityViewProps> = ({
   const visibleAnnouncements = isAdmin ? announcements : announcements.filter(isContentApprovedAndVisible);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8 space-y-8 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8 space-y-6 max-w-7xl mx-auto" id="learning-community-container">
+      
+      {/* Top Header Controls: Back Arrow (Top Left) & Cancel X Button (Top Right) */}
+      <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+        <button
+          onClick={() => onNavigate ? onNavigate('dashboard') : window.history.back()}
+          className="px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-slate-700 cursor-pointer shadow-sm"
+          id="community-top-back-btn"
+          title="Back to Dashboard"
+        >
+          <ArrowLeft className="w-4 h-4 text-indigo-400" />
+          <span>Back to Dashboard</span>
+        </button>
+
+        <button
+          onClick={() => onNavigate ? onNavigate('dashboard') : window.history.back()}
+          className="p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all border border-slate-700 cursor-pointer shadow-sm"
+          id="community-top-cancel-btn"
+          title="Cancel / Close Community Interface"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
       {/* Top Banner & Title */}
       <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-purple-950 border border-indigo-500/30 rounded-3xl p-6 sm:p-10 relative overflow-hidden shadow-2xl">
         <div className="absolute -top-24 -right-24 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
