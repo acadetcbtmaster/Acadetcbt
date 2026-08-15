@@ -29,15 +29,28 @@ try {
     dbServer = initializeFirestore(fbApp, {}, dbId);
     authServer = getFirebaseAuth(fbApp);
 
-    // Authenticate backend server as Administrator
+    // Authenticate backend server as Administrator if email provider is enabled
     const adminEmail = "admin@menmex.ng";
     const adminPass = process.env.ADMIN_PASSWORD || "joyce@menmex";
     signInFirebaseEmail(authServer, adminEmail, adminPass)
       .then(() => console.log("[Firestore Server] Authenticated backend as Administrator"))
-      .catch(() => {
-        createFirebaseUser(authServer, adminEmail, adminPass)
-          .then(() => console.log("[Firestore Server] Created & Authenticated Admin user in Firebase Auth"))
-          .catch((err) => console.warn("[Firestore Server] Admin Auth note:", err.message || err));
+      .catch((signInErr) => {
+        const isNotAllowed =
+          signInErr?.code === 'auth/operation-not-allowed' ||
+          String(signInErr?.message || '').includes('operation-not-allowed');
+
+        if (!isNotAllowed) {
+          createFirebaseUser(authServer, adminEmail, adminPass)
+            .then(() => console.log("[Firestore Server] Created & Authenticated Admin user in Firebase Auth"))
+            .catch((err) => {
+              const creationNotAllowed =
+                err?.code === 'auth/operation-not-allowed' ||
+                String(err?.message || '').includes('operation-not-allowed');
+              if (!creationNotAllowed) {
+                console.warn("[Firestore Server] Admin Auth notice:", err.message || err);
+              }
+            });
+        }
       });
   }
 } catch (e) {

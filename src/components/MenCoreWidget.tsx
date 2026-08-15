@@ -81,12 +81,27 @@ export const MenCoreWidget: React.FC<MenCoreWidgetProps> = ({
   });
 
   // Dragging state
-  const [pos, setPos] = useState({ x: window.innerWidth - 80, y: window.innerHeight - 90 });
+  const [pos, setPos] = useState(() => ({
+    x: typeof window !== 'undefined' ? Math.max(10, window.innerWidth - 80) : 300,
+    y: typeof window !== 'undefined' ? Math.max(10, window.innerHeight - 90) : 600,
+  }));
   const [isDragging, setIsDragging] = useState(false);
   const [hasDragged, setHasDragged] = useState(false);
   const [showWelcomePill, setShowWelcomePill] = useState(true);
   const dragOffset = useRef({ x: 0, y: 0 });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Keep widget in viewport bounds on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setPos((prev) => ({
+        x: Math.max(10, Math.min(window.innerWidth - 70, prev.x)),
+        y: Math.max(10, Math.min(window.innerHeight - 70, prev.y)),
+      }));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Auto scroll to bottom
   useEffect(() => {

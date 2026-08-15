@@ -34,7 +34,7 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 // Initialize Firebase Storage
 export const storage = getStorage(app);
 
-// Initialize Firestore safely
+// Initialize Firestore with default WebChannel transport
 const configuredDbId = firebaseConfigData.firestoreDatabaseId || '(default)';
 const targetDbId =
   !configuredDbId ||
@@ -46,8 +46,8 @@ const targetDbId =
 let firestoreInstance;
 try {
   firestoreInstance = targetDbId
-    ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true, ignoreUndefinedProperties: true }, targetDbId)
-    : initializeFirestore(app, { experimentalAutoDetectLongPolling: true, ignoreUndefinedProperties: true });
+    ? initializeFirestore(app, { ignoreUndefinedProperties: true }, targetDbId)
+    : initializeFirestore(app, { ignoreUndefinedProperties: true });
 } catch {
   firestoreInstance = targetDbId ? getFirestore(app, targetDbId) : getFirestore(app);
 }

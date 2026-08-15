@@ -1,4 +1,3 @@
-import '../lib/safeJson';
 import {
   UserProfile,
   Question,
@@ -26,7 +25,6 @@ import {
   SystemSettingsPayload,
   TopicRequest,
   TopicCollectionConfig,
-  ReferralLeaderboardConfig,
   TutorialVideo,
   CommunityDiscussionPost,
   CommunityReply,
@@ -51,7 +49,6 @@ import {
 } from '../types';
 
 import { auth, db } from '../lib/firebase';
-import { ensureReferralFields } from '../utils/referrals';
 import {
   collection,
   doc,
@@ -582,7 +579,6 @@ const STORAGE_KEYS = {
   COMMUNITY_REPLIES: 'cbt_community_replies',
   LEARNING_RESOURCES: 'cbt_learning_resources',
   COMMUNITY_ANNOUNCEMENTS: 'cbt_community_announcements',
-  REFERRAL_LEADERBOARD_CONFIG: 'cbt_referral_leaderboard_config',
   SIGNUP_FACULTY_GROUPS: 'cbt_signup_faculty_groups',
   FACE_ARENA_SETTINGS: 'cbt_face_arena_settings',
   FACE_ARENA_QUESTIONS: 'cbt_face_arena_questions',
@@ -815,6 +811,8 @@ export class StorageService {
   private static enforceSubscriptionExpiry(user: UserProfile): UserProfile {
     if (!user) return user;
 
+    const stableStartDate = user.subscription?.startDate || user.createdDate || '2026-01-01T00:00:00.000Z';
+
     // Admins retain unrestricted access
     if (user.role === 'admin') {
       return {
@@ -822,7 +820,7 @@ export class StorageService {
         subscription: {
           isPremium: true,
           plan: user.subscription?.plan || 'Administrator Pass',
-          startDate: user.subscription?.startDate || new Date().toISOString(),
+          startDate: stableStartDate,
           expiryDate: null,
           questionsAttemptedCount: user.subscription?.questionsAttemptedCount || 0,
           freeLimit: 999999,
@@ -839,7 +837,7 @@ export class StorageService {
     const status = user.subscriptionStatus;
 
     const isNonPaidPlanName = (p: string) => {
-      const lower = p.toLowerCase();
+      const lower = (p || '').toLowerCase();
       return (
         !p ||
         lower.includes('free tier') ||
@@ -872,6 +870,7 @@ export class StorageService {
           ...sub!,
           isPremium: true,
           freeLimit: 999999,
+          startDate: stableStartDate,
         },
       };
     }
@@ -882,7 +881,7 @@ export class StorageService {
       subscription: {
         isPremium: false,
         plan: sub?.plan === 'Cancelled' ? 'Cancelled (Free Tier)' : '30-Question Free Tier',
-        startDate: sub?.startDate || new Date().toISOString(),
+        startDate: stableStartDate,
         expiryDate: sub?.expiryDate || null,
         questionsAttemptedCount: sub?.questionsAttemptedCount || 0,
         freeLimit: 30,
@@ -893,17 +892,9 @@ export class StorageService {
   // User & Users
   static getUsers(): UserProfile[] {
     const rawUsers = this.getItem<UserProfile[]>(STORAGE_KEYS.USERS, [DEFAULT_USER]);
-    let hasChanges = false;
-    const updatedUsers = rawUsers.map((u) => {
-      let checked = this.enforceSubscriptionExpiry(u);
-      checked = ensureReferralFields(checked, rawUsers);
-      if (checked !== u) hasChanges = true;
-      return checked;
+    return rawUsers.map((u) => {
+      return this.enforceSubscriptionExpiry(u);
     });
-    if (hasChanges) {
-      this.setItem(STORAGE_KEYS.USERS, updatedUsers);
-    }
-    return updatedUsers;
   }
 
   static saveUsers(users: UserProfile[], syncToFirestore: boolean = true): void {
@@ -955,11 +946,10 @@ export class StorageService {
     const updatedRecord = users.find((u) => u.id === rawUser.id);
     const targetUser = updatedRecord || rawUser;
 
-    let checked = this.enforceSubscriptionExpiry(targetUser);
-    checked = ensureReferralFields(checked, users);
-    if (safeStringify(checked) !== safeStringify(rawUser)) {
-      this.setItem(STORAGE_KEYS.USER, checked);
-    }
+    const checked = this.enforceSubscriptionExpiry(targetUser);
+    
+    // Update memory cache cleanly without re-triggering storage write event loop
+    this.memoryCache.set(STORAGE_KEYS.USER, checked);
     return checked;
   }
 
@@ -974,18 +964,17 @@ export class StorageService {
 
   static saveUser(user: UserProfile, syncToFirestore: boolean = true): void {
     const users = this.getUsers();
-    const userWithReferral = ensureReferralFields(user, users);
 
     const activeSessionUser = this.getItem<UserProfile | null>(STORAGE_KEYS.USER, null);
-    if (!activeSessionUser || activeSessionUser.id === userWithReferral.id) {
-      this.setItem(STORAGE_KEYS.USER, userWithReferral);
+    if (!activeSessionUser || activeSessionUser.id === user.id) {
+      this.setItem(STORAGE_KEYS.USER, user);
     }
 
-    const idx = users.findIndex((u) => u.id === userWithReferral.id);
+    const idx = users.findIndex((u) => u.id === user.id);
     if (idx >= 0) {
-      users[idx] = userWithReferral;
+      users[idx] = user;
     } else {
-      users.unshift(userWithReferral);
+      users.unshift(user);
     }
     this.setItem(STORAGE_KEYS.USERS, users);
 
@@ -993,28 +982,24 @@ export class StorageService {
 
     // Secure Firestore Sync
     try {
-      if (userWithReferral && userWithReferral.id) {
+      if (user && user.id) {
         setDoc(
-          doc(db, 'users', userWithReferral.id),
+          doc(db, 'users', user.id),
           safeClone({
-            fullName: userWithReferral.name,
-            username: userWithReferral.username || '',
-            email: userWithReferral.email,
-            phone: userWithReferral.phone || '',
-            role: userWithReferral.role,
-            universityName: userWithReferral.universityName || '',
-            departmentName: userWithReferral.departmentName || '',
-            subscription: userWithReferral.subscription,
-            bookmarks: userWithReferral.bookmarks || [],
-            createdDate: userWithReferral.createdDate,
-            referralCode: userWithReferral.referralCode || '',
-            successfulReferrals: userWithReferral.successfulReferrals ?? 0,
-            referredBy: userWithReferral.referredBy || '',
-            referredByCode: userWithReferral.referredByCode || '',
+            fullName: user.name,
+            username: user.username || '',
+            email: user.email,
+            phone: user.phone || '',
+            role: user.role,
+            universityName: user.universityName || '',
+            departmentName: user.departmentName || '',
+            subscription: user.subscription,
+            bookmarks: user.bookmarks || [],
+            createdDate: user.createdDate,
             updatedAt: new Date().toISOString(),
           }),
           { merge: true }
-        ).catch((err) => handleFirestoreError(err, OperationType.WRITE, `users/${userWithReferral.id}`));
+        ).catch((err) => handleFirestoreError(err, OperationType.WRITE, `users/${user.id}`));
       }
     } catch (e) {
       console.warn('Firestore write user error:', e);
@@ -1022,7 +1007,19 @@ export class StorageService {
   }
 
   static saveLocalUserOnly(user: UserProfile): void {
-    this.saveUser(user, false);
+    const users = this.getUsers();
+    const index = users.findIndex((u) => u.id === user.id || (u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase()));
+    if (index >= 0) {
+      users[index] = user;
+    } else {
+      users.push(user);
+    }
+    this.memoryCache.set(STORAGE_KEYS.USER, user);
+    this.memoryCache.set(STORAGE_KEYS.USERS, users);
+    try {
+      localStorage.setItem(STORAGE_KEYS.USER, safeStringify(user));
+      localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(users));
+    } catch {}
   }
 
   // Questions
@@ -1214,7 +1211,10 @@ export class StorageService {
   }
 
   static saveLocalPlansOnly(plans: SubscriptionPlan[]): void {
-    this.savePlans(plans, false);
+    this.memoryCache.set(STORAGE_KEYS.PLANS, plans);
+    try {
+      localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(plans));
+    } catch {}
   }
 
   static saveSubscriptionPlans(plans: SubscriptionPlan[]): void {
@@ -3306,53 +3306,6 @@ export class StorageService {
     deleteDoc(doc(db, 'community_announcements', id)).catch((err) =>
       handleFirestoreError(err, OperationType.DELETE, `community_announcements/${id}`)
     );
-  }
-
-  // Referral Leaderboard Config & Reset Methods
-  static getReferralLeaderboardConfig(): ReferralLeaderboardConfig {
-    const defaultConfig: ReferralLeaderboardConfig = {
-      enabled: true,
-      showOnHomepage: true,
-      showOnDashboard: true,
-      updatedAt: new Date().toISOString(),
-    };
-    return this.getItem<ReferralLeaderboardConfig>(STORAGE_KEYS.REFERRAL_LEADERBOARD_CONFIG, defaultConfig);
-  }
-
-  static saveReferralLeaderboardConfig(config: ReferralLeaderboardConfig): void {
-    const updated = { ...config, updatedAt: new Date().toISOString() };
-    this.setItem(STORAGE_KEYS.REFERRAL_LEADERBOARD_CONFIG, updated);
-    setDoc(doc(db, 'system_configs', 'referral_leaderboard'), safeClone(updated), { merge: true }).catch((err) => {
-      handleFirestoreError(err, OperationType.WRITE, 'system_configs/referral_leaderboard');
-    });
-  }
-
-  static resetReferralRankings(): void {
-    const allUsers = this.getUsers();
-    const resetUsers = allUsers.map((u) => ({
-      ...u,
-      successfulReferrals: 0,
-      completedReferrals: 0,
-    }));
-
-    this.setItem(STORAGE_KEYS.USERS, resetUsers);
-
-    // Sync to Firestore for each user
-    resetUsers.forEach((u) => {
-      setDoc(doc(db, 'users', u.id), { successfulReferrals: 0, completedReferrals: 0 }, { merge: true }).catch((err) => {
-        handleFirestoreError(err, OperationType.WRITE, `users/${u.id}`);
-      });
-    });
-
-    // Also reset current logged-in user if saved locally
-    const currentUser = this.getItem<UserProfile | null>(STORAGE_KEYS.USER, null);
-    if (currentUser) {
-      this.setItem(STORAGE_KEYS.USER, {
-        ...currentUser,
-        successfulReferrals: 0,
-        completedReferrals: 0,
-      });
-    }
   }
 
   // Sign Up Faculties & Departments Management

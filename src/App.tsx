@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, X, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -126,18 +126,39 @@ export default function App() {
   });
   const [registrationMessage, setRegistrationMessage] = useState<string | null>(null);
 
+  // Keep a stable ref to active modals for the popstate handler
+  const modalsRef = useRef({
+    authModalOpen,
+    subModalOpen,
+    editProfileModalOpen,
+    aboutModalOpen,
+    featuresPdfModalOpen,
+    isNotifCenterOpen,
+    trialAlertState,
+  });
+  modalsRef.current = {
+    authModalOpen,
+    subModalOpen,
+    editProfileModalOpen,
+    aboutModalOpen,
+    featuresPdfModalOpen,
+    isNotifCenterOpen,
+    trialAlertState,
+  };
+
   // Handle URL changes & popstate (browser back/forward button)
   useEffect(() => {
-    const handlePopState = (e: PopStateEvent) => {
+    const handlePopState = () => {
+      const currentModals = modalsRef.current;
       // If any modal is open, back action dismisses the top modal first
       if (
-        authModalOpen ||
-        subModalOpen ||
-        editProfileModalOpen ||
-        aboutModalOpen ||
-        featuresPdfModalOpen ||
-        isNotifCenterOpen ||
-        trialAlertState.isOpen
+        currentModals.authModalOpen ||
+        currentModals.subModalOpen ||
+        currentModals.editProfileModalOpen ||
+        currentModals.aboutModalOpen ||
+        currentModals.featuresPdfModalOpen ||
+        currentModals.isNotifCenterOpen ||
+        currentModals.trialAlertState.isOpen
       ) {
         setAuthModalOpen(false);
         setSubModalOpen(false);
@@ -192,15 +213,7 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [
-    authModalOpen,
-    subModalOpen,
-    editProfileModalOpen,
-    aboutModalOpen,
-    featuresPdfModalOpen,
-    isNotifCenterOpen,
-    trialAlertState.isOpen,
-  ]);
+  }, []);
 
   const handleOpenAuth = (mode: 'register' | 'login' | 'admin' | 'forgot' = 'register') => {
     setAuthModalMode(mode);
@@ -260,7 +273,6 @@ export default function App() {
       setTransactions(StorageService.getTransactions());
       setPlans(StorageService.getSubscriptionPlans());
       setSettings(StorageService.getSystemSettings());
-      checkAndVerifyPendingPayments();
     };
 
     let syncTimeout: any = null;
@@ -285,8 +297,9 @@ export default function App() {
       }, 250);
     };
 
-    // Initial sync
+    // Initial sync & pending payments verification on mount
     syncAllData();
+    checkAndVerifyPendingPayments();
 
     const unsubscribe = onAuthStateChanged(
       auth,
@@ -312,7 +325,6 @@ export default function App() {
       }
     );
 
-    window.addEventListener('focus', debouncedSyncAllData);
     window.addEventListener('storage', debouncedSyncAllData);
     window.addEventListener('cbt_storage_change', debouncedSyncAllData);
 
@@ -349,7 +361,6 @@ export default function App() {
       if (syncTimeout) clearTimeout(syncTimeout);
       unsubscribe();
       unsubPlans();
-      window.removeEventListener('focus', debouncedSyncAllData);
       window.removeEventListener('storage', debouncedSyncAllData);
       window.removeEventListener('cbt_storage_change', debouncedSyncAllData);
     };
@@ -359,31 +370,30 @@ export default function App() {
   useEffect(() => {
     if (!currentUser || !currentUser.id) return;
 
+    const currentId = currentUser.id;
     const unsubUserDoc = onSnapshot(
-      doc(db, 'users', currentUser.id),
+      doc(db, 'users', currentId),
       (docSnap) => {
         if (docSnap.exists()) {
           const d = docSnap.data();
-          setCurrentUser((prev) => {
-            if (!prev) return prev;
-            const updatedProfile: UserProfile = {
-              ...prev,
-              ...d,
-              id: docSnap.id,
-              name: d.fullName || d.name || prev.name,
-              email: d.email || prev.email,
-              role: d.role || prev.role,
-              subscriptionStatus: d.subscriptionStatus,
-              subscriptionPlan: d.subscriptionPlan,
-              subscription: d.subscription || prev.subscription,
-            };
-            StorageService.saveLocalUserOnly(updatedProfile);
-            return updatedProfile;
-          });
+          const base = StorageService.getUser() || currentUser;
+          const updatedProfile: UserProfile = {
+            ...base,
+            ...d,
+            id: docSnap.id,
+            name: d.fullName || d.name || base.name,
+            email: d.email || base.email,
+            role: d.role || base.role,
+            subscriptionStatus: d.subscriptionStatus,
+            subscriptionPlan: d.subscriptionPlan,
+            subscription: d.subscription || base.subscription,
+          };
+          StorageService.saveLocalUserOnly(updatedProfile);
+          setCurrentUser(updatedProfile);
         }
       },
       (err) => {
-        console.warn('Real-time currentUser document listener warning:', err);
+        console.warn('Real-time currentUser document listener notice:', err);
       }
     );
 
@@ -423,7 +433,7 @@ export default function App() {
         setActiveTab('landing');
       }
     }
-  }, [currentUser, activeTab]);
+  }, [currentUser?.id, currentUser?.role, activeTab]);
 
   // Secure navigation guard
   const handleNavigate = (tab: string) => {

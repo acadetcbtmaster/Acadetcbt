@@ -118,87 +118,17 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Sync state with storage events and real-time Firestore
+  // Sync state with storage events
   useEffect(() => {
     const handleStorageChange = () => {
       setTransactions(StorageService.getTransactions());
     };
     window.addEventListener('cbt_storage_change', handleStorageChange);
-
-    let unsubPayments: (() => void) | null = null;
-    let unsubUsers: (() => void) | null = null;
-
-    try {
-      unsubPayments = onSnapshot(collection(db, 'payments'), (snapshot) => {
-        if (!snapshot.empty) {
-          const liveList: PaymentTransaction[] = [];
-          snapshot.forEach((docSnap) => {
-            const d = docSnap.data();
-            let st: 'Successful' | 'Pending' | 'Failed' = 'Pending';
-            if (d.status === 'success' || d.status === 'Successful') st = 'Successful';
-            else if (d.status === 'failed' || d.status === 'Failed') st = 'Failed';
-
-            liveList.push({
-              id: docSnap.id,
-              paymentId: d.paymentId || docSnap.id,
-              userId: d.userId || '',
-              userName: d.fullName || d.userName || d.email?.split('@')[0] || 'Acadet Student',
-              userEmail: d.email || '',
-              reference: d.transactionRef || d.reference || docSnap.id,
-              gateway: d.provider === 'squad' ? 'Squad' : (d.gateway || 'Squad Payment'),
-              amount: d.amount || 0,
-              planName: d.plan || d.planName || 'Premium Membership',
-              date: d.createdAt || new Date().toISOString(),
-              paymentDate: d.updatedAt || d.createdAt || new Date().toISOString(),
-              status: st,
-              handledByAdmin: st === 'Successful' ? 'Squad Auto-Activate' : undefined,
-            });
-          });
-
-          setTransactions((prev) => {
-            const map = new Map<string, PaymentTransaction>();
-            prev.forEach((t) => map.set(t.reference || t.id, t));
-            liveList.forEach((t) => map.set(t.reference || t.id, t));
-            return Array.from(map.values()).sort(
-              (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-            );
-          });
-        }
-      });
-
-      unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-        if (!snapshot.empty) {
-          const liveUsers: UserProfile[] = [];
-          snapshot.forEach((docSnap) => {
-            const d = docSnap.data();
-            liveUsers.push(({
-              id: docSnap.id,
-              name: d.fullName || d.name || 'Student',
-              email: d.email || '',
-              role: d.role || 'student',
-              universityName: d.universityName || '',
-              departmentName: d.departmentName || '',
-              subscription: d.subscription,
-              subscriptionStatus: d.subscriptionStatus,
-              subscriptionPlan: d.subscriptionPlan,
-              subscriptionStartDate: d.subscriptionStartDate,
-              subscriptionExpiryDate: d.subscriptionExpiryDate,
-              ...d,
-            } as unknown) as UserProfile);
-          });
-          if (liveUsers.length > 0) {
-            onUpdateStudents(liveUsers);
-          }
-        }
-      });
-    } catch (err) {
-      console.warn('Firestore live listener in PaymentSubscriptionModule:', err);
-    }
+    window.addEventListener('storage', handleStorageChange);
 
     return () => {
       window.removeEventListener('cbt_storage_change', handleStorageChange);
-      if (unsubPayments) unsubPayments();
-      if (unsubUsers) unsubUsers();
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 

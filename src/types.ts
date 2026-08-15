@@ -32,11 +32,6 @@ export interface UserProfile {
   purchasedMaterialIds?: string[]; // Material IDs user paid 500 NGN for
   seenQuestionIds?: string[]; // Question IDs user has practiced
   createdDate: string;
-  referralCode?: string;
-  successfulReferrals?: number;
-  completedReferrals?: number;
-  referredBy?: string; // User ID of the referrer
-  referredByCode?: string; // Referral code used at signup
   streakCount?: number;
   lastPracticeDate?: string;
   streakHistory?: string[];
@@ -1546,13 +1541,6 @@ export interface SystemSettingsPayload {
   maintenance: MaintenanceModeConfig;
   integrations: SystemIntegrationStatus[];
   roles: AdminRolePermission[];
-}
-
-export interface ReferralLeaderboardConfig {
-  enabled: boolean;
-  showOnHomepage: boolean;
-  showOnDashboard: boolean;
-  updatedAt?: string;
 }
 
 // Learning Community Models

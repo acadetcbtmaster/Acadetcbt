@@ -166,36 +166,26 @@ export function createSafeReplacer(userReplacer?: (key: string, value: any) => a
   };
 }
 
-/**
- * Install circular-safe global JSON.stringify wrapper
- */
-export function installSafeJsonPolyfill() {
-  if (typeof globalThis === 'undefined' || !globalThis.JSON) return;
+// Global protection installer that catches any uncaught JSON.stringify circular errors
+export function installSafeJsonStringify(): void {
+  if (typeof JSON === 'undefined' || (JSON as any).__hasSafeCircularProtection) {
+    return;
+  }
 
-  const nativeStringify = globalThis.JSON.stringify;
+  const originalStringify = JSON.stringify;
+  (JSON as any).__originalStringify = originalStringify;
+  (JSON as any).__hasSafeCircularProtection = true;
 
-  (globalThis.JSON as any).stringify = function (value: any, replacer?: any, space?: any) {
+  JSON.stringify = function (value: any, replacer?: any, space?: any): string {
     try {
-      // First attempt native stringify
-      return nativeStringify(value, replacer, space);
+      return originalStringify(value, replacer, space);
     } catch (err: any) {
-      // If circular or TypeError, safely fall back to cycle-safe stringification
-      if (
-        err &&
-        (err.name === 'TypeError' ||
-          String(err.message || err).toLowerCase().includes('circular') ||
-          String(err.message || err).toLowerCase().includes('converting circular'))
-      ) {
+      if (err && String(err.message || err).toLowerCase().includes('circular')) {
         try {
-          const safeReplacer = createSafeReplacer(typeof replacer === 'function' ? replacer : undefined);
-          return nativeStringify(value, safeReplacer, space);
+          const sanitized = sanitizeCircular(value);
+          return originalStringify(sanitized, replacer, space);
         } catch {
-          try {
-            const sanitized = sanitizeCircular(value);
-            return nativeStringify(sanitized, replacer, space);
-          } catch {
-            return '{}';
-          }
+          return '{}';
         }
       }
       throw err;
@@ -203,5 +193,15 @@ export function installSafeJsonPolyfill() {
   };
 }
 
-// Auto-install immediately on import
-installSafeJsonPolyfill();
+// Automatically install circular protection
+installSafeJsonStringify();
+
+export function safeStringifyGlobal(val: any, indent?: number): string {
+  try {
+    const sanitized = sanitizeCircular(val);
+    return JSON.stringify(sanitized, null, indent);
+  } catch {
+    return '{}';
+  }
+}
+

@@ -29,7 +29,6 @@ import {
 } from 'lucide-react';
 import { SubscriptionPlan, UserProfile, QuickLinkItem, HomepageSection } from '../types';
 import { StorageService } from '../services/storage';
-import { ReferralLeaderboard } from './ReferralLeaderboard';
 
 interface LandingPageProps {
   onStartPractice: () => void;

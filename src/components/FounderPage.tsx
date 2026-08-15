@@ -61,7 +61,7 @@ export const FounderPage: React.FC<FounderPageProps> = ({
       window.location.href = '/';
     }
   };
-  // Update document title and dynamic meta for SEO & Knowledge Graph
+  // Update document title, dynamic meta, and structured data for SEO & Knowledge Graph
   useEffect(() => {
     const originalTitle = document.title;
     document.title = 'Menmex – Founder of Acadet CBT Master';
@@ -82,11 +82,64 @@ export const FounderPage: React.FC<FounderPageProps> = ({
         'Meet Menmex, the visionary Founder, Creator, and Lead Developer of Acadet CBT Master. Computer Science student at Federal University Lokoja, digital solutions architect, and educational technologist.';
     }
 
+    // Inject JSON-LD into document.head
+    const structuredDataId = 'founder-jsonld-schema';
+    let scriptTag = document.getElementById(structuredDataId) as HTMLScriptElement | null;
+    if (!scriptTag) {
+      scriptTag = document.createElement('script');
+      scriptTag.id = structuredDataId;
+      scriptTag.type = 'application/ld+json';
+      scriptTag.text = JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'ProfilePage',
+        mainEntity: {
+          '@type': 'Person',
+          name: 'Menmex',
+          alternateName: 'Menmex',
+          url: 'https://acadetcbt.website/founder',
+          jobTitle: 'Founder, Website Developer & Digital Solutions Architect',
+          description:
+            'Founder of Acadet CBT Master, Computer Science student at Federal University Lokoja, Website Developer, Social Media Manager, Digital Content Creator, Online Registration Expert, Advertising & Promotion Specialist, Internet Solutions Provider, and Life Coach.',
+          alumniOf: {
+            '@type': 'CollegeOrUniversity',
+            name: 'Federal University Lokoja',
+            url: 'https://fulokoja.edu.ng',
+          },
+          worksFor: {
+            '@type': 'EducationalOrganization',
+            name: 'Acadet CBT Master',
+            url: 'https://acadetcbt.website',
+          },
+          sameAs: [
+            'https://youtube.com/@acadetcbtmaster',
+            'https://whatsapp.com/channel/0029VbD0s0Y7oQhXIlLM4c3K',
+            'https://acadetcbt.website/founder',
+          ],
+          knowsAbout: [
+            'Computer Science',
+            'Web Development',
+            'CBT Examination Systems',
+            'Educational Technology',
+            'Digital Marketing',
+            'Social Media Management',
+            'Online Registration',
+            'Advertising & Promotion',
+            'Life Coaching',
+          ],
+        },
+      });
+      document.head.appendChild(scriptTag);
+    }
+
     // Scroll to top on mount
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     return () => {
       document.title = originalTitle;
+      const el = document.getElementById(structuredDataId);
+      if (el && el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
     };
   }, []);
 
@@ -210,52 +263,6 @@ export const FounderPage: React.FC<FounderPageProps> = ({
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 py-6 sm:py-10 selection:bg-indigo-500 selection:text-white" id="founder-page-container">
-      {/* Schema.org Person & ProfilePage JSON-LD Structured Data */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            '@context': 'https://schema.org',
-            '@type': 'ProfilePage',
-            mainEntity: {
-              '@type': 'Person',
-              name: 'Menmex',
-              alternateName: 'Menmex',
-              url: 'https://acadetcbt.website/founder',
-              jobTitle: 'Founder, Website Developer & Digital Solutions Architect',
-              description:
-                'Founder of Acadet CBT Master, Computer Science student at Federal University Lokoja, Website Developer, Social Media Manager, Digital Content Creator, Online Registration Expert, Advertising & Promotion Specialist, Internet Solutions Provider, and Life Coach.',
-              alumniOf: {
-                '@type': 'CollegeOrUniversity',
-                name: 'Federal University Lokoja',
-                url: 'https://fulokoja.edu.ng',
-              },
-              worksFor: {
-                '@type': 'EducationalOrganization',
-                name: 'Acadet CBT Master',
-                url: 'https://acadetcbt.website',
-              },
-              sameAs: [
-                'https://youtube.com/@acadetcbtmaster',
-                'https://whatsapp.com/channel/0029VbD0s0Y7oQhXIlLM4c3K',
-                'https://acadetcbt.website/founder',
-              ],
-              knowsAbout: [
-                'Computer Science',
-                'Web Development',
-                'CBT Examination Systems',
-                'Educational Technology',
-                'Digital Marketing',
-                'Social Media Management',
-                'Online Registration',
-                'Advertising & Promotion',
-                'Life Coaching',
-              ],
-            },
-          }),
-        }}
-      />
-
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
         {/* Navigation Top Bar */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">

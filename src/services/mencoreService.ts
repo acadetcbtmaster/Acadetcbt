@@ -205,17 +205,6 @@ export const DEFAULT_MENCORE_KNOWLEDGE_BASE: MenCoreKnowledgeItem[] = [
     updatedAt: new Date().toISOString(),
   },
   {
-    id: 'kb-explain-referral',
-    title: 'Explain Referral System.',
-    category: 'Platform Features',
-    keywords: ['explain referral system', 'referral system', 'invite friends', 'referral bonus', 'refer a friend'],
-    answer:
-      "The Referral System rewards you for inviting fellow students to Acadet CBT Master. Share your unique referral code with friends to earn free bonus days on your Premium subscription when they register and subscribe.",
-    navigationTarget: { label: 'Open Subscription Page', view: 'dashboard', tab: 'subscription' },
-    isPinned: false,
-    updatedAt: new Date().toISOString(),
-  },
-  {
     id: 'kb-explain-admin',
     title: 'Explain Admin Dashboard.',
     category: 'Platform Features',

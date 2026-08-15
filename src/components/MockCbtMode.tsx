@@ -130,17 +130,25 @@ export const MockCbtMode: React.FC<MockCbtModeProps> = ({
   useEffect(() => {
     if (step !== 'active') return;
 
-    if (secondsRemaining <= 0) {
-      handleSubmitExam();
-      return;
-    }
-
     const timer = setInterval(() => {
-      setSecondsRemaining((prev) => prev - 1);
+      setSecondsRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [step, secondsRemaining]);
+  }, [step]);
+
+  // Auto submit exam when timer reaches 0
+  useEffect(() => {
+    if (step === 'active' && secondsRemaining <= 0) {
+      handleSubmitExam();
+    }
+  }, [secondsRemaining, step]);
 
   // Submit Exam
   const handleSubmitExam = () => {

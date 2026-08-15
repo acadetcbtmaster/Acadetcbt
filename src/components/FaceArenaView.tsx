@@ -199,14 +199,7 @@ export const FaceArenaView: React.FC<FaceArenaViewProps> = ({ user, onNavigate }
   useEffect(() => {
     if (activeStep === 'quiz') {
       timerRef.current = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current!);
-            handleAutoSubmitOnTimeout();
-            return 0;
-          }
-          return prev - 1;
-        });
+        setTimeRemaining((prev) => Math.max(0, prev - 1));
       }, 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -216,6 +209,14 @@ export const FaceArenaView: React.FC<FaceArenaViewProps> = ({ user, onNavigate }
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [activeStep]);
+
+  // Handle timeout auto-submit
+  useEffect(() => {
+    if (activeStep === 'quiz' && timeRemaining <= 0) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      finalizeSubmission(true);
+    }
+  }, [timeRemaining, activeStep]);
 
   // Handle Option Selection
   const handleSelectOption = (questionIdx: number, option: 'A' | 'B' | 'C' | 'D') => {

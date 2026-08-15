@@ -24,11 +24,11 @@ export const PerformanceAnalytics: React.FC<PerformanceAnalyticsProps> = ({
 }) => {
   const totalSessions = results.length;
   const avgScore = totalSessions > 0
-    ? Math.round(results.reduce((acc, r) => acc + r.percentage, 0) / totalSessions)
+    ? Math.round(results.reduce((acc, r) => acc + (r.percentage || 0), 0) / totalSessions)
     : 82;
 
   const highestScore = totalSessions > 0
-    ? Math.max(...results.map((r) => r.percentage))
+    ? results.reduce((max, r) => Math.max(max, r.percentage || 0), 0)
     : 92;
 
   const mockExams = results.filter((r) => r.type === 'mock_cbt');

@@ -46,15 +46,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const weekDays = getLast7DaysStreakStatus(user);
 
   // Calculate metrics
-  const totalCompleted = results.reduce((acc, r) => acc + r.totalQuestions, 0) + questionsUsed;
+  const totalCompleted = results.reduce((acc, r) => acc + (r.totalQuestions || 0), 0) + questionsUsed;
   const mockCbtsCount = results.filter((r) => r.type === 'mock_cbt').length;
   
   const avgScore = results.length > 0
-    ? Math.round(results.reduce((acc, r) => acc + r.percentage, 0) / results.length)
+    ? Math.round(results.reduce((acc, r) => acc + (r.percentage || 0), 0) / results.length)
     : 78;
 
   const highestScore = results.length > 0
-    ? Math.max(...results.map((r) => r.percentage))
+    ? results.reduce((max, r) => Math.max(max, r.percentage || 0), 0)
     : 90;
 
   const recentSessions = results.slice(0, 3);

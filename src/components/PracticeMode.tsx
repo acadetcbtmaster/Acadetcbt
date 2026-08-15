@@ -134,17 +134,25 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
   useEffect(() => {
     if (step !== 'active' || !isTimed) return;
 
-    if (secondsRemaining <= 0 && activeQuestions.length > 0) {
-      handleFinishPractice();
-      return;
-    }
-
     const timer = setInterval(() => {
-      setSecondsRemaining((prev) => prev - 1);
+      setSecondsRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [step, isTimed, secondsRemaining, activeQuestions]);
+  }, [step, isTimed]);
+
+  // Auto finish when timer hits 0
+  useEffect(() => {
+    if (step === 'active' && isTimed && secondsRemaining <= 0 && activeQuestions.length > 0) {
+      handleFinishPractice();
+    }
+  }, [secondsRemaining, step, isTimed, activeQuestions.length]);
 
   // Start Practice Session
   const handleStartPractice = async () => {

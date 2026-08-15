@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import brandLogo from '../assets/images/exact_acadet_cbt_logo_1786225425882.jpg';
 import { UserProfile, UserRole, FUAHSE_DEPARTMENTS, FUL_DEPARTMENTS, COMMON_UNIVERSITY_DEPARTMENTS, University, FacultyGroup } from '../types';
 import { StorageService, safeStringify } from '../services/storage';
-import { generateUniqueReferralCode } from '../utils/referrals';
 import { ApiClient } from '../services/apiClient';
 import {
   auth,
@@ -83,20 +82,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordHint, setPasswordHint] = useState('');
-  const [referralCodeInput, setReferralCodeInput] = useState('');
-
-  // Check URL query params for auto-filling referral code (e.g. ?ref=CBT8XK92)
-  useEffect(() => {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const refParam = urlParams.get('ref') || urlParams.get('referral');
-      if (refParam) {
-        setReferralCodeInput(refParam.trim().toUpperCase());
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
 
   // University & Department Selection
   const [selectedUniversity, setSelectedUniversity] = useState<string>('');
@@ -545,37 +530,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         console.warn('Firebase Auth notice during registration:', (authErr as any)?.message || String(authErr));
       }
 
-      // Validate referral code if user provided one
-      let referrerUser: UserProfile | null = null;
-      const cleanRefInput = referralCodeInput.trim().toUpperCase();
-      if (cleanRefInput) {
-        referrerUser = currentUsers.find(
-          (u) => u.referralCode && u.referralCode.trim().toUpperCase() === cleanRefInput
-        ) || null;
-
-        if (!referrerUser) {
-          setTopBannerError('Invalid referral code. Please check the code or leave blank.');
-          setIsSubmitting(false);
-          return;
-        }
-
-        // Self referral check
-        if (
-          referrerUser.email.toLowerCase() === email.trim().toLowerCase() ||
-          (referrerUser.username && referrerUser.username.toLowerCase() === username.trim().toLowerCase())
-        ) {
-          setTopBannerError('You cannot use your own referral code.');
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
-      // Generate permanent referral code for new user
-      const existingRefCodes = currentUsers
-        .map((u) => u.referralCode)
-        .filter((c): c is string => Boolean(c));
-      const newRefCode = generateUniqueReferralCode(existingRefCodes);
-
       const newUserId = firebaseUid || `usr-${Date.now()}`;
       const uniName = selectedUniObj?.name || selectedUniversity || 'University of Lagos';
       const uniId = selectedUniObj?.id || (selectedUniversity ? `uni-${selectedUniversity.toLowerCase().replace(/\s+/g, '-')}` : 'uni-1');
@@ -604,22 +558,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         },
         bookmarks: [],
         createdDate: new Date().toISOString(),
-        referralCode: newRefCode,
-        successfulReferrals: 0,
-        referredBy: referrerUser ? referrerUser.id : undefined,
-        referredByCode: referrerUser ? referrerUser.referralCode : undefined,
       };
 
-      // 2. Increment referrer's successfulReferrals count if valid referrer found
-      if (referrerUser) {
-        const updatedReferrer: UserProfile = {
-          ...referrerUser,
-          successfulReferrals: (referrerUser.successfulReferrals || 0) + 1,
-        };
-        StorageService.saveUser(updatedReferrer);
-      }
-
-      // 3. Create student profile in Cloud Firestore
+      // Create student profile in Cloud Firestore
       try {
         await setDoc(doc(db, 'users', newUserId), {
           fullName: newUser.name,
@@ -634,10 +575,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           departmentName: newUser.departmentName,
           subscription: newUser.subscription,
           createdDate: newUser.createdDate,
-          referralCode: newUser.referralCode,
-          successfulReferrals: newUser.successfulReferrals,
-          referredBy: newUser.referredBy || '',
-          referredByCode: newUser.referredByCode || '',
         });
       } catch (dbErr) {
         console.warn('Firestore user profile creation warning:', dbErr);
@@ -963,11 +900,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const defaultDept = selectedDepartment || 'Computer Science';
       const uniName = defaultUniObj?.name || selectedUniversity || 'Federal University Lokoja, Kogi State (FUL)';
 
-      const existingRefCodes = currentUsers
-        .map((u) => u.referralCode)
-        .filter((c): c is string => Boolean(c));
-      const newRefCode = generateUniqueReferralCode(existingRefCodes);
-
       const newGoogleUser: UserProfile = {
         id: googleUid,
         name: userDisplayName,
@@ -991,8 +923,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         },
         bookmarks: [],
         createdDate: new Date().toISOString(),
-        referralCode: newRefCode,
-        successfulReferrals: 0,
       };
 
       StorageService.saveUsers([newGoogleUser, ...currentUsers]);
@@ -1010,7 +940,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           departmentName: defaultDept,
           subscription: newGoogleUser.subscription,
           createdDate: newGoogleUser.createdDate,
-          referralCode: newRefCode,
         });
       } catch (dbErr) {
         console.warn('Firestore write error:', dbErr);
@@ -2277,34 +2206,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <span>{regErrors.selectedDepartment}</span>
                   </p>
                 ) : null}
-              </div>
-
-              {/* Referral Code (Optional) */}
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
-                  <span>Referral Code <span className="text-slate-500 font-normal">(Optional)</span></span>
-                  {referralCodeInput && (
-                    <span className="text-[10px] text-indigo-400 font-semibold bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
-                      Code Applied
-                    </span>
-                  )}
-                </label>
-                <div className="relative">
-                  <Ticket className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={referralCodeInput}
-                    onChange={(e) => {
-                      setReferralCodeInput(e.target.value.toUpperCase());
-                      if (topBannerError) setTopBannerError(null);
-                    }}
-                    placeholder="e.g. CBT8XK92"
-                    maxLength={20}
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 rounded-xl text-xs uppercase font-mono tracking-wider focus:outline-none focus:border-indigo-500 transition-all"
-                    id="signup-referral-code-input"
-                  />
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1">Have a referral link or code from a friend? Enter it here.</p>
               </div>
 
               {/* Checkboxes: Terms & Privacy */}
