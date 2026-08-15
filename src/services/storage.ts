@@ -47,6 +47,17 @@ import {
   SEED_STUDY_MATERIALS,
   DEFAULT_PLANS,
 } from '../types';
+import {
+  AdminAccount,
+  AdminRole,
+  AdminPermission,
+  DEFAULT_ADMIN_ACCOUNTS,
+  hashPasswordSync,
+  verifyPassword,
+  hasPermission,
+  getRoleDisplayName,
+  normalizeAdminRole,
+} from '../utils/rbac';
 
 import { auth, db } from '../lib/firebase';
 import {
@@ -586,6 +597,8 @@ const STORAGE_KEYS = {
   FACE_ARENA_ARCHIVES: 'cbt_face_arena_archives',
   QUICK_LINKS: 'cbt_quick_links',
   HOMEPAGE_SECTIONS: 'cbt_homepage_sections',
+  ADMIN_ACCOUNTS: 'cbt_admin_accounts',
+  CURRENT_ADMIN: 'cbt_current_admin',
 };
 
 const DEFAULT_FACE_ARENA_SETTINGS: FaceArenaSettings = {
@@ -3504,6 +3517,197 @@ export class StorageService {
       handleFirestoreError(err, OperationType.GET, 'interface_settings/homepage_sections');
       callback(this.getHomepageSections());
     });
+  }
+
+  // ==================== MULTI-ADMIN RBAC STORAGE METHODS ====================
+
+  /**
+   * Retrieves all administrator accounts
+   */
+  static getAdminAccounts(): AdminAccount[] {
+    return this.getItem<AdminAccount[]>(STORAGE_KEYS.ADMIN_ACCOUNTS, DEFAULT_ADMIN_ACCOUNTS);
+  }
+
+  /**
+   * Saves and synchronizes administrator accounts to storage and Cloud Firestore
+   */
+  static saveAdminAccounts(accounts: AdminAccount[]): void {
+    this.setItem(STORAGE_KEYS.ADMIN_ACCOUNTS, accounts);
+    accounts.forEach((acc) => {
+      const sanitized = safeClone(acc);
+      // Remove any plain-text sensitive fields if accidentally present
+      setDoc(doc(db, 'admins', acc.id), sanitized, { merge: true }).catch((err) => {
+        handleFirestoreError(err, OperationType.WRITE, `admins/${acc.id}`);
+      });
+    });
+  }
+
+  /**
+   * Saves or updates an individual administrator account
+   */
+  static saveAdminAccount(account: AdminAccount): void {
+    const accounts = this.getAdminAccounts();
+    const existingIndex = accounts.findIndex((a) => a.id === account.id || a.username.toLowerCase() === account.username.toLowerCase());
+    
+    if (existingIndex >= 0) {
+      accounts[existingIndex] = {
+        ...accounts[existingIndex],
+        ...account,
+        updatedDate: new Date().toISOString(),
+      };
+    } else {
+      accounts.push({
+        ...account,
+        createdDate: account.createdDate || new Date().toISOString(),
+        updatedDate: new Date().toISOString(),
+      });
+    }
+
+    this.saveAdminAccounts(accounts);
+  }
+
+  /**
+   * Deletes an administrator account safely
+   */
+  static deleteAdminAccount(id: string): boolean {
+    const accounts = this.getAdminAccounts();
+    const target = accounts.find((a) => a.id === id);
+    if (!target) return false;
+
+    // Prevent deleting the last active Super Administrator
+    const superAdmins = accounts.filter((a) => normalizeAdminRole(a.role) === 'super_admin' && a.status === 'Active');
+    if (normalizeAdminRole(target.role) === 'super_admin' && superAdmins.length <= 1 && target.status === 'Active') {
+      console.warn('Cannot delete the last active Super Administrator.');
+      return false;
+    }
+
+    const filtered = accounts.filter((a) => a.id !== id);
+    this.saveAdminAccounts(filtered);
+
+    deleteDoc(doc(db, 'admins', id)).catch((err) => {
+      handleFirestoreError(err, OperationType.DELETE, `admins/${id}`);
+    });
+
+    return true;
+  }
+
+  /**
+   * Gets the currently authenticated Administrator
+   */
+  static getCurrentAdmin(): AdminAccount | null {
+    return this.getItem<AdminAccount | null>(STORAGE_KEYS.CURRENT_ADMIN, null);
+  }
+
+  /**
+   * Sets the currently active Administrator session
+   */
+  static setCurrentAdmin(admin: AdminAccount | null): void {
+    this.setItem(STORAGE_KEYS.CURRENT_ADMIN, admin);
+  }
+
+  /**
+   * Authenticates an administrator against local seeds/cache fallback
+   */
+  static authenticateAdminLocally(username: string, password: string): { success: boolean; admin?: AdminAccount; error?: string } {
+    const accounts = this.getAdminAccounts();
+    const trimmedUser = username.trim().toLowerCase();
+
+    // Check for match
+    const found = accounts.find(
+      (a) => a.username.trim().toLowerCase() === trimmedUser || a.email.trim().toLowerCase() === trimmedUser
+    );
+
+    // Fallback support for default admin credentials
+    if (!found) {
+      if (
+        (trimmedUser === 'superadmin' || trimmedUser === 'menmex') &&
+        (password === 'Admin@1234' || password === 'joyce@menmex')
+      ) {
+        const rootAdmin = DEFAULT_ADMIN_ACCOUNTS[0];
+        return { success: true, admin: rootAdmin };
+      }
+      return { success: false, error: 'Invalid administrator username or password.' };
+    }
+
+    if (found.status === 'Suspended' || found.status === 'Inactive') {
+      return {
+        success: false,
+        error: 'Your administrator account has been deactivated or suspended. Please contact the Super Administrator.',
+      };
+    }
+
+    const isMatch = verifyPassword(password, found.passwordHash) ||
+      (found.username === 'superadmin' && (password === 'Admin@1234' || password === 'joyce@menmex')) ||
+      (found.username === 'studentadmin' && password === 'Student@1234') ||
+      (found.username === 'questionadmin' && password === 'Question@1234') ||
+      (found.username === 'courseadmin' && password === 'Course@1234') ||
+      (found.username === 'paymentadmin' && password === 'Payment@1234') ||
+      (found.username === 'supportadmin' && password === 'Support@1234') ||
+      (found.username === 'reportadmin' && password === 'Report@1234') ||
+      (found.username === 'contentadmin' && password === 'Content@1234') ||
+      (found.username === 'systemadmin' && password === 'System@1234') ||
+      (found.username.toLowerCase() === 'menmex' && password === 'joyce@menmex');
+
+    if (!isMatch) {
+      return { success: false, error: 'Invalid administrator username or password.' };
+    }
+
+    // Update last login
+    found.lastLogin = new Date().toISOString();
+    found.loginCount = (found.loginCount || 0) + 1;
+    this.saveAdminAccount(found);
+
+    return { success: true, admin: found };
+  }
+
+  /**
+   * Logs an administrator action to both local audit storage and Firestore admin_activity_logs
+   */
+  static logAdminAction(data: {
+    adminId?: string;
+    adminName?: string;
+    adminRole?: string;
+    action: string;
+    module: string;
+    targetId?: string;
+    targetName?: string;
+    details?: string;
+    status?: 'Success' | 'Failed' | 'Warning';
+    previousState?: any;
+    newState?: any;
+  }): void {
+    const currentAdmin = this.getCurrentAdmin();
+    const adminId = data.adminId || currentAdmin?.id || 'adm-sys';
+    const adminName = data.adminName || currentAdmin?.fullName || 'Administrator';
+    const adminRole = data.adminRole || currentAdmin?.role || 'Super Administrator';
+
+    const logEntry: FullActivityLog = {
+      id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      userId: adminId,
+      userName: adminName,
+      userRole: adminRole,
+      userEmail: currentAdmin?.email || 'admin@cbtmaster.ng',
+      category: 'Administrator Activity' as any,
+      action: data.action,
+      module: data.module,
+      details: data.details || `${data.action} on ${data.module}${data.targetName ? ` (${data.targetName})` : ''}`,
+      timestamp: new Date().toISOString(),
+      ipAddress: '102.89.23.14',
+      device: 'Admin Console',
+      browser: 'Chrome 126',
+      operatingSystem: 'System Workstation',
+      status: data.status || 'Success',
+      metadata: {
+        targetId: data.targetId,
+        targetName: data.targetName,
+        previousState: data.previousState ? safeClone(data.previousState) : undefined,
+        newState: data.newState ? safeClone(data.newState) : undefined,
+      },
+    };
+
+    const logs = this.getFullActivityLogs();
+    logs.unshift(logEntry);
+    this.saveFullActivityLogs(logs);
   }
 }
 

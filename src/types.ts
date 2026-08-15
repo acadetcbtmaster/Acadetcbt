@@ -1518,6 +1518,8 @@ export interface AdminRolePermission {
   isCustom?: boolean;
 }
 
+export type { AdminRole, AdminPermission, AdminAccount, PermissionDefinition } from './utils/rbac';
+
 export interface SystemHealthMetrics {
   cpuUsagePct: number;
   memoryUsagePct: number;

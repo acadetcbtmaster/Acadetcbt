@@ -38,6 +38,13 @@ import {
   AlertOctagon
 } from 'lucide-react';
 import { StorageService } from '../../services/storage';
+import { apiClient } from '../../services/apiClient';
+import {
+  AdminAccount,
+  getRoleDisplayName,
+  normalizeAdminRole,
+  hashPasswordSync,
+} from '../../utils/rbac';
 
 export type AdminRole =
   | 'Super Administrator'

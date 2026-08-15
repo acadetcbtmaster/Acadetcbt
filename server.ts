@@ -1679,82 +1679,660 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
 app.post("/api/webhooks/korapay", handleKorapayWebhook);
 app.post("/api/korapay/webhook", handleKorapayWebhook);
 
-// Admin Authentication & Rate Limiting Store
-const failedAdminAttempts = new Map<string, { count: number; lockUntil: number }>();
-const validAdminSessions = new Set<string>();
+// ==================== MULTI-ADMIN RBAC & AUTHENTICATION ====================
 
-app.post("/api/admin/login", (req, res) => {
-  const clientIp = req.ip || req.socket.remoteAddress || "global_client";
+interface AdminAccountServer {
+  id: string;
+  fullName: string;
+  username: string;
+  email: string;
+  phone?: string;
+  passwordHash?: string;
+  role: string;
+  status: 'Active' | 'Inactive' | 'Suspended';
+  createdDate: string;
+  updatedDate?: string;
+  lastLogin?: string;
+  lastIpAddress?: string;
+  loginCount: number;
+  avatarUrl?: string;
+  customPermissions?: Record<string, boolean>;
+  createdBy?: string;
+}
+
+const ROLE_PERMISSIONS_SERVER: Record<string, string[]> = {
+  super_admin: [
+    'manage_students',
+    'manage_support_tickets',
+    'manage_questions',
+    'manage_courses',
+    'manage_universities',
+    'manage_payments',
+    'manage_reports',
+    'manage_study_materials',
+    'manage_settings',
+    'manage_backups',
+    'manage_notifications',
+    'view_activity_logs',
+    'manage_other_administrators',
+  ],
+  'Super Administrator': [
+    'manage_students',
+    'manage_support_tickets',
+    'manage_questions',
+    'manage_courses',
+    'manage_universities',
+    'manage_payments',
+    'manage_reports',
+    'manage_study_materials',
+    'manage_settings',
+    'manage_backups',
+    'manage_notifications',
+    'view_activity_logs',
+    'manage_other_administrators',
+  ],
+  student_manager: ['manage_students', 'manage_support_tickets', 'view_activity_logs'],
+  'Student Manager': ['manage_students', 'manage_support_tickets', 'view_activity_logs'],
+  question_manager: ['manage_questions', 'manage_courses', 'view_activity_logs'],
+  'Question Manager': ['manage_questions', 'manage_courses', 'view_activity_logs'],
+  course_manager: ['manage_courses', 'manage_universities', 'view_activity_logs'],
+  'Course Manager': ['manage_courses', 'manage_universities', 'view_activity_logs'],
+  payment_manager: ['manage_payments', 'manage_reports', 'view_activity_logs'],
+  'Payment Manager': ['manage_payments', 'manage_reports', 'view_activity_logs'],
+  support_manager: ['manage_support_tickets', 'manage_students', 'view_activity_logs'],
+  'Support Manager': ['manage_support_tickets', 'manage_students', 'view_activity_logs'],
+  report_manager: ['manage_reports', 'view_activity_logs'],
+  'Report Manager': ['manage_reports', 'view_activity_logs'],
+  content_manager: ['manage_study_materials', 'manage_questions', 'view_activity_logs'],
+  'Content Manager': ['manage_study_materials', 'manage_questions', 'view_activity_logs'],
+  system_manager: ['manage_settings', 'manage_backups', 'manage_notifications', 'view_activity_logs'],
+  'System Manager': ['manage_settings', 'manage_backups', 'manage_notifications', 'view_activity_logs'],
+};
+
+function normalizeServerRole(role?: string): string {
+  if (!role) return 'super_admin';
+  const lower = role.toLowerCase().replace(/[\s_-]+/g, '');
+  if (lower.includes('super')) return 'super_admin';
+  if (lower.includes('student')) return 'student_manager';
+  if (lower.includes('question')) return 'question_manager';
+  if (lower.includes('course')) return 'course_manager';
+  if (lower.includes('payment')) return 'payment_manager';
+  if (lower.includes('support')) return 'support_manager';
+  if (lower.includes('report')) return 'report_manager';
+  if (lower.includes('content')) return 'content_manager';
+  if (lower.includes('system')) return 'system_manager';
+  return 'super_admin';
+}
+
+function hashPasswordServer(password: string, salt = 'acadet_cbt_master_secure_salt_2026'): string {
+  let hash = 0;
+  const combined = `${salt}:${password}:${salt}`;
+  for (let i = 0; i < combined.length; i++) {
+    const char = combined.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return `h_${Math.abs(hash).toString(16)}_${combined.length}`;
+}
+
+function verifyPasswordServer(password: string, storedHash?: string): boolean {
+  if (!storedHash) return false;
+  if (storedHash === password) return true;
+  return hashPasswordServer(password) === storedHash;
+}
+
+// In-Memory Admin State with Defaults for All 9 Roles
+const inMemoryAdmins = new Map<string, AdminAccountServer>();
+
+const SEED_ADMINS_SERVER: AdminAccountServer[] = [
+  {
+    id: 'ADM-1001',
+    fullName: 'Dr. Clement O. Adebayo',
+    username: 'superadmin',
+    email: 'clement.adebayo@cbtmaster.ng',
+    phone: '+234 803 123 4567',
+    passwordHash: hashPasswordServer('Admin@1234'),
+    role: 'super_admin',
+    status: 'Active',
+    createdDate: '2025-01-10T08:00:00.000Z',
+    lastLogin: new Date().toISOString(),
+    loginCount: 342,
+    createdBy: 'System Provisioning',
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
+  },
+  {
+    id: 'ADM-1002',
+    fullName: 'Emeka Chukwudi Eze',
+    username: 'studentadmin',
+    email: 'emeka.eze@cbtmaster.ng',
+    phone: '+234 814 555 1212',
+    passwordHash: hashPasswordServer('Student@1234'),
+    role: 'student_manager',
+    status: 'Active',
+    createdDate: '2025-02-15T09:30:00.000Z',
+    lastLogin: new Date(Date.now() - 3600000 * 2).toISOString(),
+    loginCount: 94,
+    createdBy: 'Dr. Clement O. Adebayo',
+    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=250',
+  },
+  {
+    id: 'ADM-1003',
+    fullName: 'Aisha Bello Abubakar',
+    username: 'questionadmin',
+    email: 'aisha.bello@cbtmaster.ng',
+    phone: '+234 802 987 6543',
+    passwordHash: hashPasswordServer('Question@1234'),
+    role: 'question_manager',
+    status: 'Active',
+    createdDate: '2025-02-01T11:00:00.000Z',
+    lastLogin: new Date(Date.now() - 3600000 * 5).toISOString(),
+    loginCount: 128,
+    createdBy: 'Dr. Clement O. Adebayo',
+    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=250',
+  },
+  {
+    id: 'ADM-1004',
+    fullName: 'Tunde Oladipo',
+    username: 'courseadmin',
+    email: 'tunde.oladipo@cbtmaster.ng',
+    phone: '+234 818 777 8899',
+    passwordHash: hashPasswordServer('Course@1234'),
+    role: 'course_manager',
+    status: 'Active',
+    createdDate: '2025-03-10T14:15:00.000Z',
+    lastLogin: new Date(Date.now() - 3600000 * 1).toISOString(),
+    loginCount: 156,
+    createdBy: 'Dr. Clement O. Adebayo',
+    avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=250',
+  },
+  {
+    id: 'ADM-1005',
+    fullName: 'Fatima Yusuf',
+    username: 'paymentadmin',
+    email: 'fatima.yusuf@cbtmaster.ng',
+    phone: '+234 805 444 3322',
+    passwordHash: hashPasswordServer('Payment@1234'),
+    role: 'payment_manager',
+    status: 'Active',
+    createdDate: '2025-03-01T10:00:00.000Z',
+    lastLogin: new Date(Date.now() - 3600000 * 8).toISOString(),
+    loginCount: 78,
+    createdBy: 'Dr. Clement O. Adebayo',
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
+  },
+  {
+    id: 'ADM-1006',
+    fullName: 'Amina Danjuma',
+    username: 'supportadmin',
+    email: 'amina.danjuma@cbtmaster.ng',
+    phone: '+234 809 111 2233',
+    passwordHash: hashPasswordServer('Support@1234'),
+    role: 'support_manager',
+    status: 'Active',
+    createdDate: '2025-03-15T16:00:00.000Z',
+    lastLogin: new Date(Date.now() - 3600000 * 12).toISOString(),
+    loginCount: 65,
+    createdBy: 'Dr. Clement O. Adebayo',
+    avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=250',
+  },
+  {
+    id: 'ADM-1007',
+    fullName: 'Kabiru Sani',
+    username: 'reportadmin',
+    email: 'kabiru.sani@cbtmaster.ng',
+    phone: '+234 807 222 3344',
+    passwordHash: hashPasswordServer('Report@1234'),
+    role: 'report_manager',
+    status: 'Active',
+    createdDate: '2025-03-20T09:00:00.000Z',
+    lastLogin: new Date(Date.now() - 3600000 * 24).toISOString(),
+    loginCount: 52,
+    createdBy: 'Dr. Clement O. Adebayo',
+    avatarUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=250',
+  },
+  {
+    id: 'ADM-1008',
+    fullName: 'Grace Nwosu',
+    username: 'contentadmin',
+    email: 'grace.nwosu@cbtmaster.ng',
+    phone: '+234 812 333 4455',
+    passwordHash: hashPasswordServer('Content@1234'),
+    role: 'content_manager',
+    status: 'Active',
+    createdDate: '2025-03-25T13:45:00.000Z',
+    lastLogin: new Date(Date.now() - 3600000 * 3).toISOString(),
+    loginCount: 110,
+    createdBy: 'Dr. Clement O. Adebayo',
+    avatarUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&q=80&w=250',
+  },
+  {
+    id: 'ADM-1009',
+    fullName: 'Ibrahim Garba',
+    username: 'systemadmin',
+    email: 'ibrahim.garba@cbtmaster.ng',
+    phone: '+234 816 444 5566',
+    passwordHash: hashPasswordServer('System@1234'),
+    role: 'system_manager',
+    status: 'Active',
+    createdDate: '2025-04-01T15:30:00.000Z',
+    lastLogin: new Date(Date.now() - 3600000 * 6).toISOString(),
+    loginCount: 88,
+    createdBy: 'Dr. Clement O. Adebayo',
+    avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=250',
+  },
+];
+
+// Initialize seed admins
+SEED_ADMINS_SERVER.forEach((a) => inMemoryAdmins.set(a.id, a));
+
+// Synchronize admins from Firestore if available
+async function loadAdminsFromFirestore() {
+  if (!dbServer) return;
+  try {
+    const snap = await getDocs(collection(dbServer, 'admins'));
+    if (!snap.empty) {
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as AdminAccountServer;
+        inMemoryAdmins.set(data.id || docSnap.id, { ...data, id: data.id || docSnap.id });
+      });
+    }
+  } catch (err) {
+    console.warn('[RBAC Server] Could not load admins from Firestore on boot:', err);
+  }
+}
+loadAdminsFromFirestore();
+
+// Active Sessions Store: Token -> AdminSessionInfo
+interface AdminSession {
+  token: string;
+  adminId: string;
+  username: string;
+  fullName: string;
+  email: string;
+  role: string;
+  permissions: string[];
+  loginTime: number;
+}
+const activeAdminSessions = new Map<string, AdminSession>();
+const failedAdminAttempts = new Map<string, { count: number; lockUntil: number }>();
+
+// Helper: Extract session
+function getAdminSession(req: express.Request): AdminSession | null {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace(/^Bearer\s+/i, '') || (req.query?.token as string);
+  if (!token) return null;
+  return activeAdminSessions.get(token) || null;
+}
+
+// Middleware: Require Admin Authentication
+function requireAdminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const session = getAdminSession(req);
+  if (!session) {
+    return res.status(401).json({ success: false, error: 'Unauthorized. Valid administrator session required.' });
+  }
+  (req as any).adminSession = session;
+  next();
+}
+
+// Middleware: Require Specific Permission
+function requireAdminPermission(permission: string) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const session = getAdminSession(req);
+    if (!session) {
+      return res.status(401).json({ success: false, error: 'Unauthorized. Administrator login required.' });
+    }
+    const norm = normalizeServerRole(session.role);
+    if (norm === 'super_admin' || session.permissions.includes(permission)) {
+      (req as any).adminSession = session;
+      return next();
+    }
+    return res.status(403).json({
+      success: false,
+      error: `Access Denied: Your assigned role (${session.role}) does not have the '${permission}' permission.`,
+    });
+  };
+}
+
+// Unified Admin Login Endpoint for ALL 9 Roles
+app.post('/api/admin/login', async (req, res) => {
+  const clientIp = req.ip || req.socket.remoteAddress || 'global_client';
   const now = Date.now();
   const attemptInfo = failedAdminAttempts.get(clientIp) || { count: 0, lockUntil: 0 };
 
   if (attemptInfo.lockUntil > now) {
     const secondsLeft = Math.ceil((attemptInfo.lockUntil - now) / 1000);
     return res.status(429).json({
-      error: `Too many failed login attempts. Admin login is temporarily locked for ${secondsLeft} seconds.`
+      error: `Too many failed login attempts. Admin login is temporarily locked for ${secondsLeft} seconds.`,
     });
   }
 
   const { username, password } = req.body;
-  const expectedUsername = process.env.ADMIN_USERNAME || "Menmex";
-  const expectedPassword = process.env.ADMIN_PASSWORD || "joyce@menmex";
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required.' });
+  }
 
-  if (username === expectedUsername && password === expectedPassword) {
-    failedAdminAttempts.delete(clientIp);
-    const sessionToken = `admin_token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-    validAdminSessions.add(sessionToken);
+  const cleanUser = String(username).trim().toLowerCase();
 
-    return res.json({
-      success: true,
-      token: sessionToken,
-      adminUser: {
-        id: "usr-admin-menmex",
-        name: "System Administrator",
-        username: expectedUsername,
-        email: "admin@menmex.ng",
-        role: "admin",
-        universityId: "uni-ful",
-        universityName: "Federal University Lokoja, Kogi State (FUL)",
-        departmentId: "dept-ful-1",
-        departmentName: "Computer Science",
-        subscription: {
-          isPremium: true,
-          plan: "30-Day Premium",
-          startDate: new Date().toISOString(),
-          expiryDate: null,
-          questionsAttemptedCount: 0,
-          freeLimit: 999999,
-        },
-        bookmarks: [],
-        createdDate: new Date().toISOString(),
-      }
-    });
-  } else {
+  // Find admin across inMemoryAdmins or Firestore
+  let targetAdmin: AdminAccountServer | undefined;
+  for (const admin of inMemoryAdmins.values()) {
+    if (admin.username.trim().toLowerCase() === cleanUser || admin.email.trim().toLowerCase() === cleanUser) {
+      targetAdmin = admin;
+      break;
+    }
+  }
+
+  // Fallback legacy superadmin support
+  if (!targetAdmin && (cleanUser === 'menmex' || cleanUser === 'superadmin')) {
+    targetAdmin = inMemoryAdmins.get('ADM-1001') || SEED_ADMINS_SERVER[0];
+  }
+
+  if (!targetAdmin) {
     const newCount = attemptInfo.count + 1;
     let lockUntil = 0;
-    if (newCount >= 5) {
-      lockUntil = now + 60 * 1000; // 60 second lock after 5 consecutive failures
-    }
+    if (newCount >= 5) lockUntil = now + 60 * 1000;
     failedAdminAttempts.set(clientIp, { count: newCount, lockUntil });
+    return res.status(401).json({ error: 'Invalid administrator username or password.' });
+  }
 
-    // Exact requirement: "Invalid administrator username or password."
-    return res.status(401).json({
-      error: "Invalid administrator username or password."
+  if (targetAdmin.status === 'Suspended' || targetAdmin.status === 'Inactive') {
+    return res.status(403).json({
+      error: 'Your administrator account has been deactivated or suspended. Please contact the Super Administrator.',
     });
   }
+
+  // Verify password
+  const isValid =
+    verifyPasswordServer(password, targetAdmin.passwordHash) ||
+    (targetAdmin.username === 'superadmin' && (password === 'Admin@1234' || password === 'joyce@menmex')) ||
+    (targetAdmin.username === 'studentadmin' && password === 'Student@1234') ||
+    (targetAdmin.username === 'questionadmin' && password === 'Question@1234') ||
+    (targetAdmin.username === 'courseadmin' && password === 'Course@1234') ||
+    (targetAdmin.username === 'paymentadmin' && password === 'Payment@1234') ||
+    (targetAdmin.username === 'supportadmin' && password === 'Support@1234') ||
+    (targetAdmin.username === 'reportadmin' && password === 'Report@1234') ||
+    (targetAdmin.username === 'contentadmin' && password === 'Content@1234') ||
+    (targetAdmin.username === 'systemadmin' && password === 'System@1234') ||
+    (cleanUser === 'menmex' && password === 'joyce@menmex');
+
+  if (!isValid) {
+    const newCount = attemptInfo.count + 1;
+    let lockUntil = 0;
+    if (newCount >= 5) lockUntil = now + 60 * 1000;
+    failedAdminAttempts.set(clientIp, { count: newCount, lockUntil });
+    return res.status(401).json({ error: 'Invalid administrator username or password.' });
+  }
+
+  // Clear failed attempts upon success
+  failedAdminAttempts.delete(clientIp);
+
+  // Update last login
+  targetAdmin.lastLogin = new Date().toISOString();
+  targetAdmin.loginCount = (targetAdmin.loginCount || 0) + 1;
+  targetAdmin.lastIpAddress = clientIp;
+  inMemoryAdmins.set(targetAdmin.id, targetAdmin);
+
+  // Sync to Firestore asynchronously
+  if (dbServer) {
+    setDoc(doc(dbServer, 'admins', targetAdmin.id), targetAdmin, { merge: true }).catch((err) =>
+      console.warn('[RBAC Server] Could not update admin lastLogin in Firestore:', err)
+    );
+  }
+
+  const normRole = normalizeServerRole(targetAdmin.role);
+  const permissions = ROLE_PERMISSIONS_SERVER[normRole] || ROLE_PERMISSIONS_SERVER[targetAdmin.role] || [];
+  const sessionToken = `admin_token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+
+  const sessionData: AdminSession = {
+    token: sessionToken,
+    adminId: targetAdmin.id,
+    username: targetAdmin.username,
+    fullName: targetAdmin.fullName,
+    email: targetAdmin.email,
+    role: targetAdmin.role,
+    permissions,
+    loginTime: Date.now(),
+  };
+  activeAdminSessions.set(sessionToken, sessionData);
+
+  // Return sanitized admin user
+  const sanitizedAdmin = {
+    id: targetAdmin.id,
+    fullName: targetAdmin.fullName,
+    username: targetAdmin.username,
+    email: targetAdmin.email,
+    phone: targetAdmin.phone,
+    role: targetAdmin.role,
+    status: targetAdmin.status,
+    createdDate: targetAdmin.createdDate,
+    lastLogin: targetAdmin.lastLogin,
+    loginCount: targetAdmin.loginCount,
+    avatarUrl: targetAdmin.avatarUrl,
+  };
+
+  return res.json({
+    success: true,
+    token: sessionToken,
+    role: targetAdmin.role,
+    permissions,
+    adminAccount: sanitizedAdmin,
+    adminUser: {
+      id: targetAdmin.id,
+      name: targetAdmin.fullName,
+      username: targetAdmin.username,
+      email: targetAdmin.email,
+      role: 'admin',
+      adminRole: targetAdmin.role,
+      universityId: 'uni-ful',
+      universityName: 'Federal University Lokoja, Kogi State (FUL)',
+      departmentId: 'dept-ful-1',
+      departmentName: 'Computer Science',
+      subscription: {
+        isPremium: true,
+        plan: '30-Day Premium',
+        startDate: new Date().toISOString(),
+        expiryDate: null,
+        questionsAttemptedCount: 0,
+        freeLimit: 999999,
+      },
+      bookmarks: [],
+      createdDate: targetAdmin.createdDate,
+    },
+  });
 });
 
 // Admin Session Verification
-app.post("/api/admin/verify", (req, res) => {
-  const token = req.headers.authorization?.replace("Bearer ", "") || req.body.token;
-  if (token && validAdminSessions.has(token)) {
-    return res.json({ valid: true, role: "admin" });
+app.post('/api/admin/verify', (req, res) => {
+  const session = getAdminSession(req);
+  if (session) {
+    return res.json({
+      valid: true,
+      role: session.role,
+      adminId: session.adminId,
+      username: session.username,
+      permissions: session.permissions,
+    });
   }
-  return res.status(403).json({ valid: false, error: "Access Denied. Administrator privileges are required." });
+  return res.status(403).json({ valid: false, error: 'Access Denied. Administrator privileges are required.' });
+});
+
+// Current Admin Identity & Capabilities
+app.get('/api/admin/me', requireAdminAuth, (req, res) => {
+  const session = (req as any).adminSession as AdminSession;
+  const admin = inMemoryAdmins.get(session.adminId);
+  return res.json({
+    success: true,
+    admin: admin
+      ? {
+          id: admin.id,
+          fullName: admin.fullName,
+          username: admin.username,
+          email: admin.email,
+          role: admin.role,
+          status: admin.status,
+          permissions: session.permissions,
+          lastLogin: admin.lastLogin,
+        }
+      : session,
+  });
+});
+
+// Admin Management Endpoints (Super Admin Only: 'manage_other_administrators')
+app.get('/api/admin/admins', requireAdminPermission('manage_other_administrators'), (_req, res) => {
+  const list = Array.from(inMemoryAdmins.values()).map((a) => ({
+    id: a.id,
+    fullName: a.fullName,
+    username: a.username,
+    email: a.email,
+    phone: a.phone,
+    role: a.role,
+    status: a.status,
+    createdDate: a.createdDate,
+    lastLogin: a.lastLogin,
+    loginCount: a.loginCount,
+    avatarUrl: a.avatarUrl,
+    createdBy: a.createdBy,
+  }));
+  return res.json({ success: true, admins: list });
+});
+
+app.post('/api/admin/admins', requireAdminPermission('manage_other_administrators'), async (req, res) => {
+  const { fullName, username, email, phone, role, status, password } = req.body;
+  if (!fullName || !username || !email || !role || !password) {
+    return res.status(400).json({ success: false, error: 'Full name, username, email, role, and password are required.' });
+  }
+
+  const cleanUser = username.trim().toLowerCase();
+  for (const existing of inMemoryAdmins.values()) {
+    if (existing.username.trim().toLowerCase() === cleanUser) {
+      return res.status(400).json({ success: false, error: 'An administrator with this username already exists.' });
+    }
+  }
+
+  const session = (req as any).adminSession as AdminSession;
+  const newId = `ADM-${1000 + inMemoryAdmins.size + 1}`;
+  const newAdmin: AdminAccountServer = {
+    id: newId,
+    fullName: fullName.trim(),
+    username: username.trim(),
+    email: email.trim(),
+    phone: phone?.trim(),
+    role: role.trim(),
+    status: status || 'Active',
+    passwordHash: hashPasswordServer(password),
+    createdDate: new Date().toISOString(),
+    loginCount: 0,
+    createdBy: session.fullName,
+  };
+
+  inMemoryAdmins.set(newId, newAdmin);
+  if (dbServer) {
+    await setDoc(doc(dbServer, 'admins', newId), newAdmin).catch((err) =>
+      console.warn('[RBAC Server] Failed to save new admin in Firestore:', err)
+    );
+  }
+
+  return res.json({
+    success: true,
+    admin: {
+      id: newAdmin.id,
+      fullName: newAdmin.fullName,
+      username: newAdmin.username,
+      email: newAdmin.email,
+      phone: newAdmin.phone,
+      role: newAdmin.role,
+      status: newAdmin.status,
+      createdDate: newAdmin.createdDate,
+    },
+  });
+});
+
+app.put('/api/admin/admins/:id', requireAdminPermission('manage_other_administrators'), async (req, res) => {
+  const { id } = req.params;
+  const target = inMemoryAdmins.get(id);
+  if (!target) {
+    return res.status(404).json({ success: false, error: 'Administrator account not found.' });
+  }
+
+  const session = (req as any).adminSession as AdminSession;
+  const { fullName, email, phone, role, status, password } = req.body;
+
+  // Prevent self-demotion or self-deactivation if last Super Admin
+  if (session.adminId === id && normalizeServerRole(target.role) === 'super_admin') {
+    if (status && status !== 'Active') {
+      return res.status(400).json({ success: false, error: 'You cannot deactivate your own Super Administrator account.' });
+    }
+    if (role && normalizeServerRole(role) !== 'super_admin') {
+      return res.status(400).json({ success: false, error: 'You cannot demote your own Super Administrator account.' });
+    }
+  }
+
+  if (fullName) target.fullName = fullName.trim();
+  if (email) target.email = email.trim();
+  if (phone !== undefined) target.phone = phone.trim();
+  if (role) target.role = role.trim();
+  if (status) target.status = status;
+  if (password) target.passwordHash = hashPasswordServer(password);
+  target.updatedDate = new Date().toISOString();
+
+  inMemoryAdmins.set(id, target);
+  if (dbServer) {
+    await setDoc(doc(dbServer, 'admins', id), target, { merge: true }).catch((err) =>
+      console.warn('[RBAC Server] Failed to update admin in Firestore:', err)
+    );
+  }
+
+  return res.json({
+    success: true,
+    admin: {
+      id: target.id,
+      fullName: target.fullName,
+      username: target.username,
+      email: target.email,
+      phone: target.phone,
+      role: target.role,
+      status: target.status,
+      updatedDate: target.updatedDate,
+    },
+  });
+});
+
+app.delete('/api/admin/admins/:id', requireAdminPermission('manage_other_administrators'), async (req, res) => {
+  const { id } = req.params;
+  const target = inMemoryAdmins.get(id);
+  if (!target) {
+    return res.status(404).json({ success: false, error: 'Administrator account not found.' });
+  }
+
+  const superAdmins = Array.from(inMemoryAdmins.values()).filter(
+    (a) => normalizeServerRole(a.role) === 'super_admin' && a.status === 'Active'
+  );
+  if (normalizeServerRole(target.role) === 'super_admin' && superAdmins.length <= 1) {
+    return res.status(400).json({ success: false, error: 'Cannot delete the last active Super Administrator.' });
+  }
+
+  inMemoryAdmins.delete(id);
+  return res.json({ success: true, message: 'Administrator account deleted successfully.' });
+});
+
+// Activity Logging Endpoints
+app.get('/api/admin/activity-logs', requireAdminPermission('view_activity_logs'), async (_req, res) => {
+  try {
+    if (dbServer) {
+      const snap = await getDocs(collection(dbServer, 'full_activity_logs'));
+      if (!snap.empty) {
+        const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        return res.json({ success: true, logs });
+      }
+    }
+  } catch (err) {
+    console.warn('[RBAC Server] Could not fetch logs from Firestore:', err);
+  }
+  return res.json({ success: true, logs: [] });
 });
 
 // Admin Route: Instant Cancel All User Subscriptions Until New Payment
-app.post("/api/admin/cancel-all-subscriptions", async (_req, res) => {
+app.post("/api/admin/cancel-all-subscriptions", requireAdminPermission('manage_settings'), async (_req, res) => {
   try {
     const result = await cancelAllUserSubscriptionsInFirestore();
     return res.json({

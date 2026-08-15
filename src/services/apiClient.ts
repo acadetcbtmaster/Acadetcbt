@@ -351,30 +351,32 @@ Return JSON format with:
     return this.verifyPayment(payload);
   },
 
-  // 6. Admin Authentication
-  async adminLogin(payload: any): Promise<any> {
+  // 6. Admin Authentication & RBAC APIs
+  async adminLogin(payload: { username: string; password: string }): Promise<any> {
     try {
-      return await fetchApi<any>('/api/admin/login', {
+      const response = await fetchApi<any>('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: safeStringify(payload),
       });
-    } catch (err) {
-      const { username, password } = payload;
-      const expectedUsername = 'Menmex';
-      const expectedPassword = 'joyce@menmex';
-
-      if (username === expectedUsername && password === expectedPassword) {
+      return response;
+    } catch (err: any) {
+      console.warn('[ApiClient] Backend admin login fallback:', err?.message || err);
+      // Fallback to local authentication service
+      const localAuth = StorageService.authenticateAdminLocally(payload.username, payload.password);
+      if (localAuth.success && localAuth.admin) {
+        const adminAcc = localAuth.admin;
         const sessionToken = `admin_token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
         return {
           success: true,
           token: sessionToken,
           adminUser: {
-            id: 'usr-admin-menmex',
-            name: 'System Administrator',
-            username: expectedUsername,
-            email: 'admin@menmex.ng',
+            id: adminAcc.id,
+            name: adminAcc.fullName,
+            username: adminAcc.username,
+            email: adminAcc.email,
             role: 'admin',
+            adminRole: adminAcc.role,
             universityId: 'uni-ful',
             universityName: 'Federal University Lokoja, Kogi State (FUL)',
             departmentId: 'dept-ful-1',
@@ -388,15 +390,121 @@ Return JSON format with:
               freeLimit: 999999,
             },
             bookmarks: [],
-            createdDate: new Date().toISOString(),
+            createdDate: adminAcc.createdDate,
           },
-        };
-      } else {
-        return {
-          success: false,
-          error: 'Invalid administrator username or password.',
+          adminAccount: adminAcc,
         };
       }
+      return {
+        success: false,
+        error: localAuth.error || 'Invalid administrator username or password.',
+      };
+    }
+  },
+
+  async getAdmins(): Promise<{ success: boolean; admins?: any[]; error?: string }> {
+    try {
+      const token = localStorage.getItem('cbt_admin_token');
+      return await fetchApi<any>('/api/admin/admins', {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+      });
+    } catch {
+      return {
+        success: true,
+        admins: StorageService.getAdminAccounts(),
+      };
+    }
+  },
+
+  async createAdmin(account: any): Promise<{ success: boolean; admin?: any; error?: string }> {
+    try {
+      const token = localStorage.getItem('cbt_admin_token');
+      const res = await fetchApi<any>('/api/admin/admins', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: safeStringify(account),
+      });
+      if (res.success && res.admin) {
+        StorageService.saveAdminAccount(res.admin);
+      }
+      return res;
+    } catch {
+      StorageService.saveAdminAccount(account);
+      StorageService.logAdminAction({
+        action: 'Created Administrator',
+        module: 'Administrator Management',
+        targetId: account.id,
+        targetName: account.fullName,
+        details: `Created admin ${account.username} with role ${account.role}`,
+      });
+      return { success: true, admin: account };
+    }
+  },
+
+  async updateAdmin(id: string, data: any): Promise<{ success: boolean; admin?: any; error?: string }> {
+    try {
+      const token = localStorage.getItem('cbt_admin_token');
+      const res = await fetchApi<any>(`/api/admin/admins/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: safeStringify(data),
+      });
+      if (res.success && res.admin) {
+        StorageService.saveAdminAccount(res.admin);
+      }
+      return res;
+    } catch {
+      const accounts = StorageService.getAdminAccounts();
+      const idx = accounts.findIndex((a) => a.id === id);
+      if (idx >= 0) {
+        accounts[idx] = { ...accounts[idx], ...data, updatedDate: new Date().toISOString() };
+        StorageService.saveAdminAccounts(accounts);
+        StorageService.logAdminAction({
+          action: 'Updated Administrator',
+          module: 'Administrator Management',
+          targetId: id,
+          targetName: accounts[idx].fullName,
+          details: `Updated account ${accounts[idx].username}`,
+        });
+        return { success: true, admin: accounts[idx] };
+      }
+      return { success: false, error: 'Administrator account not found.' };
+    }
+  },
+
+  async deleteAdmin(id: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const token = localStorage.getItem('cbt_admin_token');
+      const res = await fetchApi<any>(`/api/admin/admins/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+      });
+      if (res.success) {
+        StorageService.deleteAdminAccount(id);
+      }
+      return res;
+    } catch {
+      const ok = StorageService.deleteAdminAccount(id);
+      if (ok) {
+        StorageService.logAdminAction({
+          action: 'Deleted Administrator',
+          module: 'Administrator Management',
+          targetId: id,
+          details: `Deleted admin account ${id}`,
+        });
+        return { success: true };
+      }
+      return { success: false, error: 'Unable to delete administrator (last Super Admin cannot be removed).' };
     }
   },
 };

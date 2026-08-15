@@ -816,24 +816,75 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
 
       if (data.success) {
-        localStorage.setItem('cbt_admin_token', data.token);
-        const adminUser: UserProfile = data.adminUser;
+        if (data.token) {
+          localStorage.setItem('cbt_admin_token', data.token);
+        }
+        
+        const adminAccount = data.adminAccount || {
+          id: data.adminUser?.id || 'adm-current',
+          fullName: data.adminUser?.name || 'Administrator',
+          username: adminUsername,
+          email: data.adminUser?.email || 'admin@cbtmaster.ng',
+          role: data.role || data.adminUser?.adminRole || 'Super Administrator',
+          status: 'Active',
+          createdDate: new Date().toISOString(),
+          loginCount: 1,
+        };
+
+        StorageService.setCurrentAdmin(adminAccount);
+        if (adminAccount.id) {
+          localStorage.setItem('cbt_active_admin_id', adminAccount.id);
+        }
+
+        const adminUser: UserProfile = data.adminUser || {
+          id: adminAccount.id,
+          name: adminAccount.fullName,
+          username: adminAccount.username,
+          email: adminAccount.email,
+          role: 'admin',
+          adminRole: adminAccount.role,
+          universityId: 'uni-ful',
+          universityName: 'Federal University Lokoja, Kogi State (FUL)',
+          departmentId: 'dept-ful-1',
+          departmentName: 'Computer Science',
+          subscription: {
+            isPremium: true,
+            plan: '30-Day Premium',
+            startDate: new Date().toISOString(),
+            expiryDate: null,
+            questionsAttemptedCount: 0,
+            freeLimit: 999999,
+          },
+          bookmarks: [],
+          createdDate: adminAccount.createdDate || new Date().toISOString(),
+        };
+
         StorageService.saveUser(adminUser);
 
-        // Sync Admin Firebase Auth session for Firestore security permissions
-        const adminEmail = adminUser.email || 'admin@menmex.ng';
+        // Audit Log
+        StorageService.logAdminAction({
+          adminId: adminAccount.id,
+          adminName: adminAccount.fullName,
+          adminRole: adminAccount.role,
+          action: 'Administrator Sign-In',
+          module: 'Authentication System',
+          details: `Admin ${adminAccount.username} (${adminAccount.role}) signed in successfully.`,
+        });
+
+        // Sync Admin Firebase Auth session in background if supported
+        const adminEmail = adminAccount.email || 'admin@cbtmaster.ng';
         signInWithEmailAndPassword(auth, adminEmail, adminPassword)
           .catch(() => createUserWithEmailAndPassword(auth, adminEmail, adminPassword))
           .catch(() => {});
 
-        onLoginSuccess(adminUser, "Access granted to Admin Dashboard.");
+        onLoginSuccess(adminUser, `Welcome, ${adminAccount.fullName}! Logged in as ${adminAccount.role}.`);
         onClose();
       } else {
-        setAdminAuthError(data.error || "The password or username you entered is incorrect.");
+        setAdminAuthError(data.error || "Invalid administrator username or password.");
         setAdminPassword('');
       }
     } catch (err: any) {
-      setAdminAuthError("Network error. Unable to reach authentication server. Please try again.");
+      setAdminAuthError("Unable to reach authentication server. Please verify credentials.");
     } finally {
       setIsAdminSubmitting(false);
     }
