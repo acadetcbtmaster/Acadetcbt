@@ -758,6 +758,7 @@ export default function App() {
 
         {activeTab === 'admin' && currentUser?.role === 'admin' && (
           <AdminDashboard
+            currentUser={currentUser}
             universities={universities}
             faculties={faculties}
             departments={departments}

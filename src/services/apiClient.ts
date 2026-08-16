@@ -530,9 +530,13 @@ Return JSON format with:
 
   async saveUniversity(uni: any): Promise<{ success: boolean; error?: string }> {
     try {
+      const token = localStorage.getItem('cbt_admin_token');
       return await fetchApi<any>('/api/catalog/universities', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
         body: safeStringify(uni),
       });
     } catch (err: any) {
@@ -542,8 +546,12 @@ Return JSON format with:
 
   async deleteUniversity(id: string): Promise<{ success: boolean; error?: string }> {
     try {
+      const token = localStorage.getItem('cbt_admin_token');
       return await fetchApi<any>(`/api/catalog/universities/${encodeURIComponent(id)}`, {
         method: 'DELETE',
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
       });
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -552,9 +560,13 @@ Return JSON format with:
 
   async saveCourse(course: any): Promise<{ success: boolean; error?: string }> {
     try {
+      const token = localStorage.getItem('cbt_admin_token');
       return await fetchApi<any>('/api/catalog/courses', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
         body: safeStringify(course),
       });
     } catch (err: any) {
@@ -564,8 +576,12 @@ Return JSON format with:
 
   async deleteCourse(id: string): Promise<{ success: boolean; error?: string }> {
     try {
+      const token = localStorage.getItem('cbt_admin_token');
       return await fetchApi<any>(`/api/catalog/courses/${encodeURIComponent(id)}`, {
         method: 'DELETE',
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
       });
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -574,9 +590,13 @@ Return JSON format with:
 
   async saveQuestions(questions: any[]): Promise<{ success: boolean; error?: string }> {
     try {
+      const token = localStorage.getItem('cbt_admin_token');
       return await fetchApi<any>('/api/catalog/questions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
         body: safeStringify({ questions }),
       });
     } catch (err: any) {
@@ -586,8 +606,12 @@ Return JSON format with:
 
   async deleteQuestion(id: string): Promise<{ success: boolean; error?: string }> {
     try {
+      const token = localStorage.getItem('cbt_admin_token');
       return await fetchApi<any>(`/api/catalog/questions/${encodeURIComponent(id)}`, {
         method: 'DELETE',
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
       });
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -596,9 +620,13 @@ Return JSON format with:
 
   async saveSignupFaculties(groups: any[]): Promise<{ success: boolean; error?: string }> {
     try {
+      const token = localStorage.getItem('cbt_admin_token');
       return await fetchApi<any>('/api/catalog/signup-faculties', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
         body: safeStringify({ groups }),
       });
     } catch (err: any) {

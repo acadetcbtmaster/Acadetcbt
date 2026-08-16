@@ -2405,7 +2405,7 @@ app.get("/api/catalog/all", async (_req, res) => {
 });
 
 // Save or update an institution (University)
-app.post("/api/catalog/universities", async (req, res) => {
+app.post("/api/catalog/universities", requireAdminPermission('manage_universities'), async (req, res) => {
   try {
     const data = req.body;
     if (!data || !data.id || !data.name) {
@@ -2421,7 +2421,7 @@ app.post("/api/catalog/universities", async (req, res) => {
 });
 
 // Delete an institution
-app.delete("/api/catalog/universities/:id", async (req, res) => {
+app.delete("/api/catalog/universities/:id", requireAdminPermission('manage_universities'), async (req, res) => {
   try {
     const { id } = req.params;
     if (dbServer) {
@@ -2434,7 +2434,7 @@ app.delete("/api/catalog/universities/:id", async (req, res) => {
 });
 
 // Save or update a course
-app.post("/api/catalog/courses", async (req, res) => {
+app.post("/api/catalog/courses", requireAdminPermission('manage_courses'), async (req, res) => {
   try {
     const data = req.body;
     if (!data || !data.id || !data.code || !data.title) {
@@ -2450,7 +2450,7 @@ app.post("/api/catalog/courses", async (req, res) => {
 });
 
 // Delete a course
-app.delete("/api/catalog/courses/:id", async (req, res) => {
+app.delete("/api/catalog/courses/:id", requireAdminPermission('manage_courses'), async (req, res) => {
   try {
     const { id } = req.params;
     if (dbServer) {
@@ -2463,7 +2463,7 @@ app.delete("/api/catalog/courses/:id", async (req, res) => {
 });
 
 // Save or update questions (bulk or single)
-app.post("/api/catalog/questions", async (req, res) => {
+app.post("/api/catalog/questions", requireAdminPermission('manage_questions'), async (req, res) => {
   try {
     const { questions, question } = req.body;
     const items = questions || (question ? [question] : []);
@@ -2484,7 +2484,7 @@ app.post("/api/catalog/questions", async (req, res) => {
 });
 
 // Delete a question
-app.delete("/api/catalog/questions/:id", async (req, res) => {
+app.delete("/api/catalog/questions/:id", requireAdminPermission('manage_questions'), async (req, res) => {
   try {
     const { id } = req.params;
     if (dbServer) {
@@ -2497,7 +2497,7 @@ app.delete("/api/catalog/questions/:id", async (req, res) => {
 });
 
 // Save signup faculty groups
-app.post("/api/catalog/signup-faculties", async (req, res) => {
+app.post("/api/catalog/signup-faculties", requireAdminPermission('manage_universities'), async (req, res) => {
   try {
     const { groups } = req.body;
     if (!groups || !Array.isArray(groups)) {

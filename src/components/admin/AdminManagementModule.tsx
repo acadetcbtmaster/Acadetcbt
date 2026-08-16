@@ -135,8 +135,9 @@ const ALL_PERMISSION_KEYS = [
 ];
 
 export const AdminManagementModule: React.FC = () => {
-  // Current Logged-in User Role Simulator (Defaults to Super Administrator)
-  const [currentUserRole, setCurrentUserRole] = useState<'Super Administrator' | 'Regular Administrator'>('Super Administrator');
+  // Current Logged-in Admin Session from Local & Central Auth
+  const currentAdmin = StorageService.getCurrentAdmin();
+  const isSuperAdmin = normalizeAdminRole(currentAdmin?.role) === 'super_admin';
 
   // Administrators State
   const [admins, setAdmins] = useState<AdminUser[]>(() => {
@@ -354,7 +355,7 @@ export const AdminManagementModule: React.FC = () => {
   // Create Administrator Handler
   const handleCreateAdminSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (currentUserRole !== 'Super Administrator') {
+    if (!isSuperAdmin) {
       showToast('Permission Denied: Only Super Administrators can create administrator accounts.', 'error');
       return;
     }
@@ -680,35 +681,14 @@ export const AdminManagementModule: React.FC = () => {
           </div>
         </div>
 
-        {/* User Role Simulator Toggle */}
-        <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-xs">
-          <span className="text-[11px] text-slate-400 pl-2 font-medium">Logged in as:</span>
-          <button
-            onClick={() => {
-              setCurrentUserRole('Super Administrator');
-              showToast('Switched identity to Super Administrator (Full Privileges)', 'info');
-            }}
-            className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-              currentUserRole === 'Super Administrator'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Super Administrator
-          </button>
-          <button
-            onClick={() => {
-              setCurrentUserRole('Regular Administrator');
-              showToast('Switched identity to Regular Administrator (Restricted View)', 'info');
-            }}
-            className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all cursor-pointer ${
-              currentUserRole === 'Regular Administrator'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Regular Admin
-          </button>
+        {/* Fixed Admin Session Badge */}
+        <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-xl border border-slate-800 text-xs">
+          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          <span className="text-slate-400 font-medium">Session:</span>
+          <span className="font-bold text-amber-300">{currentAdmin?.fullName || 'Super Administrator'}</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
+            {getRoleDisplayName(currentAdmin?.role)}
+          </span>
         </div>
       </div>
 
@@ -893,14 +873,14 @@ export const AdminManagementModule: React.FC = () => {
         {/* Primary Action Button: Create Administrator (Super Admin Only) */}
         <button
           onClick={() => {
-            if (currentUserRole !== 'Super Administrator') {
+            if (!isSuperAdmin) {
               showToast('Only Super Administrators can create new administrator accounts.', 'error');
             } else {
               setCreateModalOpen(true);
             }
           }}
           className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg transition-all ${
-            currentUserRole === 'Super Administrator'
+            isSuperAdmin
               ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 hover:shadow-amber-500/20'
               : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
           }`}

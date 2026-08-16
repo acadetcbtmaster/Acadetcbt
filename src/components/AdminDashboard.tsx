@@ -37,6 +37,16 @@ import { MenCoreManagementModule } from './admin/MenCoreManagementModule';
 import { DepartmentManagementModule } from './admin/DepartmentManagementModule';
 import { FaceArenaAdminModule } from './admin/FaceArenaAdminModule';
 import {
+  AdminPermission,
+  AdminRole as RbacAdminRole,
+  CATEGORY_REQUIRED_PERMISSIONS as RBAC_CATEGORY_PERMS,
+  DEFAULT_ROLE_PERMISSIONS as RBAC_DEFAULT_PERMISSIONS,
+  getRoleDisplayName,
+  getRolePermissions,
+  hasPermission,
+  normalizeAdminRole,
+} from '../utils/rbac';
+import {
   Shield,
   BookOpen,
   Sparkles,
@@ -153,48 +163,11 @@ export const PRESET_ADMIN_PERSONAS: AdminPersona[] = [
   { id: 'ADM-1009', fullName: 'Ibrahim Garba', role: 'System Manager', email: 'ibrahim.garba@cbtmaster.ng' },
 ];
 
-export const DEFAULT_ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
-  'Super Administrator': [
-    'manage_students', 'manage_universities', 'manage_courses', 'manage_questions',
-    'manage_study_materials', 'manage_payments', 'manage_reports', 'manage_notifications',
-    'manage_backups', 'manage_settings', 'manage_support_tickets', 'view_activity_logs',
-    'manage_other_administrators'
-  ],
-  'Student Manager': ['manage_students', 'manage_support_tickets', 'view_activity_logs'],
-  'Question Manager': ['manage_questions', 'manage_courses', 'view_activity_logs'],
-  'Course Manager': ['manage_courses', 'manage_universities', 'view_activity_logs'],
-  'Payment Manager': ['manage_payments', 'manage_reports', 'view_activity_logs'],
-  'Support Manager': ['manage_support_tickets', 'manage_students', 'view_activity_logs'],
-  'Report Manager': ['manage_reports', 'view_activity_logs'],
-  'Content Manager': ['manage_study_materials', 'manage_questions', 'view_activity_logs'],
-  'System Manager': ['manage_settings', 'manage_backups', 'view_activity_logs', 'manage_notifications']
-};
-
-export const CATEGORY_REQUIRED_PERMISSIONS: Record<string, string> = {
-  students: 'manage_students',
-  universities: 'manage_universities',
-  courses: 'manage_courses',
-  questions: 'manage_questions',
-  review_workflow: 'manage_questions',
-  study_materials: 'manage_study_materials',
-  notifications: 'manage_notifications',
-  leaderboard: 'manage_students',
-  payments: 'manage_payments',
-  question_analytics: 'manage_questions',
-  ai_generator_history: 'manage_questions',
-  backup_restore: 'manage_backups',
-  activity_logs: 'view_activity_logs',
-  roles_permissions: 'manage_other_administrators',
-  reports: 'manage_reports',
-  system_health: 'manage_settings',
-  feedback_support: 'manage_support_tickets',
-  audit_compliance: 'manage_reports',
-  security_access: 'manage_settings',
-  topic_requests: 'manage_study_materials',
-  mencore_ai: 'manage_settings',
-};
+export const DEFAULT_ROLE_PERMISSIONS = RBAC_DEFAULT_PERMISSIONS;
+export const CATEGORY_REQUIRED_PERMISSIONS = RBAC_CATEGORY_PERMS;
 
 interface AdminDashboardProps {
+  currentUser?: UserProfile | null;
   universities: University[];
   faculties: Faculty[];
   departments: Department[];
@@ -214,6 +187,7 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  currentUser,
   universities,
   faculties,
   departments,
@@ -234,22 +208,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Navigation Category State (null = Main Dashboard)
   const [activeCategory, setActiveCategory] = useState<AdminCategory>(null);
 
-  // Active Admin Persona & Role Permissions State
-  const [activePersona, setActivePersona] = useState<AdminPersona>(PRESET_ADMIN_PERSONAS[0]);
+  // Authenticated Admin Identity (Fixed by Login Session - No Impersonation / Switching Allowed)
+  const currentAdminAccount = StorageService.getCurrentAdmin();
+  const rawRole = currentUser?.adminRole || currentAdminAccount?.role || 'super_admin';
+  const currentRole = normalizeAdminRole(rawRole);
+  const roleDisplayName = getRoleDisplayName(currentRole);
+  const adminFullName = currentUser?.name || currentAdminAccount?.fullName || 'Administrator';
+  const adminUsername = currentUser?.username || currentAdminAccount?.username || 'admin';
+  const adminAvatar = currentUser?.avatarUrl || currentAdminAccount?.avatarUrl || '';
+  const adminPermissions = getRolePermissions(currentRole);
+
   const [showRoleMatrixModal, setShowRoleMatrixModal] = useState(false);
 
   // RBAC Permission Check Helper
   const checkCategoryAccess = (cat: AdminCategory) => {
     if (!cat) return { hasAccess: true, requiredPermission: '' };
-    if (activePersona.role === 'Super Administrator') return { hasAccess: true, requiredPermission: '' };
+    if (currentRole === 'super_admin') return { hasAccess: true, requiredPermission: '' };
 
-    const requiredPerm = CATEGORY_REQUIRED_PERMISSIONS[cat] || 'view_activity_logs';
-    const rolePerms = DEFAULT_ROLE_PERMISSIONS[activePersona.role] || [];
-
-    let allowed = rolePerms.includes(requiredPerm);
-    if (activePersona.customPermissions && activePersona.customPermissions[requiredPerm] !== undefined) {
-      allowed = activePersona.customPermissions[requiredPerm];
-    }
+    const requiredPerm = (CATEGORY_REQUIRED_PERMISSIONS[cat] || 'view_activity_logs') as AdminPermission;
+    const allowed = hasPermission(currentAdminAccount || { role: currentRole }, requiredPerm);
 
     return {
       hasAccess: allowed,
@@ -257,22 +234,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
   };
 
-  const handleQuickActionWithPermission = (requiredPerm: string, actionCallback: () => void, actionName: string) => {
-    if (activePersona.role === 'Super Administrator') {
+  const handleQuickActionWithPermission = (requiredPerm: AdminPermission, actionCallback: () => void, actionName: string) => {
+    if (currentRole === 'super_admin' || hasPermission(currentAdminAccount || { role: currentRole }, requiredPerm)) {
       actionCallback();
       return;
     }
-    const rolePerms = DEFAULT_ROLE_PERMISSIONS[activePersona.role] || [];
-    let allowed = rolePerms.includes(requiredPerm);
-    if (activePersona.customPermissions && activePersona.customPermissions[requiredPerm] !== undefined) {
-      allowed = activePersona.customPermissions[requiredPerm];
-    }
-
-    if (!allowed) {
-      alert(`Permission Denied: Your active role "${activePersona.role}" lacks the "${requiredPerm}" permission required to ${actionName.toLowerCase()}.`);
-      return;
-    }
-    actionCallback();
+    alert(`Permission Denied: Your active role "${roleDisplayName}" lacks the "${requiredPerm}" permission required to ${actionName.toLowerCase()}.`);
   };
 
   // Users State (From Storage)
@@ -748,7 +715,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       totalDownloads: 0,
       title: newMatTitle,
       type: (newMatType as any) || 'PDF',
-      uploadedBy: activePersona.fullName || 'Admin',
+      uploadedBy: adminFullName || 'Admin',
       uploadDate: new Date().toISOString().split('T')[0],
       status: 'Active',
       fileUrl: '',
@@ -1125,12 +1092,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </button>
       </div>
 
-      {/* Active Admin Persona & Role Switcher Bar */}
+      {/* Active Admin Session Bar (Fixed Session - No Switcher Allowed) */}
       <div className="bg-slate-900 border border-indigo-500/30 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg bg-gradient-to-r from-slate-900 via-indigo-950/30 to-slate-900">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 font-bold overflow-hidden shrink-0">
-            {activePersona.avatarUrl ? (
-              <img src={activePersona.avatarUrl} alt={activePersona.fullName} className="w-full h-full object-cover" />
+            {adminAvatar ? (
+              <img src={adminAvatar} alt={adminFullName} className="w-full h-full object-cover" />
             ) : (
               <User className="w-5 h-5 text-indigo-400" />
             )}
@@ -1138,46 +1105,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-slate-400 font-medium">Active Admin Persona:</span>
-              <span className="text-xs font-extrabold text-white">{activePersona.fullName}</span>
+              <span className="text-xs text-slate-400 font-medium">Logged-in Administrator:</span>
+              <span className="text-xs font-extrabold text-white">{adminFullName}</span>
+              <span className="text-[11px] text-slate-400 font-mono">(@{adminUsername})</span>
               <span
                 className={`px-2.5 py-0.5 text-[10px] font-extrabold rounded-full border ${
-                  activePersona.role === 'Super Administrator'
+                  currentRole === 'super_admin'
                     ? 'bg-purple-500/10 border-purple-500/40 text-purple-300'
                     : 'bg-amber-500/10 border-amber-500/40 text-amber-300'
                 }`}
               >
-                {activePersona.role}
+                {roleDisplayName}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Active Capabilities Scope:{' '}
+              Active Scope:{' '}
               <span className="text-indigo-300 font-mono font-medium">
-                {DEFAULT_ROLE_PERMISSIONS[activePersona.role]?.length || 13} Permissions Enforced
-              </span>
+                {adminPermissions.length} Permissions Enforced
+              </span>{' '}
+              <span className="text-slate-500 text-[10px]">• Fixed Session</span>
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          {/* Persona Switcher Dropdown */}
-          <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs">
-            <Users className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-slate-400 font-medium">Switch Role:</span>
-            <select
-              value={activePersona.id}
-              onChange={(e) => {
-                const found = PRESET_ADMIN_PERSONAS.find((p) => p.id === e.target.value);
-                if (found) setActivePersona(found);
-              }}
-              className="bg-transparent font-bold text-amber-300 outline-none cursor-pointer"
-            >
-              {PRESET_ADMIN_PERSONAS.map((p) => (
-                <option key={p.id} value={p.id} className="bg-slate-900 text-white">
-                  {p.fullName} ({p.role})
-                </option>
-              ))}
-            </select>
+          <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="text-slate-400 font-medium">Role:</span>
+            <span className="font-bold text-amber-300">{roleDisplayName}</span>
           </div>
 
           <button
@@ -1294,7 +1249,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </div>
 
-      {/* RBAC Access Guard Banner when activeCategory is Restricted for activePersona */}
+      {/* RBAC Access Guard Banner when activeCategory is Restricted for current role */}
       {activeCategory !== null && !checkCategoryAccess(activeCategory).hasAccess && (
         <div className="bg-slate-900 border border-rose-500/40 p-8 rounded-2xl shadow-2xl space-y-6 text-center max-w-3xl mx-auto my-8 animate-in zoom-in-95">
           <div className="w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
@@ -1304,21 +1259,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="space-y-2">
             <h2 className="text-xl font-extrabold text-white">Access Restricted by Role-Based Access Control (RBAC)</h2>
             <p className="text-xs text-slate-400">
-              Current Active Administrator: <span className="font-bold text-amber-300">{activePersona.fullName}</span> ({activePersona.role})
+              Current Active Administrator: <span className="font-bold text-amber-300">{adminFullName}</span> ({roleDisplayName})
             </p>
           </div>
 
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs text-left space-y-2">
             <p className="text-slate-300 font-semibold">
-              Your active assigned role <span className="text-rose-400 font-bold">{activePersona.role}</span> does not possess the required <span className="text-amber-400 font-mono font-bold">'{checkCategoryAccess(activeCategory).requiredPermission}'</span> permission to access this module.
+              Your assigned role <span className="text-rose-400 font-bold">{roleDisplayName}</span> does not have the required <span className="text-amber-400 font-mono font-bold">'{checkCategoryAccess(activeCategory).requiredPermission}'</span> permission to access this module.
             </p>
             <p className="text-slate-400 text-[11px]">
-              Each administrator role is configured with explicit system scope. Switch your active persona above or request elevated permissions in <span className="text-indigo-400">Administrator & Role Management</span>.
+              Each administrator role is configured with strict security isolation. Contact a Super Administrator if you require elevated privileges.
             </p>
           </div>
 
           <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80 text-left">
-            <h4 className="text-xs font-bold text-indigo-400 mb-2">Modules Authorized for {activePersona.role}:</h4>
+            <h4 className="text-xs font-bold text-indigo-400 mb-2">Modules Authorized for {roleDisplayName}:</h4>
             <div className="flex flex-wrap gap-2 text-[11px]">
               {(
                 [
@@ -1347,19 +1302,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex justify-center gap-3 pt-2">
             <button
               onClick={() => setActiveCategory(null)}
-              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl cursor-pointer"
             >
               Return to Main Dashboard
-            </button>
-            <button
-              onClick={() => {
-                const superAdmin = PRESET_ADMIN_PERSONAS.find((p) => p.role === 'Super Administrator');
-                if (superAdmin) setActivePersona(superAdmin);
-              }}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg cursor-pointer flex items-center gap-2"
-            >
-              <Shield className="w-4 h-4" />
-              <span>Switch to Super Administrator</span>
             </button>
           </div>
         </div>
@@ -4048,9 +3993,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <tr>
                     <th className="p-3">Permission Code</th>
                     <th className="p-3">Description</th>
-                    {(Object.keys(DEFAULT_ROLE_PERMISSIONS) as AdminRole[]).map((r) => (
-                      <th key={r} className={`p-3 text-center min-w-[100px] ${r === activePersona.role ? 'text-amber-400 bg-amber-500/10' : ''}`}>
-                        {r.replace(' Manager', '').replace(' Administrator', ' Admin')}
+                    {(Object.keys(DEFAULT_ROLE_PERMISSIONS) as RbacAdminRole[]).map((r) => (
+                      <th key={r} className={`p-3 text-center min-w-[100px] ${r === currentRole ? 'text-amber-400 bg-amber-500/10' : ''}`}>
+                        {getRoleDisplayName(r).replace(' Manager', '').replace(' Administrator', ' Admin')}
                       </th>
                     ))}
                   </tr>
@@ -4074,10 +4019,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <tr key={perm.code} className="hover:bg-slate-800/40">
                       <td className="p-3 font-bold text-indigo-300">{perm.code}</td>
                       <td className="p-3 font-sans text-slate-400">{perm.label}</td>
-                      {(Object.keys(DEFAULT_ROLE_PERMISSIONS) as AdminRole[]).map((r) => {
-                        const isGranted = DEFAULT_ROLE_PERMISSIONS[r].includes(perm.code);
+                      {(Object.keys(DEFAULT_ROLE_PERMISSIONS) as RbacAdminRole[]).map((r) => {
+                        const isGranted = (DEFAULT_ROLE_PERMISSIONS[r] || []).includes(perm.code as AdminPermission);
                         return (
-                          <td key={r} className={`p-3 text-center ${r === activePersona.role ? 'bg-amber-500/5' : ''}`}>
+                          <td key={r} className={`p-3 text-center ${r === currentRole ? 'bg-amber-500/5' : ''}`}>
                             {isGranted ? (
                               <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-xs">
                                 ✓
@@ -4098,7 +4043,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <div className="flex justify-between items-center pt-4 border-t border-slate-800">
               <div className="text-xs text-slate-400">
-                Active Persona: <span className="font-bold text-white">{activePersona.fullName}</span> ({activePersona.role})
+                Current Session: <span className="font-bold text-white">{adminFullName}</span> ({roleDisplayName})
               </div>
               <button
                 onClick={() => setShowRoleMatrixModal(false)}

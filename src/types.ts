@@ -21,6 +21,8 @@ export interface UserProfile {
   googleUserId?: string;
   authProvider?: 'Google' | 'Email' | string;
   role: UserRole;
+  adminRole?: string;
+  avatarUrl?: string;
   universityId: string;
   universityName?: string;
   departmentId: string;

@@ -142,6 +142,32 @@ export const ROLE_PERMISSIONS_MATRIX: Record<string, AdminPermission[]> = {
   'System Manager': ['manage_settings', 'manage_backups', 'manage_notifications', 'view_activity_logs'],
 };
 
+export const DEFAULT_ROLE_PERMISSIONS = ROLE_PERMISSIONS_MATRIX;
+
+export const CATEGORY_REQUIRED_PERMISSIONS: Record<string, AdminPermission> = {
+  students: 'manage_students',
+  universities: 'manage_universities',
+  courses: 'manage_courses',
+  questions: 'manage_questions',
+  review_workflow: 'manage_questions',
+  study_materials: 'manage_study_materials',
+  notifications: 'manage_notifications',
+  leaderboard: 'manage_students',
+  payments: 'manage_payments',
+  question_analytics: 'manage_questions',
+  ai_generator_history: 'manage_questions',
+  backup_restore: 'manage_backups',
+  activity_logs: 'view_activity_logs',
+  roles_permissions: 'manage_other_administrators',
+  reports: 'manage_reports',
+  system_health: 'manage_settings',
+  feedback_support: 'manage_support_tickets',
+  audit_compliance: 'manage_reports',
+  security_access: 'manage_settings',
+  topic_requests: 'manage_study_materials',
+  mencore_ai: 'manage_settings',
+};
+
 /**
  * Normalizes role identifier to canonical machine key or UI title
  */
