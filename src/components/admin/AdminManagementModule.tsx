@@ -645,6 +645,27 @@ export const AdminManagementModule: React.FC = () => {
     showToast(`Permissions updated & synchronized live for ${rolePermissionsAdmin.fullName}.`);
   };
 
+  if (!isSuperAdmin) {
+    return (
+      <div className="bg-slate-900 border border-rose-500/40 p-8 sm:p-12 rounded-2xl shadow-2xl space-y-6 text-center max-w-xl mx-auto my-12" id="admin-management-access-restricted">
+        <div className="w-20 h-20 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+          <Lock className="w-10 h-10" />
+        </div>
+        <div className="space-y-2">
+          <span className="px-3 py-1 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[11px] font-black uppercase tracking-wider rounded-full inline-block">
+            Access Restricted
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            ACCESS RESTRICTED
+          </h2>
+          <p className="text-sm text-slate-300 max-w-md mx-auto leading-relaxed">
+            You do not have permission to access this section. Administrator and Role Management is strictly restricted to Super Administrators.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6" id="admin-management-module-root">
       

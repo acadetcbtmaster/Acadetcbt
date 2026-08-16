@@ -2349,6 +2349,57 @@ app.post("/api/admin/cancel-all-subscriptions", requireAdminPermission('manage_s
   }
 });
 
+// Admin Payments Data Retrieval (Strictly Protected: manage_payments)
+app.get(['/api/payments', '/api/admin/payments'], requireAdminPermission('manage_payments'), async (_req, res) => {
+  try {
+    if (dbServer) {
+      const snap = await getDocs(collection(dbServer, 'payment_transactions'));
+      const transactions = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return res.json({ success: true, transactions });
+    }
+  } catch (err: any) {
+    console.warn('[RBAC Server] Could not fetch payment transactions from Firestore:', err);
+  }
+  return res.json({ success: true, transactions: [] });
+});
+
+// Admin Students Data Retrieval (Strictly Protected: manage_students)
+app.get('/api/admin/students', requireAdminPermission('manage_students'), async (_req, res) => {
+  try {
+    if (dbServer) {
+      const snap = await getDocs(collection(dbServer, 'users'));
+      const students = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return res.json({ success: true, students });
+    }
+  } catch (err: any) {
+    console.warn('[RBAC Server] Could not fetch students from Firestore:', err);
+  }
+  return res.json({ success: true, students: [] });
+});
+
+// Admin Reports Data Retrieval (Strictly Protected: manage_reports)
+app.get('/api/admin/reports', requireAdminPermission('manage_reports'), async (_req, res) => {
+  return res.json({
+    success: true,
+    message: 'Report data retrieved successfully.',
+    generatedAt: new Date().toISOString(),
+  });
+});
+
+// Admin System Settings (Strictly Protected: manage_settings)
+app.get('/api/admin/settings', requireAdminPermission('manage_settings'), async (_req, res) => {
+  try {
+    if (dbServer) {
+      const snap = await getDocs(collection(dbServer, 'system_configs'));
+      const configs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return res.json({ success: true, configs });
+    }
+  } catch (err: any) {
+    console.warn('[RBAC Server] Could not fetch configs:', err);
+  }
+  return res.json({ success: true, configs: [] });
+});
+
 // =========================================================================
 // CENTRAL DATABASE CATALOG & SYNC REST API ENDPOINTS
 // =========================================================================

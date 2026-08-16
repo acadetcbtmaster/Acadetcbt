@@ -146,6 +146,7 @@ export const DEFAULT_ROLE_PERMISSIONS = ROLE_PERMISSIONS_MATRIX;
 
 export const CATEGORY_REQUIRED_PERMISSIONS: Record<string, AdminPermission> = {
   students: 'manage_students',
+  signup_departments: 'manage_universities',
   universities: 'manage_universities',
   courses: 'manage_courses',
   questions: 'manage_questions',
@@ -166,6 +167,7 @@ export const CATEGORY_REQUIRED_PERMISSIONS: Record<string, AdminPermission> = {
   security_access: 'manage_settings',
   topic_requests: 'manage_study_materials',
   mencore_ai: 'manage_settings',
+  face_arena: 'manage_questions',
 };
 
 /**

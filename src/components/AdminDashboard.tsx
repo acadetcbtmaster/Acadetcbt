@@ -1164,33 +1164,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <Shield className="w-6 h-6 text-amber-400" />
               <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
                 {activeCategory === null && 'Dashboard Overview (Main Admin Portal)'}
-                {activeCategory === 'students' && 'Student Management Interface'}
-                {activeCategory === 'universities' && 'University Management Interface'}
-                {activeCategory === 'courses' && 'Course Management Interface'}
-                {activeCategory === 'questions' && 'Question Bank Management Interface'}
-                {activeCategory === 'review_workflow' && 'Intelligent Question Review Workflow'}
-                {activeCategory === 'study_materials' && 'Study Materials Interface'}
-                {activeCategory === 'notifications' && 'Notification Center Interface'}
-                {activeCategory === 'leaderboard' && 'Leaderboard Management Interface'}
-                {activeCategory === 'payments' && 'Payment & Revenue Management'}
-                {activeCategory === 'question_analytics' && 'Question Analytics Interface'}
-                {activeCategory === 'ai_generator_history' && 'Smart Question Generator History'}
-                {activeCategory === 'backup_restore' && 'Backup & Restore Interface'}
-                {activeCategory === 'activity_logs' && 'Administrative Activity Logs'}
-                {activeCategory === 'roles_permissions' && 'Roles & Permissions Interface'}
-                {activeCategory === 'reports' && 'System Reports & Export Interface'}
-                {activeCategory === 'system_health' && 'System Health & Server Diagnostics'}
-                {activeCategory === 'feedback_support' && 'Feedback & Support Interface'}
-                {activeCategory === 'audit_compliance' && 'Audit & Compliance Center'}
-                {activeCategory === 'security_access' && 'Security & Access Control'}
-                {activeCategory === 'topic_requests' && 'Community Learning & Topic Requests'}
-                {activeCategory === 'mencore_ai' && 'MenCore AI System & Joyce Tutor Studio'}
-                {activeCategory === 'signup_departments' && 'Sign-Up Faculties & Departments Manager'}
+                {activeCategory !== null && !checkCategoryAccess(activeCategory).hasAccess && 'Access Restricted'}
+                {activeCategory === 'students' && checkCategoryAccess('students').hasAccess && 'Student Management Interface'}
+                {activeCategory === 'universities' && checkCategoryAccess('universities').hasAccess && 'University Management Interface'}
+                {activeCategory === 'courses' && checkCategoryAccess('courses').hasAccess && 'Course Management Interface'}
+                {activeCategory === 'questions' && checkCategoryAccess('questions').hasAccess && 'Question Bank Management Interface'}
+                {activeCategory === 'review_workflow' && checkCategoryAccess('review_workflow').hasAccess && 'Intelligent Question Review Workflow'}
+                {activeCategory === 'study_materials' && checkCategoryAccess('study_materials').hasAccess && 'Study Materials Interface'}
+                {activeCategory === 'notifications' && checkCategoryAccess('notifications').hasAccess && 'Notification Center Interface'}
+                {activeCategory === 'leaderboard' && checkCategoryAccess('leaderboard').hasAccess && 'Leaderboard Management Interface'}
+                {activeCategory === 'payments' && checkCategoryAccess('payments').hasAccess && 'Payment & Revenue Management'}
+                {activeCategory === 'question_analytics' && checkCategoryAccess('question_analytics').hasAccess && 'Question Analytics Interface'}
+                {activeCategory === 'ai_generator_history' && checkCategoryAccess('ai_generator_history').hasAccess && 'Smart Question Generator History'}
+                {activeCategory === 'backup_restore' && checkCategoryAccess('backup_restore').hasAccess && 'Backup & Restore Interface'}
+                {activeCategory === 'activity_logs' && checkCategoryAccess('activity_logs').hasAccess && 'Administrative Activity Logs'}
+                {activeCategory === 'roles_permissions' && checkCategoryAccess('roles_permissions').hasAccess && 'Roles & Permissions Interface'}
+                {activeCategory === 'reports' && checkCategoryAccess('reports').hasAccess && 'System Reports & Export Interface'}
+                {activeCategory === 'system_health' && checkCategoryAccess('system_health').hasAccess && 'System Health & Server Diagnostics'}
+                {activeCategory === 'feedback_support' && checkCategoryAccess('feedback_support').hasAccess && 'Feedback & Support Interface'}
+                {activeCategory === 'audit_compliance' && checkCategoryAccess('audit_compliance').hasAccess && 'Audit & Compliance Center'}
+                {activeCategory === 'security_access' && checkCategoryAccess('security_access').hasAccess && 'Security & Access Control'}
+                {activeCategory === 'topic_requests' && checkCategoryAccess('topic_requests').hasAccess && 'Community Learning & Topic Requests'}
+                {activeCategory === 'mencore_ai' && checkCategoryAccess('mencore_ai').hasAccess && 'MenCore AI System & Joyce Tutor Studio'}
+                {activeCategory === 'signup_departments' && checkCategoryAccess('signup_departments').hasAccess && 'Sign-Up Faculties & Departments Manager'}
+                {activeCategory === 'face_arena' && checkCategoryAccess('face_arena').hasAccess && 'Face Arena Weekly Quiz Management'}
               </h1>
             </div>
             <p className="text-xs text-slate-400 mt-1">
               {activeCategory === null
                 ? 'Central monitoring hub: 22 real-time management categories connected live to Cloud Firestore.'
+                : activeCategory !== null && !checkCategoryAccess(activeCategory).hasAccess
+                ? 'Security Policy Enforced: You do not have permission to access this module.'
                 : 'Dedicated control interface. Use the category selector to switch or back to main.'}
             </p>
           </div>
@@ -1230,6 +1234,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   ['topic_requests', '21. Community Learning & Topic Requests'],
                   ['mencore_ai', '22. MenCore AI System & Joyce Tutor Studio'],
                   ['signup_departments', '23. Sign-Up Faculties & Departments Catalog'],
+                  ['face_arena', '24. Face Arena Quiz Management'],
                 ] as [AdminCategory, string][]
               ).map(([catKey, label]) => {
                 const acc = checkCategoryAccess(catKey);
@@ -1249,62 +1254,54 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </div>
 
-      {/* RBAC Access Guard Banner when activeCategory is Restricted for current role */}
+      {/* RBAC Access Restricted Screen (ONLY rendered when activeCategory is Restricted for current role) */}
       {activeCategory !== null && !checkCategoryAccess(activeCategory).hasAccess && (
-        <div className="bg-slate-900 border border-rose-500/40 p-8 rounded-2xl shadow-2xl space-y-6 text-center max-w-3xl mx-auto my-8 animate-in zoom-in-95">
-          <div className="w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
-            <ShieldAlert className="w-8 h-8" />
+        <div className="bg-slate-900 border border-rose-500/40 p-8 sm:p-12 rounded-2xl shadow-2xl space-y-6 text-center max-w-xl mx-auto my-12 animate-in zoom-in-95" id="admin-access-restricted-screen">
+          <div className="w-20 h-20 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400 shadow-xl shadow-rose-500/10">
+            <Lock className="w-10 h-10" />
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-xl font-extrabold text-white">Access Restricted by Role-Based Access Control (RBAC)</h2>
-            <p className="text-xs text-slate-400">
-              Current Active Administrator: <span className="font-bold text-amber-300">{adminFullName}</span> ({roleDisplayName})
+            <span className="px-3 py-1 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[11px] font-black uppercase tracking-wider rounded-full inline-block">
+              Access Restricted
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+              ACCESS RESTRICTED
+            </h2>
+            <p className="text-sm text-slate-300 max-w-md mx-auto leading-relaxed">
+              You do not have permission to access this section.
             </p>
           </div>
 
-          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs text-left space-y-2">
-            <p className="text-slate-300 font-semibold">
-              Your assigned role <span className="text-rose-400 font-bold">{roleDisplayName}</span> does not have the required <span className="text-amber-400 font-mono font-bold">'{checkCategoryAccess(activeCategory).requiredPermission}'</span> permission to access this module.
-            </p>
-            <p className="text-slate-400 text-[11px]">
-              Each administrator role is configured with strict security isolation. Contact a Super Administrator if you require elevated privileges.
-            </p>
-          </div>
-
-          <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80 text-left">
-            <h4 className="text-xs font-bold text-indigo-400 mb-2">Modules Authorized for {roleDisplayName}:</h4>
-            <div className="flex flex-wrap gap-2 text-[11px]">
-              {(
-                [
-                  'students', 'universities', 'courses', 'questions', 'review_workflow',
-                  'study_materials', 'notifications', 'leaderboard', 'payments', 'question_analytics',
-                  'ai_generator_history', 'backup_restore', 'activity_logs', 'roles_permissions',
-                  'reports', 'system_health', 'feedback_support', 'audit_compliance', 'security_access', 'topic_requests', 'mencore_ai'
-                ] as AdminCategory[]
-              ).map((catKey) => {
-                if (!catKey) return null;
-                const catAccess = checkCategoryAccess(catKey);
-                if (!catAccess.hasAccess) return null;
-                return (
-                  <button
-                    key={catKey}
-                    onClick={() => setActiveCategory(catKey)}
-                    className="px-2.5 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 rounded-lg cursor-pointer font-medium"
-                  >
-                    {catKey.replace(/_/g, ' ').toUpperCase()}
-                  </button>
-                );
-              })}
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs text-left space-y-2 max-w-md mx-auto">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
+              <span className="text-slate-400">Target Module:</span>
+              <span className="font-bold text-white uppercase tracking-wider">{activeCategory.replace(/_/g, ' ')}</span>
+            </div>
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
+              <span className="text-slate-400">Authenticated Admin:</span>
+              <span className="font-bold text-amber-300">{adminFullName}</span>
+            </div>
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
+              <span className="text-slate-400">Your Assigned Role:</span>
+              <span className="font-bold text-rose-400">{roleDisplayName}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Required Permission:</span>
+              <span className="font-mono font-bold text-amber-400">
+                {checkCategoryAccess(activeCategory).requiredPermission}
+              </span>
             </div>
           </div>
 
-          <div className="flex justify-center gap-3 pt-2">
+          <div className="pt-2">
             <button
               onClick={() => setActiveCategory(null)}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl cursor-pointer"
+              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all cursor-pointer inline-flex items-center gap-2"
+              id="btn-return-to-admin-dashboard"
             >
-              Return to Main Dashboard
+              <ArrowLeft className="w-4 h-4" />
+              <span>Return to Dashboard</span>
             </button>
           </div>
         </div>
@@ -1664,11 +1661,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 2. DEDICATED CATEGORY INTERFACES                                         */}
+      {/* 2. DEDICATED CATEGORY INTERFACES (ONLY RENDERED IF AUTHORIZED)            */}
       {/* ========================================================================= */}
-
-      {/* --- Student Management Interface --- */}
-      {activeCategory === 'students' && (
+      {activeCategory !== null && checkCategoryAccess(activeCategory).hasAccess && (
+        <>
+          {/* --- Student Management Interface --- */}
+          {activeCategory === 'students' && (
         <div className="space-y-6">
           {/* 1. Live Summary Cards (5 Cards as required by Page 5 PDF) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
@@ -3962,6 +3960,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {activeCategory === 'face_arena' && (
         <FaceArenaAdminModule />
       )}
+    </>
+  )}
 
       {/* Role Permissions Matrix Modal */}
       {showRoleMatrixModal && (

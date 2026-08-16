@@ -405,16 +405,41 @@ Return JSON format with:
   async getAdmins(): Promise<{ success: boolean; admins?: any[]; error?: string }> {
     try {
       const token = localStorage.getItem('cbt_admin_token');
-      return await fetchApi<any>('/api/admin/admins', {
+      const res = await fetchApi<any>('/api/admin/admins', {
         headers: {
           Authorization: token ? `Bearer ${token}` : '',
         },
       });
-    } catch {
-      return {
-        success: true,
-        admins: StorageService.getAdminAccounts(),
-      };
+      if (res && res.success === false) {
+        return { success: false, error: res.error || 'Access Denied: manage_other_administrators required.' };
+      }
+      return res;
+    } catch (err: any) {
+      // If error is 403 or Access Denied, never return admin accounts
+      if (err?.message?.includes('403') || err?.message?.includes('Access Denied') || err?.message?.includes('Unauthorized')) {
+        return { success: false, error: err.message };
+      }
+      const currAdmin = StorageService.getCurrentAdmin();
+      if (currAdmin && currAdmin.role?.toLowerCase().includes('super')) {
+        return {
+          success: true,
+          admins: StorageService.getAdminAccounts(),
+        };
+      }
+      return { success: false, error: 'Access Denied: Super Administrator privileges required.' };
+    }
+  },
+
+  async getAdminPayments(): Promise<{ success: boolean; transactions?: any[]; error?: string }> {
+    try {
+      const token = localStorage.getItem('cbt_admin_token');
+      return await fetchApi<any>('/api/admin/payments', {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Access Denied: manage_payments permission required.' };
     }
   },
 

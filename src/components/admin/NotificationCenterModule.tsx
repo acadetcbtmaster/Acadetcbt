@@ -40,7 +40,9 @@ import {
   Radio,
   Check,
   Zap,
+  Lock,
 } from 'lucide-react';
+import { hasPermission } from '../../utils/rbac';
 
 interface NotificationCenterModuleProps {
   universities: University[];
@@ -53,6 +55,30 @@ export const NotificationCenterModule: React.FC<NotificationCenterModuleProps> =
   courses,
   studentsList = [],
 }) => {
+  const currentAdmin = StorageService.getCurrentAdmin();
+  const isAuthorized = hasPermission(currentAdmin, 'manage_notifications');
+
+  if (!isAuthorized) {
+    return (
+      <div className="bg-slate-900 border border-rose-500/40 p-8 sm:p-12 rounded-2xl shadow-2xl space-y-6 text-center max-w-xl mx-auto my-12" id="notifications-access-restricted">
+        <div className="w-20 h-20 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+          <Lock className="w-10 h-10" />
+        </div>
+        <div className="space-y-2">
+          <span className="px-3 py-1 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[11px] font-black uppercase tracking-wider rounded-full inline-block">
+            Access Restricted
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            ACCESS RESTRICTED
+          </h2>
+          <p className="text-sm text-slate-300 max-w-md mx-auto leading-relaxed">
+            You do not have permission to access this section. Notification and broadcast management is strictly restricted to authorized roles.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const [notifications, setNotifications] = useState<AdminNotification[]>(() =>
     StorageService.getAdminNotifications()
   );
