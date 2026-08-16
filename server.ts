@@ -7,7 +7,11 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { initializeApp as initFirebaseApp, getApps as getFirebaseApps, getApp as getFirebaseApp } from "firebase/app";
 import { getAuth as getFirebaseAuth, signInWithEmailAndPassword as signInFirebaseEmail, createUserWithEmailAndPassword as createFirebaseUser } from "firebase/auth";
-import { initializeFirestore, doc, setDoc, getDoc, getDocs, collection } from "firebase/firestore";
+import { initializeFirestore, doc, setDoc, getDoc, getDocs, collection, deleteDoc, setLogLevel } from "firebase/firestore";
+
+try {
+  setLogLevel('error');
+} catch {}
 
 dotenv.config();
 
@@ -26,7 +30,7 @@ try {
     const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf-8"));
     const fbApp = getFirebaseApps().length > 0 ? getFirebaseApp() : initFirebaseApp(firebaseConfig);
     const dbId = firebaseConfig.firestoreDatabaseId === 'ai-studio-aicbtsimulator-24029710-e20e-4e1e-a3cf-846d58bd47cf' ? '(default)' : (firebaseConfig.firestoreDatabaseId || '(default)');
-    dbServer = initializeFirestore(fbApp, {}, dbId);
+    dbServer = initializeFirestore(fbApp, { ignoreUndefinedProperties: true }, dbId);
     authServer = getFirebaseAuth(fbApp);
 
     // Authenticate backend server as Administrator if email provider is enabled
@@ -2342,6 +2346,169 @@ app.post("/api/admin/cancel-all-subscriptions", requireAdminPermission('manage_s
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || "Failed to cancel user subscriptions." });
+  }
+});
+
+// =========================================================================
+// CENTRAL DATABASE CATALOG & SYNC REST API ENDPOINTS
+// =========================================================================
+
+// Public / Authenticated Route: Get all catalog entities from Firestore
+app.get("/api/catalog/all", async (_req, res) => {
+  try {
+    if (!dbServer) {
+      return res.json({ success: true, universities: [], courses: [], departments: [], faculties: [], questions: [], materials: [], plans: [] });
+    }
+
+    const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap] = await Promise.all([
+      getDocs(collection(dbServer, "universities")).catch(() => ({ docs: [] })),
+      getDocs(collection(dbServer, "courses")).catch(() => ({ docs: [] })),
+      getDocs(collection(dbServer, "departments")).catch(() => ({ docs: [] })),
+      getDocs(collection(dbServer, "faculties")).catch(() => ({ docs: [] })),
+      getDocs(collection(dbServer, "questions")).catch(() => ({ docs: [] })),
+      getDocs(collection(dbServer, "materials")).catch(() => ({ docs: [] })),
+      getDocs(collection(dbServer, "subscription_plans")).catch(() => ({ docs: [] })),
+      getDocs(collection(dbServer, "system_configs")).catch(() => ({ docs: [] })),
+    ]);
+
+    const universities = (uniSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+    const courses = (courseSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+    const departments = (deptSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+    const faculties = (facSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+    const questions = (qSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+    const materials = (matSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+    const plans = (planSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+
+    let signupFaculties: any = null;
+    if (configSnap.docs) {
+      const found = configSnap.docs.find((d: any) => d.id === 'signup_faculties');
+      if (found && found.data()?.groups) {
+        signupFaculties = found.data().groups;
+      }
+    }
+
+    return res.json({
+      success: true,
+      universities,
+      courses,
+      departments,
+      faculties,
+      questions,
+      materials,
+      plans,
+      signupFaculties,
+    });
+  } catch (err: any) {
+    console.warn("[Catalog API] Warning in /api/catalog/all:", err);
+    return res.status(500).json({ success: false, error: err.message || "Failed to fetch catalog." });
+  }
+});
+
+// Save or update an institution (University)
+app.post("/api/catalog/universities", async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || !data.id || !data.name) {
+      return res.status(400).json({ success: false, error: "Institution ID and name are required." });
+    }
+    if (dbServer) {
+      await setDoc(doc(dbServer, "universities", data.id), data, { merge: true });
+    }
+    return res.json({ success: true, university: data });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to save university." });
+  }
+});
+
+// Delete an institution
+app.delete("/api/catalog/universities/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (dbServer) {
+      await deleteDoc(doc(dbServer, "universities", id));
+    }
+    return res.json({ success: true, message: `University ${id} deleted successfully.` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to delete university." });
+  }
+});
+
+// Save or update a course
+app.post("/api/catalog/courses", async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || !data.id || !data.code || !data.title) {
+      return res.status(400).json({ success: false, error: "Course ID, code, and title are required." });
+    }
+    if (dbServer) {
+      await setDoc(doc(dbServer, "courses", data.id), data, { merge: true });
+    }
+    return res.json({ success: true, course: data });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to save course." });
+  }
+});
+
+// Delete a course
+app.delete("/api/catalog/courses/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (dbServer) {
+      await deleteDoc(doc(dbServer, "courses", id));
+    }
+    return res.json({ success: true, message: `Course ${id} deleted successfully.` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to delete course." });
+  }
+});
+
+// Save or update questions (bulk or single)
+app.post("/api/catalog/questions", async (req, res) => {
+  try {
+    const { questions, question } = req.body;
+    const items = questions || (question ? [question] : []);
+    if (items.length === 0) {
+      return res.status(400).json({ success: false, error: "No question data provided." });
+    }
+    if (dbServer) {
+      for (const q of items) {
+        if (q && q.id) {
+          await setDoc(doc(dbServer, "questions", q.id), q, { merge: true });
+        }
+      }
+    }
+    return res.json({ success: true, count: items.length });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to save question(s)." });
+  }
+});
+
+// Delete a question
+app.delete("/api/catalog/questions/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (dbServer) {
+      await deleteDoc(doc(dbServer, "questions", id));
+    }
+    return res.json({ success: true, message: `Question ${id} deleted successfully.` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to delete question." });
+  }
+});
+
+// Save signup faculty groups
+app.post("/api/catalog/signup-faculties", async (req, res) => {
+  try {
+    const { groups } = req.body;
+    if (!groups || !Array.isArray(groups)) {
+      return res.status(400).json({ success: false, error: "Valid groups array required." });
+    }
+    if (dbServer) {
+      await setDoc(doc(dbServer, "system_configs", "signup_faculties"), { groups }, { merge: true });
+    }
+    return res.json({ success: true, groups });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to save signup faculties." });
   }
 });
 

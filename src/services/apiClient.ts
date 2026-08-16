@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { safeStringify } from './storage';
+import { StorageService, safeStringify } from './storage';
 
 function getClientGeminiApiKey(): string {
   const meta = import.meta as any;
@@ -505,6 +505,104 @@ Return JSON format with:
         return { success: true };
       }
       return { success: false, error: 'Unable to delete administrator (last Super Admin cannot be removed).' };
+    }
+  },
+
+  // ==================== CATALOG & ENTITY SYNC METHODS ====================
+  async getCatalog(): Promise<{
+    success: boolean;
+    universities?: any[];
+    courses?: any[];
+    departments?: any[];
+    faculties?: any[];
+    questions?: any[];
+    materials?: any[];
+    plans?: any[];
+    signupFaculties?: any[];
+    error?: string;
+  }> {
+    try {
+      return await fetchApi<any>('/api/catalog/all');
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to fetch catalog' };
+    }
+  },
+
+  async saveUniversity(uni: any): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await fetchApi<any>('/api/catalog/universities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify(uni),
+      });
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async deleteUniversity(id: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await fetchApi<any>(`/api/catalog/universities/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async saveCourse(course: any): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await fetchApi<any>('/api/catalog/courses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify(course),
+      });
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async deleteCourse(id: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await fetchApi<any>(`/api/catalog/courses/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async saveQuestions(questions: any[]): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await fetchApi<any>('/api/catalog/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({ questions }),
+      });
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async deleteQuestion(id: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await fetchApi<any>(`/api/catalog/questions/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async saveSignupFaculties(groups: any[]): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await fetchApi<any>('/api/catalog/signup-faculties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({ groups }),
+      });
+    } catch (err: any) {
+      return { success: false, error: err.message };
     }
   },
 };

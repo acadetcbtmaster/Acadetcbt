@@ -11,9 +11,14 @@ import {
   updateProfile,
   User,
 } from 'firebase/auth';
-import { initializeFirestore, getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, doc, getDoc, setDoc, setLogLevel } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfigData from '../../firebase-applet-config.json';
+
+// Suppress internal gRPC idle stream disconnection warnings
+try {
+  setLogLevel('error');
+} catch {}
 
 const firebaseConfig = {
   apiKey: (import.meta as any).env?.VITE_FIREBASE_API_KEY || firebaseConfigData.apiKey,
@@ -45,9 +50,13 @@ const targetDbId =
 
 let firestoreInstance;
 try {
+  const firestoreSettings = {
+    ignoreUndefinedProperties: true,
+    experimentalForceLongPolling: true,
+  };
   firestoreInstance = targetDbId
-    ? initializeFirestore(app, { ignoreUndefinedProperties: true }, targetDbId)
-    : initializeFirestore(app, { ignoreUndefinedProperties: true });
+    ? initializeFirestore(app, firestoreSettings, targetDbId)
+    : initializeFirestore(app, firestoreSettings);
 } catch {
   firestoreInstance = targetDbId ? getFirestore(app, targetDbId) : getFirestore(app);
 }

@@ -139,90 +139,45 @@ export const AdminManagementModule: React.FC = () => {
   const [currentUserRole, setCurrentUserRole] = useState<'Super Administrator' | 'Regular Administrator'>('Super Administrator');
 
   // Administrators State
-  const [admins, setAdmins] = useState<AdminUser[]>([
-    {
-      id: 'ADM-1001',
-      fullName: 'Dr. Clement O. Adebayo',
-      username: 'superadmin',
-      email: 'clement.adebayo@cbtmaster.ng',
-      phone: '+234 803 123 4567',
-      role: 'Super Administrator',
-      status: 'Active',
-      isOnline: true,
-      lastLogin: new Date(Date.now() - 1000 * 60 * 12).toLocaleString(),
-      loginCount: 342,
-      dateCreated: '2025-01-10',
-      createdBy: 'System Root',
-      lastIpAddress: '102.89.23.14',
-      deviceInfo: 'MacBook Pro / Chrome 126',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250'
-    },
-    {
-      id: 'ADM-1002',
-      fullName: 'Aisha Bello Abubakar',
-      username: 'aishabello',
-      email: 'aisha.bello@cbtmaster.ng',
-      phone: '+234 802 987 6543',
-      role: 'Question Manager',
-      status: 'Active',
-      isOnline: true,
-      lastLogin: new Date(Date.now() - 1000 * 60 * 45).toLocaleString(),
-      loginCount: 128,
-      dateCreated: '2025-02-01',
-      createdBy: 'Dr. Clement O. Adebayo',
-      lastIpAddress: '197.210.64.88',
-      deviceInfo: 'Windows 11 / Firefox 128',
-      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=250'
-    },
-    {
-      id: 'ADM-1003',
-      fullName: 'Emeka Chukwudi Eze',
-      username: 'emekaeze',
-      email: 'emeka.eze@cbtmaster.ng',
-      phone: '+234 814 555 1212',
-      role: 'Student Manager',
-      status: 'Active',
-      isOnline: false,
-      lastLogin: new Date(Date.now() - 1000 * 60 * 60 * 5).toLocaleString(),
-      loginCount: 94,
-      dateCreated: '2025-02-15',
-      createdBy: 'Dr. Clement O. Adebayo',
-      lastIpAddress: '102.91.4.110',
-      deviceInfo: 'Dell XPS 15 / Edge 125'
-    },
-    {
-      id: 'ADM-1004',
-      fullName: 'Blessing Omotola',
-      username: 'blessingo',
-      email: 'blessing.omotola@cbtmaster.ng',
-      phone: '+234 805 444 3322',
-      role: 'Payment Manager',
-      status: 'Suspended',
-      isOnline: false,
-      lastLogin: '2026-06-18 14:22',
-      loginCount: 41,
-      dateCreated: '2025-03-01',
-      createdBy: 'Dr. Clement O. Adebayo',
-      lastIpAddress: '102.88.19.2',
-      deviceInfo: 'iPhone 15 Pro / Safari'
-    },
-    {
-      id: 'ADM-1005',
-      fullName: 'Tunde Oladipo',
-      username: 'tundeoladipo',
-      email: 'tunde.oladipo@cbtmaster.ng',
-      phone: '+234 818 777 8899',
-      role: 'Course Manager',
-      status: 'Active',
-      isOnline: true,
-      lastLogin: new Date(Date.now() - 1000 * 60 * 2).toLocaleString(),
-      loginCount: 156,
-      dateCreated: '2025-03-10',
-      createdBy: 'Dr. Clement O. Adebayo',
-      lastIpAddress: '197.211.12.95',
-      deviceInfo: 'Ubuntu / Chrome 126'
+  const [admins, setAdmins] = useState<AdminUser[]>(() => {
+    const stored = StorageService.getAdminAccounts();
+    if (stored && stored.length > 0) {
+      return stored.map((acc) => ({
+        id: acc.id,
+        fullName: acc.fullName,
+        username: acc.username,
+        email: acc.email,
+        phone: acc.phone || '+234 800 000 0000',
+        role: (getRoleDisplayName(acc.role) as AdminRole) || 'Super Administrator',
+        status: (acc.status as 'Active' | 'Suspended' | 'Offline') || 'Active',
+        isOnline: !!(acc.lastLogin || acc.lastLoginDate) && Date.now() - new Date(acc.lastLogin || acc.lastLoginDate || 0).getTime() < 30 * 60 * 1000,
+        lastLogin: (acc.lastLogin || acc.lastLoginDate) ? new Date(acc.lastLogin || acc.lastLoginDate!).toLocaleString() : 'Never (New Account)',
+        loginCount: acc.loginCount || 0,
+        dateCreated: acc.createdDate ? acc.createdDate.split('T')[0] : '2026-01-01',
+        createdBy: acc.createdBy || 'System Root',
+        avatarUrl: acc.avatarUrl,
+      }));
     }
-  ]);
+    return [
+      {
+        id: 'ADM-1001',
+        fullName: 'Dr. Clement O. Adebayo',
+        username: 'superadmin',
+        email: 'clement.adebayo@cbtmaster.ng',
+        phone: '+234 803 123 4567',
+        role: 'Super Administrator',
+        status: 'Active',
+        isOnline: true,
+        lastLogin: new Date(Date.now() - 1000 * 60 * 12).toLocaleString(),
+        loginCount: 342,
+        dateCreated: '2025-01-10',
+        createdBy: 'System Root',
+        lastIpAddress: '102.89.23.14',
+        deviceInfo: 'MacBook Pro / Chrome 126',
+        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
+      },
+    ];
+  });
 
   // Login Sessions State
   const [sessions, setSessions] = useState<AdminLoginSession[]>([
@@ -453,6 +408,24 @@ export const AdminManagementModule: React.FC = () => {
       };
 
       setAdmins([newAdminObj, ...admins]);
+
+      // Persist to Cloud & Storage for RBAC authentication
+      const newAccount: AdminAccount = {
+        id: newAdminObj.id,
+        username: newUsername.trim(),
+        passwordHash: hashPasswordSync(newPassword),
+        fullName: newFullName.trim(),
+        role: newRole as any,
+        email: newEmail.trim(),
+        phone: newPhone.trim(),
+        status: 'Active',
+        loginCount: 0,
+        avatarUrl: newAvatarUrl || undefined,
+        createdDate: new Date().toISOString(),
+        createdBy: 'Super Administrator',
+      };
+      StorageService.saveAdminAccount(newAccount);
+
       StorageService.addActivityLog(
         `Created new administrator account: ${newFullName} (${newRole})`,
         'Super Administrator',
@@ -471,7 +444,7 @@ export const AdminManagementModule: React.FC = () => {
       setNewAvatarUrl('');
 
       showToast(`Administrator account for ${newFullName} successfully created & notification sent!`, 'success');
-    }, 800);
+    }, 500);
   };
 
   // Edit Admin Handler
@@ -503,6 +476,19 @@ export const AdminManagementModule: React.FC = () => {
     });
 
     setAdmins(updated);
+
+    const existingAcc = StorageService.getAdminAccounts().find((a) => a.id === editAdminModal.id);
+    if (existingAcc) {
+      StorageService.saveAdminAccount({
+        ...existingAcc,
+        fullName: editFullName.trim(),
+        username: editUsername.trim(),
+        email: editEmail.trim(),
+        phone: editPhone.trim(),
+        role: editRoleState as any,
+      });
+    }
+
     StorageService.addActivityLog(
       `Updated administrator profile details for ${editFullName} (${editAdminModal.id})`,
       'Super Administrator',
@@ -525,6 +511,15 @@ export const AdminManagementModule: React.FC = () => {
     });
 
     setAdmins(updated);
+
+    const existingAcc = StorageService.getAdminAccounts().find((a) => a.id === admin.id);
+    if (existingAcc) {
+      StorageService.saveAdminAccount({
+        ...existingAcc,
+        status: nextStatus,
+      });
+    }
+
     StorageService.addActivityLog(
       `${nextStatus === 'Suspended' ? 'Suspended' : 'Activated'} administrator account: ${admin.fullName} (${admin.id})`,
       'Super Administrator',
@@ -538,6 +533,7 @@ export const AdminManagementModule: React.FC = () => {
   const handleDeleteAdmin = () => {
     if (!confirmDeleteAdmin) return;
     setAdmins(admins.filter(a => a.id !== confirmDeleteAdmin.id));
+    StorageService.deleteAdminAccount(confirmDeleteAdmin.id);
     StorageService.addActivityLog(
       `Deleted administrator account permanently: ${confirmDeleteAdmin.fullName} (${confirmDeleteAdmin.id})`,
       'Super Administrator',

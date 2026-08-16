@@ -48,8 +48,10 @@ export interface AdminAccount {
   role: AdminRole;
   status: 'Active' | 'Inactive' | 'Suspended';
   createdDate: string;
+  dateCreated?: string;
   updatedDate?: string;
   lastLogin?: string;
+  lastLoginDate?: string;
   lastIpAddress?: string;
   loginCount: number;
   avatarUrl?: string;

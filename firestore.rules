@@ -78,7 +78,22 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /faculties/{facId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /departments/{deptId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /courses/{courseId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /topics/{topicId} {
       allow read: if true;
       allow write: if isAdmin();
     }
@@ -89,6 +104,16 @@ service cloud.firestore {
     }
 
     match /materials/{materialId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /signup_faculty_groups/{groupId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /admins/{adminId} {
       allow read: if true;
       allow write: if isAdmin();
     }

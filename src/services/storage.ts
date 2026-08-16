@@ -65,6 +65,7 @@ import {
   doc,
   setDoc,
   deleteDoc,
+  getDocs,
   onSnapshot,
   Unsubscribe,
 } from 'firebase/firestore';
@@ -761,6 +762,8 @@ const DEFAULT_SETTINGS: SystemSettings = {
 
 export class StorageService {
   private static isInitialized = false;
+  public static hasSyncedWithCloud = false;
+  public static isSyncing = false;
   private static storageDispatchTimer: any = null;
   private static pendingChangedKeys = new Set<string>();
   private static memoryCache = new Map<string, any>();
@@ -769,6 +772,188 @@ export class StorageService {
   static initRealtimeListeners(): void {
     if (this.isInitialized) return;
     this.isInitialized = true;
+    this.syncWithCloud().catch(() => {});
+  }
+
+  /**
+   * Universal Single-Source-of-Truth Cloud Database Synchronization
+   * Fetches latest state from Cloud Firestore and backend REST API,
+   * updates the local cache, and notifies all subscribing React views.
+   */
+  static async syncWithCloud(force: boolean = false): Promise<boolean> {
+    if (this.isSyncing) return false;
+    this.isSyncing = true;
+
+    try {
+      let fetchedFromFirestore = false;
+
+      // 1. Direct Firestore Fetch for all academic & admin collections
+      try {
+        const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap, adminSnap] = await Promise.all([
+          getDocs(collection(db, 'universities')),
+          getDocs(collection(db, 'courses')),
+          getDocs(collection(db, 'departments')),
+          getDocs(collection(db, 'faculties')),
+          getDocs(collection(db, 'questions')),
+          getDocs(collection(db, 'materials')),
+          getDocs(collection(db, 'subscription_plans')),
+          getDocs(collection(db, 'system_configs')),
+          getDocs(collection(db, 'admins')),
+        ]);
+
+        if (uniSnap && !uniSnap.empty) {
+          const unis = uniSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as University[];
+          this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, unis);
+          localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(unis));
+        } else if (uniSnap && uniSnap.empty) {
+          // Cloud empty on first setup: seed initial universities to cloud
+          SEED_UNIVERSITIES.forEach((u) => {
+            setDoc(doc(db, 'universities', u.id), safeClone(u), { merge: true }).catch(() => {});
+          });
+        }
+
+        if (courseSnap && !courseSnap.empty) {
+          const courses = courseSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Course[];
+          this.memoryCache.set(STORAGE_KEYS.COURSES, courses);
+          localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(courses));
+        } else if (courseSnap && courseSnap.empty) {
+          SEED_COURSES.forEach((c) => {
+            setDoc(doc(db, 'courses', c.id), safeClone(c), { merge: true }).catch(() => {});
+          });
+        }
+
+        if (deptSnap && !deptSnap.empty) {
+          const depts = deptSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Department[];
+          this.memoryCache.set(STORAGE_KEYS.DEPARTMENTS, depts);
+          localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, safeStringify(depts));
+        }
+
+        if (facSnap && !facSnap.empty) {
+          const facs = facSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Faculty[];
+          this.memoryCache.set(STORAGE_KEYS.FACULTIES, facs);
+          localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(facs));
+        }
+
+        if (qSnap && !qSnap.empty) {
+          const questions = qSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Question[];
+          this.memoryCache.set(STORAGE_KEYS.QUESTIONS, questions);
+          localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(questions));
+        } else if (qSnap && qSnap.empty) {
+          SEED_QUESTIONS.forEach((q) => {
+            setDoc(doc(db, 'questions', q.id), safeClone(q), { merge: true }).catch(() => {});
+          });
+        }
+
+        if (matSnap && !matSnap.empty) {
+          const materials = matSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as StudyMaterial[];
+          this.memoryCache.set(STORAGE_KEYS.MATERIALS, materials);
+          localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(materials));
+        }
+
+        if (planSnap && !planSnap.empty) {
+          const plans = planSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as SubscriptionPlan[];
+          this.memoryCache.set(STORAGE_KEYS.PLANS, plans);
+          localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(plans));
+        }
+
+        if (adminSnap && !adminSnap.empty) {
+          const admins = adminSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as AdminAccount[];
+          this.memoryCache.set(STORAGE_KEYS.ADMIN_ACCOUNTS, admins);
+          localStorage.setItem(STORAGE_KEYS.ADMIN_ACCOUNTS, safeStringify(admins));
+        }
+
+        if (configSnap && !configSnap.empty) {
+          const signupDoc = configSnap.docs.find((d) => d.id === 'signup_faculties');
+          if (signupDoc && signupDoc.data()?.groups) {
+            this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, signupDoc.data().groups);
+            localStorage.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, safeStringify(signupDoc.data().groups));
+          }
+        }
+
+        fetchedFromFirestore = true;
+      } catch (err) {
+        console.info('[StorageService] Direct Firestore sync notice; falling back to Backend API');
+      }
+
+      // 2. Secondary Backend REST API Fallback
+      if (!fetchedFromFirestore) {
+        try {
+          const resp = await fetch('/api/catalog/all');
+          if (resp.ok) {
+            const catalog = await resp.json();
+            if (catalog.success) {
+              if (catalog.universities && catalog.universities.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, catalog.universities);
+                localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(catalog.universities));
+              }
+              if (catalog.courses && catalog.courses.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.COURSES, catalog.courses);
+                localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(catalog.courses));
+              }
+              if (catalog.departments && catalog.departments.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.DEPARTMENTS, catalog.departments);
+                localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, safeStringify(catalog.departments));
+              }
+              if (catalog.faculties && catalog.faculties.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.FACULTIES, catalog.faculties);
+                localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(catalog.faculties));
+              }
+              if (catalog.questions && catalog.questions.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.QUESTIONS, catalog.questions);
+                localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(catalog.questions));
+              }
+              if (catalog.materials && catalog.materials.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.MATERIALS, catalog.materials);
+                localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(catalog.materials));
+              }
+              if (catalog.plans && catalog.plans.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.PLANS, catalog.plans);
+                localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(catalog.plans));
+              }
+              if (catalog.signupFaculties && catalog.signupFaculties.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, catalog.signupFaculties);
+                localStorage.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, safeStringify(catalog.signupFaculties));
+              }
+            }
+          }
+        } catch (apiErr) {
+          console.warn('[StorageService] REST catalog sync notice:', apiErr);
+        }
+      }
+
+      this.hasSyncedWithCloud = true;
+
+      // Broadcast storage change event so all components update immediately
+      try {
+        window.dispatchEvent(
+          new CustomEvent('cbt_storage_change', {
+            detail: {
+              key: 'all_synced',
+              keys: [
+                'all_synced',
+                STORAGE_KEYS.UNIVERSITIES,
+                STORAGE_KEYS.COURSES,
+                STORAGE_KEYS.QUESTIONS,
+                STORAGE_KEYS.DEPARTMENTS,
+                STORAGE_KEYS.FACULTIES,
+                STORAGE_KEYS.MATERIALS,
+                STORAGE_KEYS.SIGNUP_FACULTY_GROUPS,
+                STORAGE_KEYS.ADMIN_ACCOUNTS,
+              ],
+              timestamp: Date.now(),
+            },
+          })
+        );
+      } catch {
+        window.dispatchEvent(new Event('cbt_storage_change'));
+      }
+      return true;
+    } catch (e) {
+      console.warn('[StorageService] Exception in syncWithCloud:', e);
+      return false;
+    } finally {
+      this.isSyncing = false;
+    }
   }
 
   private static getItem<T>(key: string, defaultValue: T): T {
@@ -1040,14 +1225,18 @@ export class StorageService {
     return this.getItem<Question[]>(STORAGE_KEYS.QUESTIONS, SEED_QUESTIONS);
   }
 
-  static saveQuestions(questions: Question[]): void {
+  static async saveQuestions(questions: Question[]): Promise<boolean> {
     const previous = this.getQuestions();
     this.setItem(STORAGE_KEYS.QUESTIONS, questions);
 
+    const promises: Promise<any>[] = [];
+
     // Sync upserts to Firestore
     questions.forEach((q) => {
-      setDoc(doc(db, 'questions', q.id), safeClone(q), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `questions/${q.id}`)
+      promises.push(
+        setDoc(doc(db, 'questions', q.id), safeClone(q), { merge: true }).catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `questions/${q.id}`)
+        )
       );
     });
 
@@ -1055,11 +1244,38 @@ export class StorageService {
     const newIds = new Set(questions.map((q) => q.id));
     previous.forEach((pq) => {
       if (!newIds.has(pq.id)) {
-        deleteDoc(doc(db, 'questions', pq.id)).catch((err) =>
-          handleFirestoreError(err, OperationType.DELETE, `questions/${pq.id}`)
+        promises.push(
+          deleteDoc(doc(db, 'questions', pq.id)).catch((err) =>
+            handleFirestoreError(err, OperationType.DELETE, `questions/${pq.id}`)
+          )
         );
       }
     });
+
+    // Also sync to Backend API
+    promises.push(
+      fetch('/api/catalog/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({ questions }),
+      }).catch(() => {})
+    );
+
+    await Promise.allSettled(promises);
+    return true;
+  }
+
+  static async deleteQuestion(id: string): Promise<boolean> {
+    const remaining = this.getQuestions().filter((q) => q.id !== id);
+    this.setItem(STORAGE_KEYS.QUESTIONS, remaining);
+
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'questions', id)).catch((err) =>
+        handleFirestoreError(err, OperationType.DELETE, `questions/${id}`)
+      ),
+      fetch(`/api/catalog/questions/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {}),
+    ]);
+    return true;
   }
 
   static addQuestion(q: Question): void {
@@ -1071,26 +1287,28 @@ export class StorageService {
   // Universities, Faculties, Depts, Courses, Topics
   static getUniversities(): University[] {
     const list = this.getItem<University[]>(STORAGE_KEYS.UNIVERSITIES, SEED_UNIVERSITIES);
-    // Combine with SEED_UNIVERSITIES to ensure any new universities are included
-    const existingIds = new Set(list.map((u) => u.id));
-    const merged = [...list];
-    SEED_UNIVERSITIES.forEach((seedUni) => {
-      if (!existingIds.has(seedUni.id)) {
-        merged.push(seedUni);
-      }
-    });
-    // Sort alphabetically by university name
-    return merged.sort((a, b) => a.name.localeCompare(b.name));
+    return Array.isArray(list) ? list : SEED_UNIVERSITIES;
   }
 
-  static saveUniversities(data: University[]): void {
+  static async saveUniversities(data: University[]): Promise<boolean> {
     const previous = this.getUniversities();
     this.setItem(STORAGE_KEYS.UNIVERSITIES, data);
 
+    const promises: Promise<any>[] = [];
+
     // Sync upserts to Firestore
     data.forEach((u) => {
-      setDoc(doc(db, 'universities', u.id), safeClone(u), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `universities/${u.id}`)
+      promises.push(
+        setDoc(doc(db, 'universities', u.id), safeClone(u), { merge: true }).catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `universities/${u.id}`)
+        )
+      );
+      promises.push(
+        fetch('/api/catalog/universities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: safeStringify(u),
+        }).catch(() => {})
       );
     });
 
@@ -1098,49 +1316,139 @@ export class StorageService {
     const newIds = new Set(data.map((u) => u.id));
     previous.forEach((pu) => {
       if (!newIds.has(pu.id)) {
-        deleteDoc(doc(db, 'universities', pu.id)).catch((err) =>
-          handleFirestoreError(err, OperationType.DELETE, `universities/${pu.id}`)
+        promises.push(
+          deleteDoc(doc(db, 'universities', pu.id)).catch((err) =>
+            handleFirestoreError(err, OperationType.DELETE, `universities/${pu.id}`)
+          )
+        );
+        promises.push(
+          fetch(`/api/catalog/universities/${encodeURIComponent(pu.id)}`, { method: 'DELETE' }).catch(() => {})
         );
       }
     });
+
+    await Promise.allSettled(promises);
+    return true;
   }
 
-  static deleteUniversity(id: string): void {
+  static async deleteUniversity(id: string): Promise<boolean> {
     const remaining = this.getUniversities().filter((u) => u.id !== id);
-    this.saveUniversities(remaining);
-    deleteDoc(doc(db, 'universities', id)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `universities/${id}`)
-    );
+    this.setItem(STORAGE_KEYS.UNIVERSITIES, remaining);
+
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'universities', id)).catch((err) =>
+        handleFirestoreError(err, OperationType.DELETE, `universities/${id}`)
+      ),
+      fetch(`/api/catalog/universities/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {}),
+    ]);
+    return true;
   }
 
   static getFaculties(): Faculty[] {
     return this.getItem<Faculty[]>(STORAGE_KEYS.FACULTIES, SEED_FACULTIES);
   }
 
-  static saveFaculties(data: Faculty[]): void {
+  static async saveFaculties(data: Faculty[]): Promise<boolean> {
+    const previous = this.getFaculties();
     this.setItem(STORAGE_KEYS.FACULTIES, data);
+
+    const promises: Promise<any>[] = [];
+    data.forEach((f) => {
+      promises.push(
+        setDoc(doc(db, 'faculties', f.id), safeClone(f), { merge: true }).catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `faculties/${f.id}`)
+        )
+      );
+    });
+
+    const newIds = new Set(data.map((f) => f.id));
+    previous.forEach((pf) => {
+      if (!newIds.has(pf.id)) {
+        promises.push(
+          deleteDoc(doc(db, 'faculties', pf.id)).catch((err) =>
+            handleFirestoreError(err, OperationType.DELETE, `faculties/${pf.id}`)
+          )
+        );
+      }
+    });
+
+    await Promise.allSettled(promises);
+    return true;
+  }
+
+  static async deleteFaculty(id: string): Promise<boolean> {
+    const remaining = this.getFaculties().filter((f) => f.id !== id);
+    this.setItem(STORAGE_KEYS.FACULTIES, remaining);
+    await deleteDoc(doc(db, 'faculties', id)).catch((err) =>
+      handleFirestoreError(err, OperationType.DELETE, `faculties/${id}`)
+    );
+    return true;
   }
 
   static getDepartments(): Department[] {
     return this.getItem<Department[]>(STORAGE_KEYS.DEPARTMENTS, SEED_DEPARTMENTS);
   }
 
-  static saveDepartments(data: Department[]): void {
+  static async saveDepartments(data: Department[]): Promise<boolean> {
+    const previous = this.getDepartments();
     this.setItem(STORAGE_KEYS.DEPARTMENTS, data);
+
+    const promises: Promise<any>[] = [];
+    data.forEach((d) => {
+      promises.push(
+        setDoc(doc(db, 'departments', d.id), safeClone(d), { merge: true }).catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `departments/${d.id}`)
+        )
+      );
+    });
+
+    const newIds = new Set(data.map((d) => d.id));
+    previous.forEach((pd) => {
+      if (!newIds.has(pd.id)) {
+        promises.push(
+          deleteDoc(doc(db, 'departments', pd.id)).catch((err) =>
+            handleFirestoreError(err, OperationType.DELETE, `departments/${pd.id}`)
+          )
+        );
+      }
+    });
+
+    await Promise.allSettled(promises);
+    return true;
+  }
+
+  static async deleteDepartment(id: string): Promise<boolean> {
+    const remaining = this.getDepartments().filter((d) => d.id !== id);
+    this.setItem(STORAGE_KEYS.DEPARTMENTS, remaining);
+    await deleteDoc(doc(db, 'departments', id)).catch((err) =>
+      handleFirestoreError(err, OperationType.DELETE, `departments/${id}`)
+    );
+    return true;
   }
 
   static getCourses(): Course[] {
     return this.getItem<Course[]>(STORAGE_KEYS.COURSES, SEED_COURSES);
   }
 
-  static saveCourses(data: Course[]): void {
+  static async saveCourses(data: Course[]): Promise<boolean> {
     const previous = this.getCourses();
     this.setItem(STORAGE_KEYS.COURSES, data);
 
+    const promises: Promise<any>[] = [];
+
     // Sync upserts to Firestore
     data.forEach((c) => {
-      setDoc(doc(db, 'courses', c.id), safeClone(c), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `courses/${c.id}`)
+      promises.push(
+        setDoc(doc(db, 'courses', c.id), safeClone(c), { merge: true }).catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `courses/${c.id}`)
+        )
+      );
+      promises.push(
+        fetch('/api/catalog/courses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: safeStringify(c),
+        }).catch(() => {})
       );
     });
 
@@ -1148,27 +1456,50 @@ export class StorageService {
     const newIds = new Set(data.map((c) => c.id));
     previous.forEach((pc) => {
       if (!newIds.has(pc.id)) {
-        deleteDoc(doc(db, 'courses', pc.id)).catch((err) =>
-          handleFirestoreError(err, OperationType.DELETE, `courses/${pc.id}`)
+        promises.push(
+          deleteDoc(doc(db, 'courses', pc.id)).catch((err) =>
+            handleFirestoreError(err, OperationType.DELETE, `courses/${pc.id}`)
+          )
+        );
+        promises.push(
+          fetch(`/api/catalog/courses/${encodeURIComponent(pc.id)}`, { method: 'DELETE' }).catch(() => {})
         );
       }
     });
+
+    await Promise.allSettled(promises);
+    return true;
   }
 
-  static deleteCourse(id: string): void {
+  static async deleteCourse(id: string): Promise<boolean> {
     const remaining = this.getCourses().filter((c) => c.id !== id);
-    this.saveCourses(remaining);
-    deleteDoc(doc(db, 'courses', id)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `courses/${id}`)
-    );
+    this.setItem(STORAGE_KEYS.COURSES, remaining);
+
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'courses', id)).catch((err) =>
+        handleFirestoreError(err, OperationType.DELETE, `courses/${id}`)
+      ),
+      fetch(`/api/catalog/courses/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {}),
+    ]);
+    return true;
   }
 
   static getTopics(): Topic[] {
     return this.getItem<Topic[]>(STORAGE_KEYS.TOPICS, SEED_TOPICS);
   }
 
-  static saveTopics(data: Topic[]): void {
+  static async saveTopics(data: Topic[]): Promise<boolean> {
     this.setItem(STORAGE_KEYS.TOPICS, data);
+    const promises: Promise<any>[] = [];
+    data.forEach((t) => {
+      promises.push(
+        setDoc(doc(db, 'topics', t.id), safeClone(t), { merge: true }).catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `topics/${t.id}`)
+        )
+      );
+    });
+    await Promise.allSettled(promises);
+    return true;
   }
 
   // Test Results
@@ -1613,14 +1944,18 @@ export class StorageService {
     return this.getItem<StudyMaterial[]>(STORAGE_KEYS.MATERIALS, SEED_STUDY_MATERIALS);
   }
 
-  static saveMaterials(materials: StudyMaterial[]): void {
+  static async saveMaterials(materials: StudyMaterial[]): Promise<boolean> {
     const previous = this.getMaterials();
     this.setItem(STORAGE_KEYS.MATERIALS, materials);
 
+    const promises: Promise<any>[] = [];
+
     // Sync upserts to Firestore
     materials.forEach((m) => {
-      setDoc(doc(db, 'materials', m.id), safeClone(m), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `materials/${m.id}`)
+      promises.push(
+        setDoc(doc(db, 'materials', m.id), safeClone(m), { merge: true }).catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `materials/${m.id}`)
+        )
       );
     });
 
@@ -1628,11 +1963,16 @@ export class StorageService {
     const newIds = new Set(materials.map((m) => m.id));
     previous.forEach((pm) => {
       if (!newIds.has(pm.id)) {
-        deleteDoc(doc(db, 'materials', pm.id)).catch((err) =>
-          handleFirestoreError(err, OperationType.DELETE, `materials/${pm.id}`)
+        promises.push(
+          deleteDoc(doc(db, 'materials', pm.id)).catch((err) =>
+            handleFirestoreError(err, OperationType.DELETE, `materials/${pm.id}`)
+          )
         );
       }
     });
+
+    await Promise.allSettled(promises);
+    return true;
   }
 
   // Face Arena Weekly Quiz Challenge Methods
@@ -3326,11 +3666,19 @@ export class StorageService {
     return this.getItem<FacultyGroup[]>(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, DEFAULT_FACULTY_DEPARTMENTS);
   }
 
-  static saveSignupFacultyGroups(groups: FacultyGroup[]): void {
+  static async saveSignupFacultyGroups(groups: FacultyGroup[]): Promise<boolean> {
     this.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, groups);
-    setDoc(doc(db, 'system_configs', 'signup_faculties'), { groups: safeClone(groups) }, { merge: true }).catch((err) => {
-      handleFirestoreError(err, OperationType.WRITE, 'system_configs/signup_faculties');
-    });
+    await Promise.allSettled([
+      setDoc(doc(db, 'system_configs', 'signup_faculties'), { groups: safeClone(groups) }, { merge: true }).catch((err) => {
+        handleFirestoreError(err, OperationType.WRITE, 'system_configs/signup_faculties');
+      }),
+      fetch('/api/catalog/signup-faculties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({ groups }),
+      }).catch(() => {}),
+    ]);
+    return true;
   }
 
   static resetSignupFacultyGroups(): FacultyGroup[] {
@@ -3685,7 +4033,7 @@ export class StorageService {
       id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       userId: adminId,
       userName: adminName,
-      userRole: adminRole,
+      userRole: adminRole as any,
       userEmail: currentAdmin?.email || 'admin@cbtmaster.ng',
       category: 'Administrator Activity' as any,
       action: data.action,
