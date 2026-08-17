@@ -911,9 +911,8 @@ export class StorageService {
           this.memoryCache.set(STORAGE_KEYS.QUESTIONS, questions);
           localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(questions));
         } else if (qSnap && qSnap.empty) {
-          SEED_QUESTIONS.forEach((q) => {
-            setDoc(doc(db, 'questions', q.id), safeClone(q), { merge: true }).catch(() => {});
-          });
+          this.memoryCache.set(STORAGE_KEYS.QUESTIONS, []);
+          localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify([]));
         }
 
         if (matSnap && !matSnap.empty) {
@@ -1172,10 +1171,44 @@ export class StorageService {
 
   // User & Users
   static getUsers(): UserProfile[] {
-    const rawUsers = this.getItem<UserProfile[]>(STORAGE_KEYS.USERS, [DEFAULT_USER]);
+    const rawUsers = this.getItem<UserProfile[]>(STORAGE_KEYS.USERS, []);
     return rawUsers.map((u) => {
       return this.enforceSubscriptionExpiry(u);
     });
+  }
+
+  static async clearAllUsers(): Promise<boolean> {
+    const currentUsers = this.getUsers();
+    this.memoryCache.set(STORAGE_KEYS.USERS, []);
+    this.memoryCache.delete(STORAGE_KEYS.USER);
+    try {
+      localStorage.setItem(STORAGE_KEYS.USERS, safeStringify([]));
+      localStorage.removeItem(STORAGE_KEYS.USER);
+    } catch {}
+
+    const promises: Promise<any>[] = [];
+    currentUsers.forEach((u) => {
+      promises.push(
+        deleteDoc(doc(db, 'users', u.id)).catch((err) =>
+          handleFirestoreError(err, OperationType.DELETE, `users/${u.id}`)
+        )
+      );
+    });
+
+    promises.push(
+      fetch('/api/users/clear-all', {
+        method: 'POST',
+        headers: this.getAdminAuthHeaders(),
+      }).catch(() => {})
+    );
+
+    await Promise.allSettled(promises);
+
+    try {
+      window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.USERS, timestamp: Date.now() } }));
+    } catch {}
+
+    return true;
   }
 
   static saveUsers(users: UserProfile[], syncToFirestore: boolean = true): void {
@@ -1305,7 +1338,39 @@ export class StorageService {
 
   // Questions
   static getQuestions(): Question[] {
-    return this.getItem<Question[]>(STORAGE_KEYS.QUESTIONS, SEED_QUESTIONS);
+    return this.getItem<Question[]>(STORAGE_KEYS.QUESTIONS, []);
+  }
+
+  static async clearAllQuestions(): Promise<boolean> {
+    const currentQuestions = this.getQuestions();
+    this.memoryCache.set(STORAGE_KEYS.QUESTIONS, []);
+    try {
+      localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify([]));
+    } catch {}
+
+    const promises: Promise<any>[] = [];
+    currentQuestions.forEach((q) => {
+      promises.push(
+        deleteDoc(doc(db, 'questions', q.id)).catch((err) =>
+          handleFirestoreError(err, OperationType.DELETE, `questions/${q.id}`)
+        )
+      );
+    });
+
+    promises.push(
+      fetch('/api/catalog/questions/clear-all', {
+        method: 'POST',
+        headers: this.getAdminAuthHeaders(),
+      }).catch(() => {})
+    );
+
+    await Promise.allSettled(promises);
+
+    try {
+      window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.QUESTIONS, timestamp: Date.now() } }));
+    } catch {}
+
+    return true;
   }
 
   static async saveQuestions(questions: Question[]): Promise<boolean> {

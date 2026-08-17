@@ -30,7 +30,16 @@ export function selectRandomQuestions(
 
   // 2. Filter by course
   if (courseId) {
-    pool = pool.filter((q) => q.courseId === courseId);
+    const cleanTarget = courseId.trim().toLowerCase().replace(/\s+/g, '');
+    const courseFiltered = pool.filter((q) => {
+      if (q.courseId === courseId) return true;
+      if (q.courseCode && q.courseCode.trim().toLowerCase().replace(/\s+/g, '') === cleanTarget) return true;
+      if (q.courseId && q.courseId.trim().toLowerCase().replace(/\s+/g, '') === cleanTarget) return true;
+      return false;
+    });
+    if (courseFiltered.length > 0) {
+      pool = courseFiltered;
+    }
   }
 
   // 3. Filter by topic if specified

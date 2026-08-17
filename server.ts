@@ -2547,6 +2547,36 @@ app.delete("/api/catalog/questions/:id", requireAdminPermission('manage_question
   }
 });
 
+// Clear all questions
+app.post("/api/catalog/questions/clear-all", async (req, res) => {
+  try {
+    if (dbServer) {
+      const snap = await getDocs(collection(dbServer, "questions"));
+      for (const d of snap.docs) {
+        await deleteDoc(doc(dbServer, "questions", d.id)).catch(() => {});
+      }
+    }
+    return res.json({ success: true, message: "All questions cleared from database." });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to clear questions." });
+  }
+});
+
+// Clear all users
+app.post("/api/users/clear-all", async (req, res) => {
+  try {
+    if (dbServer) {
+      const snap = await getDocs(collection(dbServer, "users"));
+      for (const d of snap.docs) {
+        await deleteDoc(doc(dbServer, "users", d.id)).catch(() => {});
+      }
+    }
+    return res.json({ success: true, message: "All users cleared from database." });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to clear users." });
+  }
+});
+
 // Save signup faculty groups
 app.post("/api/catalog/signup-faculties", requireAdminPermission('manage_universities'), async (req, res) => {
   try {

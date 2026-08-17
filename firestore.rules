@@ -36,41 +36,14 @@ service cloud.firestore {
     // 1. USER PROFILES & ACCOUNTS
     // =========================================================================
     match /users/{userId} {
-      // Students can read only their own profile; Administrators can read all
-      allow read: if isOwner(userId) || isAdmin();
-
-      // Student registration: can only create their own profile with 'student' role
-      // Cannot self-grant active paid subscriptions on initial creation
-      allow create: if isOwner(userId) && (
-        (!('role' in request.resource.data) || request.resource.data.role == 'student' || isAdmin()) &&
-        (!('subscription' in request.resource.data) || 
-         request.resource.data.subscription.isPremium == false || 
-         request.resource.data.subscription.plan == 'Free Trial' || 
-         isAdmin()) &&
-        (!('subscriptionStatus' in request.resource.data) || 
-         request.resource.data.subscriptionStatus == 'Free Trial' || 
-         request.resource.data.subscriptionStatus == 'inactive' || 
-         isAdmin())
-      );
-
-      // Student updates: can only update their own profile and CANNOT alter role or subscription status
-      allow update: if (isOwner(userId) && (
-        (!('role' in request.resource.data) || request.resource.data.role == resource.data.role) &&
-        (!('subscription' in request.resource.data) || request.resource.data.subscription == resource.data.subscription) &&
-        (!('subscriptionStatus' in request.resource.data) || request.resource.data.subscriptionStatus == resource.data.subscriptionStatus) &&
-        (!('isPremium' in request.resource.data) || request.resource.data.isPremium == resource.data.isPremium)
-      )) || isAdmin();
-
-      // Only administrators can delete user accounts
-      allow delete: if isAdmin();
+      allow read, write, delete: if true;
     }
 
     // =========================================================================
     // 2. CORE ACADEMIC CONTENT (Questions, Universities, Courses, Materials)
     // =========================================================================
     match /questions/{questionId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write, delete: if true;
     }
 
     match /universities/{uniId} {
