@@ -244,6 +244,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Users State (From Storage)
   const [studentsList, setStudentsList] = useState(StorageService.getUsers());
+
+  useEffect(() => {
+    const handleStorageUpdate = () => {
+      setStudentsList(StorageService.getUsers());
+    };
+    window.addEventListener('cbt_storage_change', handleStorageUpdate);
+    window.addEventListener('storage', handleStorageUpdate);
+    return () => {
+      window.removeEventListener('cbt_storage_change', handleStorageUpdate);
+      window.removeEventListener('storage', handleStorageUpdate);
+    };
+  }, []);
   const [selectedStudentProfile, setSelectedStudentProfile] = useState<any | null>(null);
   const [profileModalTab, setProfileModalTab] = useState<'view' | 'edit' | 'extend' | 'password' | 'sub_cancel' | 'restrict' | 'ban' | 'delete'>('view');
 
@@ -446,8 +458,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { id: 'log-3', time: '08:00 AM', admin: 'Super Admin', action: 'System Backup Created', module: 'Backup & Restore' }
   ]);
 
-  // Total Revenue Calculation
-  const totalRevenue = transactions.reduce((acc, t) => acc + t.amount, 0);
+  // Dynamic Real Database Metrics Calculation
+  const todayStr = new Date().toISOString().slice(0, 10);
+  
+  // Real active students count (users active today)
+  const activeStudentsToday = studentsList.filter((s: any) => {
+    if (s.lastActiveDate && s.lastActiveDate.startsWith(todayStr)) return true;
+    if (s.lastLogin && s.lastLogin.startsWith(todayStr)) return true;
+    if (s.lastActive && s.lastActive.startsWith(todayStr)) return true;
+    return false;
+  }).length;
+
+  // Real new registrations count today
+  const newRegistrationsToday = studentsList.filter((s: any) => {
+    if (s.createdAt && s.createdAt.startsWith(todayStr)) return true;
+    if (s.registeredDate && s.registeredDate.startsWith(todayStr)) return true;
+    return false;
+  }).length;
+
+  // Real active subscriptions
+  const activeSubscriptionsCount = studentsList.filter((s: any) => 
+    s.subscription?.isPremium || s.subscriptionStatus === 'active' || s.subscriptionStatus === 'Premium'
+  ).length || transactions.filter((t) => t.status === 'Successful').length;
+
+  // Real pending payments
+  const pendingPaymentsCount = transactions.filter((t) => t.status === 'Pending').length;
+
+  // Real Total Revenue from successful transactions
+  const totalRevenue = transactions.filter((t) => t.status === 'Successful').reduce((acc, t) => acc + (t.amount || 0), 0);
+
+  // Real Online Users (sessions active in the last 15 mins)
+  const fifteenMinsAgo = Date.now() - 15 * 60 * 1000;
+  const onlineUsersCount = studentsList.filter((s: any) => {
+    if (s.isOnline) return true;
+    if (s.lastActiveDate && new Date(s.lastActiveDate).getTime() > fifteenMinsAgo) return true;
+    return false;
+  }).length;
 
   // Quick Action Handlers
   const handleQuickAddQuestion = () => {
@@ -1408,7 +1454,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span className="text-[11px] text-slate-400 font-medium">Active Students Today</span>
                   <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">Live</span>
                 </div>
-                <p className="text-xl font-black text-emerald-400 mt-1">42</p>
+                <p className="text-xl font-black text-emerald-400 mt-1">{activeStudentsToday}</p>
                 <span className="text-[10px] text-slate-400 font-medium mt-1 block">Practicing CBT</span>
               </button>
 
@@ -1420,7 +1466,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span className="text-[11px] text-slate-400 font-medium">New Registrations Today</span>
                   <span className="text-[10px] text-indigo-400 font-bold bg-indigo-500/10 px-1.5 py-0.5 rounded">Today</span>
                 </div>
-                <p className="text-xl font-black text-indigo-400 mt-1">8</p>
+                <p className="text-xl font-black text-indigo-400 mt-1">{newRegistrationsToday}</p>
                 <span className="text-[10px] text-slate-400 font-medium mt-1 block">Students Joined</span>
               </button>
 
@@ -1433,7 +1479,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded">Premium</span>
                 </div>
                 <p className="text-xl font-black text-amber-400 mt-1">
-                  {transactions.filter((t) => t.status === 'Successful').length}
+                  {activeSubscriptionsCount}
                 </p>
                 <span className="text-[10px] text-amber-300/80 font-medium mt-1 block">Premium Members</span>
               </button>
@@ -1447,7 +1493,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span className="text-[10px] text-rose-400 font-bold bg-rose-500/10 px-1.5 py-0.5 rounded">Action</span>
                 </div>
                 <p className="text-xl font-black text-rose-400 mt-1">
-                  {transactions.filter((t) => t.status === 'Pending').length}
+                  {pendingPaymentsCount}
                 </p>
                 <span className="text-[10px] text-rose-400/80 font-medium mt-1 block">Awaiting Verification</span>
               </button>
@@ -1458,7 +1504,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 <div className="flex justify-between items-start">
                   <span className="text-[11px] text-slate-400 font-medium">Total Revenue</span>
-                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">↑ 18%</span>
+                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">Gross</span>
                 </div>
                 <p className="text-xl font-black text-emerald-400 mt-1">₦{totalRevenue.toLocaleString()}</p>
                 <span className="text-[10px] text-emerald-500 font-medium mt-1 block">Gross Earnings</span>
@@ -1472,7 +1518,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span className="text-[11px] text-slate-400 font-medium">Online Users</span>
                   <span className="text-[10px] text-sky-400 font-bold bg-sky-500/10 px-1.5 py-0.5 rounded">Active</span>
                 </div>
-                <p className="text-xl font-black text-sky-400 mt-1">18</p>
+                <p className="text-xl font-black text-sky-400 mt-1">{onlineUsersCount}</p>
                 <span className="text-[10px] text-sky-500 font-medium mt-1 block">Live Connections</span>
               </button>
 

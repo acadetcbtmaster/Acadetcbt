@@ -861,7 +861,7 @@ export class StorageService {
 
       // 1. Direct Firestore Fetch for all academic & admin collections
       try {
-        const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap, adminSnap] = await Promise.all([
+        const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap, adminSnap, usersSnap, paySnap] = await Promise.all([
           getDocs(collection(db, 'universities')),
           getDocs(collection(db, 'courses')),
           getDocs(collection(db, 'departments')),
@@ -871,6 +871,8 @@ export class StorageService {
           getDocs(collection(db, 'subscription_plans')),
           getDocs(collection(db, 'system_configs')),
           getDocs(collection(db, 'admins')),
+          getDocs(collection(db, 'users')),
+          getDocs(collection(db, 'payments')),
         ]);
 
         if (uniSnap && !uniSnap.empty) {
@@ -941,6 +943,18 @@ export class StorageService {
           }
         }
 
+        if (usersSnap) {
+          const users = usersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as UserProfile[];
+          this.memoryCache.set(STORAGE_KEYS.USERS, users);
+          localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(users));
+        }
+
+        if (paySnap) {
+          const txs = paySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as PaymentTransaction[];
+          this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, txs);
+          localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(txs));
+        }
+
         fetchedFromFirestore = true;
       } catch (err) {
         console.info('[StorageService] Direct Firestore sync notice; falling back to Backend API');
@@ -969,7 +983,7 @@ export class StorageService {
                 this.memoryCache.set(STORAGE_KEYS.FACULTIES, catalog.faculties);
                 localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(catalog.faculties));
               }
-              if (catalog.questions && catalog.questions.length > 0) {
+              if (catalog.questions && Array.isArray(catalog.questions)) {
                 this.memoryCache.set(STORAGE_KEYS.QUESTIONS, catalog.questions);
                 localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(catalog.questions));
               }
@@ -980,6 +994,14 @@ export class StorageService {
               if (catalog.plans && catalog.plans.length > 0) {
                 this.memoryCache.set(STORAGE_KEYS.PLANS, catalog.plans);
                 localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(catalog.plans));
+              }
+              if (catalog.users && Array.isArray(catalog.users)) {
+                this.memoryCache.set(STORAGE_KEYS.USERS, catalog.users);
+                localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(catalog.users));
+              }
+              if (catalog.payments && Array.isArray(catalog.payments)) {
+                this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, catalog.payments);
+                localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(catalog.payments));
               }
               if (catalog.signupFaculties && catalog.signupFaculties.length > 0) {
                 this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, catalog.signupFaculties);
@@ -1010,6 +1032,8 @@ export class StorageService {
                 STORAGE_KEYS.MATERIALS,
                 STORAGE_KEYS.SIGNUP_FACULTY_GROUPS,
                 STORAGE_KEYS.ADMIN_ACCOUNTS,
+                STORAGE_KEYS.USERS,
+                STORAGE_KEYS.TRANSACTIONS,
               ],
               timestamp: Date.now(),
             },

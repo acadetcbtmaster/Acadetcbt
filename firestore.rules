@@ -36,14 +36,17 @@ service cloud.firestore {
     // 1. USER PROFILES & ACCOUNTS
     // =========================================================================
     match /users/{userId} {
-      allow read, write, delete: if true;
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isOwner(userId) || isAdmin();
     }
 
     // =========================================================================
     // 2. CORE ACADEMIC CONTENT (Questions, Universities, Courses, Materials)
     // =========================================================================
     match /questions/{questionId} {
-      allow read, write, delete: if true;
+      allow read: if true;
+      allow write, delete: if isAdmin();
     }
 
     match /universities/{uniId} {

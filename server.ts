@@ -2411,7 +2411,7 @@ app.get("/api/catalog/all", async (_req, res) => {
       return res.json({ success: true, universities: [], courses: [], departments: [], faculties: [], questions: [], materials: [], plans: [] });
     }
 
-    const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap] = await Promise.all([
+    const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap, userSnap, paySnap] = await Promise.all([
       getDocs(collection(dbServer, "universities")).catch(() => ({ docs: [] })),
       getDocs(collection(dbServer, "courses")).catch(() => ({ docs: [] })),
       getDocs(collection(dbServer, "departments")).catch(() => ({ docs: [] })),
@@ -2420,6 +2420,8 @@ app.get("/api/catalog/all", async (_req, res) => {
       getDocs(collection(dbServer, "materials")).catch(() => ({ docs: [] })),
       getDocs(collection(dbServer, "subscription_plans")).catch(() => ({ docs: [] })),
       getDocs(collection(dbServer, "system_configs")).catch(() => ({ docs: [] })),
+      getDocs(collection(dbServer, "users")).catch(() => ({ docs: [] })),
+      getDocs(collection(dbServer, "payments")).catch(() => ({ docs: [] })),
     ]);
 
     const universities = (uniSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
@@ -2429,6 +2431,8 @@ app.get("/api/catalog/all", async (_req, res) => {
     const questions = (qSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
     const materials = (matSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
     const plans = (planSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+    const users = (userSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+    const payments = (paySnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
 
     let signupFaculties: any = null;
     if (configSnap.docs) {
@@ -2447,6 +2451,8 @@ app.get("/api/catalog/all", async (_req, res) => {
       questions,
       materials,
       plans,
+      users,
+      payments,
       signupFaculties,
     });
   } catch (err: any) {
