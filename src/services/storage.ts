@@ -1256,13 +1256,17 @@ export class StorageService {
       );
     });
 
-    // Sync deletions to Firestore
+    // Sync deletions to Firestore & Backend
     const newIds = new Set(users.map((u) => u.id));
     previous.forEach((pu) => {
       if (!newIds.has(pu.id)) {
         deleteDoc(doc(db, 'users', pu.id)).catch((err) =>
           handleFirestoreError(err, OperationType.DELETE, `users/${pu.id}`)
         );
+        fetch(`/api/users/${encodeURIComponent(pu.id)}`, {
+          method: 'DELETE',
+          headers: this.getAdminAuthHeaders(),
+        }).catch(() => {});
       }
     });
   }
@@ -1271,7 +1275,7 @@ export class StorageService {
     this.saveUsers(users, false);
   }
 
-  static deleteUser(userId: string): void {
+  static async deleteUser(userId: string): Promise<boolean> {
     const users = this.getUsers().filter((u) => u.id !== userId);
     this.saveUsers(users);
 
@@ -1280,9 +1284,21 @@ export class StorageService {
       this.clearUserSession();
     }
 
-    deleteDoc(doc(db, 'users', userId)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `users/${userId}`)
-    );
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'users', userId)).catch((err) =>
+        handleFirestoreError(err, OperationType.DELETE, `users/${userId}`)
+      ),
+      fetch(`/api/users/${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+        headers: this.getAdminAuthHeaders(),
+      }).catch(() => {}),
+    ]);
+
+    try {
+      window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.USERS, timestamp: Date.now() } }));
+    } catch {}
+
+    return true;
   }
 
   static getUser(): UserProfile | null {
@@ -2129,6 +2145,9 @@ export class StorageService {
 
   static saveSettings(settings: SystemSettings): void {
     this.setItem(STORAGE_KEYS.SETTINGS, settings);
+    setDoc(doc(db, 'system_configs', 'global_settings'), safeClone(settings), { merge: true }).catch((err) =>
+      handleFirestoreError(err, OperationType.WRITE, 'system_configs/global_settings')
+    );
   }
 
   static saveSystemSettings(settings: SystemSettings): void {

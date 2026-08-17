@@ -2577,6 +2577,19 @@ app.post("/api/catalog/questions/clear-all", async (req, res) => {
   }
 });
 
+// Delete a single user by ID
+app.delete("/api/users/:id", requireAdminPermission('manage_users'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (dbServer) {
+      await deleteDoc(doc(dbServer, "users", id)).catch(() => {});
+    }
+    return res.json({ success: true, message: `User ${id} deleted successfully.` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to delete user." });
+  }
+});
+
 // Clear all users
 app.post("/api/users/clear-all", async (req, res) => {
   try {

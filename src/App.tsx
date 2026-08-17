@@ -301,6 +301,28 @@ export default function App() {
     syncAllData();
     checkAndVerifyPendingPayments();
 
+    // Universal Initial Cloud Fetch for all users (old, new, student, visitor, admin)
+    StorageService.syncWithCloud(true).then(() => {
+      syncAllData();
+    }).catch(() => {});
+
+    // Periodic Background Sync every 15s to keep all accounts in sync with Firebase
+    const cloudSyncInterval = setInterval(() => {
+      StorageService.syncWithCloud().catch(() => {});
+    }, 15000);
+
+    // Tab-focus / screen unlock sync
+    const handleWindowFocus = () => {
+      StorageService.syncWithCloud().catch(() => {});
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        StorageService.syncWithCloud().catch(() => {});
+      }
+    };
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     const unsubscribe = onAuthStateChanged(
       auth,
       (firebaseUser) => {
@@ -359,6 +381,9 @@ export default function App() {
 
     return () => {
       if (syncTimeout) clearTimeout(syncTimeout);
+      clearInterval(cloudSyncInterval);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       unsubscribe();
       unsubPlans();
       window.removeEventListener('storage', debouncedSyncAllData);
@@ -477,6 +502,8 @@ export default function App() {
     }
 
     setActiveTab(tab);
+    // Background pull from cloud to ensure latest courses/questions/materials
+    StorageService.syncWithCloud().catch(() => {});
     try {
       window.history.pushState({ tab }, '', tab === 'founder' ? '/founder' : tab === 'landing' ? '/' : `/#${tab}`);
     } catch (e) {}
