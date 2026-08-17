@@ -118,9 +118,19 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /subjects/{subjectId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // =========================================================================
     // 3. SYSTEM SETTINGS & DYNAMIC INTERFACE EDITOR
     // =========================================================================
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /interface_settings/{docId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -137,6 +147,26 @@ service cloud.firestore {
     }
 
     match /homepage_sections/{sectionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /leaderboard/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /leaderboards/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /contests/{docId} {
       allow read: if true;
       allow write: if isAdmin();
     }

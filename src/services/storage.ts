@@ -768,11 +768,83 @@ export class StorageService {
   private static pendingChangedKeys = new Set<string>();
   private static memoryCache = new Map<string, any>();
 
-  // Safe initialization
+  // Safe initialization with real-time Firestore listeners for dynamic platform modules
   static initRealtimeListeners(): void {
     if (this.isInitialized) return;
     this.isInitialized = true;
     this.syncWithCloud().catch(() => {});
+
+    try {
+      // 1. Live listener for System Settings & Configurations
+      onSnapshot(
+        doc(db, 'system_configs', 'global_settings'),
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data() as SystemSettingsPayload;
+            if (data) {
+              this.memoryCache.set(STORAGE_KEYS.SYSTEM_SETTINGS, data);
+              try {
+                localStorage.setItem(STORAGE_KEYS.SYSTEM_SETTINGS, safeStringify(data));
+              } catch {}
+              try {
+                window.dispatchEvent(
+                  new CustomEvent('cbt_storage_change', {
+                    detail: { key: STORAGE_KEYS.SYSTEM_SETTINGS, timestamp: Date.now() },
+                  })
+                );
+              } catch {}
+            }
+          }
+        },
+        () => {}
+      );
+
+      // 2. Live listener for Subscription Plans
+      onSnapshot(
+        collection(db, 'subscription_plans'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const plans = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as SubscriptionPlan[];
+            this.memoryCache.set(STORAGE_KEYS.PLANS, plans);
+            try {
+              localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(plans));
+            } catch {}
+            try {
+              window.dispatchEvent(
+                new CustomEvent('cbt_storage_change', {
+                  detail: { key: STORAGE_KEYS.PLANS, timestamp: Date.now() },
+                })
+              );
+            } catch {}
+          }
+        },
+        () => {}
+      );
+
+      // 3. Live listener for Community Announcements
+      onSnapshot(
+        collection(db, 'community_announcements'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const ann = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as CommunityAnnouncement[];
+            this.memoryCache.set(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, ann);
+            try {
+              localStorage.setItem(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, safeStringify(ann));
+            } catch {}
+            try {
+              window.dispatchEvent(
+                new CustomEvent('cbt_storage_change', {
+                  detail: { key: STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, timestamp: Date.now() },
+                })
+              );
+            } catch {}
+          }
+        },
+        () => {}
+      );
+    } catch (e) {
+      console.warn('Realtime listeners initialization notice:', e);
+    }
   }
 
   /**
@@ -954,6 +1026,17 @@ export class StorageService {
     } finally {
       this.isSyncing = false;
     }
+  }
+
+  private static getAdminAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('cbt_admin_token') : null;
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    } catch {}
+    return headers;
   }
 
   private static getItem<T>(key: string, defaultValue: T): T {
@@ -1256,7 +1339,7 @@ export class StorageService {
     promises.push(
       fetch('/api/catalog/questions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getAdminAuthHeaders(),
         body: safeStringify({ questions }),
       }).catch(() => {})
     );
@@ -1273,7 +1356,10 @@ export class StorageService {
       deleteDoc(doc(db, 'questions', id)).catch((err) =>
         handleFirestoreError(err, OperationType.DELETE, `questions/${id}`)
       ),
-      fetch(`/api/catalog/questions/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {}),
+      fetch(`/api/catalog/questions/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: this.getAdminAuthHeaders(),
+      }).catch(() => {}),
     ]);
     return true;
   }
@@ -1306,7 +1392,7 @@ export class StorageService {
       promises.push(
         fetch('/api/catalog/universities', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: this.getAdminAuthHeaders(),
           body: safeStringify(u),
         }).catch(() => {})
       );
@@ -1322,7 +1408,10 @@ export class StorageService {
           )
         );
         promises.push(
-          fetch(`/api/catalog/universities/${encodeURIComponent(pu.id)}`, { method: 'DELETE' }).catch(() => {})
+          fetch(`/api/catalog/universities/${encodeURIComponent(pu.id)}`, {
+            method: 'DELETE',
+            headers: this.getAdminAuthHeaders(),
+          }).catch(() => {})
         );
       }
     });
@@ -1339,7 +1428,10 @@ export class StorageService {
       deleteDoc(doc(db, 'universities', id)).catch((err) =>
         handleFirestoreError(err, OperationType.DELETE, `universities/${id}`)
       ),
-      fetch(`/api/catalog/universities/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {}),
+      fetch(`/api/catalog/universities/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: this.getAdminAuthHeaders(),
+      }).catch(() => {}),
     ]);
     return true;
   }
@@ -1446,7 +1538,7 @@ export class StorageService {
       promises.push(
         fetch('/api/catalog/courses', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: this.getAdminAuthHeaders(),
           body: safeStringify(c),
         }).catch(() => {})
       );
@@ -1462,7 +1554,10 @@ export class StorageService {
           )
         );
         promises.push(
-          fetch(`/api/catalog/courses/${encodeURIComponent(pc.id)}`, { method: 'DELETE' }).catch(() => {})
+          fetch(`/api/catalog/courses/${encodeURIComponent(pc.id)}`, {
+            method: 'DELETE',
+            headers: this.getAdminAuthHeaders(),
+          }).catch(() => {})
         );
       }
     });
@@ -1479,7 +1574,10 @@ export class StorageService {
       deleteDoc(doc(db, 'courses', id)).catch((err) =>
         handleFirestoreError(err, OperationType.DELETE, `courses/${id}`)
       ),
-      fetch(`/api/catalog/courses/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {}),
+      fetch(`/api/catalog/courses/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: this.getAdminAuthHeaders(),
+      }).catch(() => {}),
     ]);
     return true;
   }
