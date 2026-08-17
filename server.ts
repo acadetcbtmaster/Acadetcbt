@@ -2431,7 +2431,16 @@ app.get("/api/catalog/all", async (_req, res) => {
     const questions = (qSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
     const materials = (matSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
     const plans = (planSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
-    const users = (userSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
+    const users = (userSnap.docs || []).map((d: any) => {
+      const data = d.data() || {};
+      return {
+        id: d.id,
+        ...data,
+        name: data.fullName || data.name || data.username || 'Student',
+        fullName: data.fullName || data.name || data.username || 'Student',
+        role: data.role || 'student',
+      };
+    });
     const payments = (paySnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
 
     let signupFaculties: any = null;

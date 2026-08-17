@@ -244,16 +244,54 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Users State (From Storage)
   const [studentsList, setStudentsList] = useState(StorageService.getUsers());
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [syncToastMsg, setSyncToastMsg] = useState<string | null>(null);
+
+  const handleManualSync = async () => {
+    setIsSyncingCloud(true);
+    try {
+      await StorageService.syncWithCloud(true);
+      setStudentsList(StorageService.getUsers());
+      setSyncToastMsg('Synced live with Cloud Firestore');
+      setTimeout(() => setSyncToastMsg(null), 3000);
+    } catch (err) {
+      console.warn('[AdminDashboard] Manual sync error:', err);
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
 
   useEffect(() => {
+    // 1. Initial live pull on mount
+    handleManualSync();
+
+    // 2. Storage event listeners for instant local updates
     const handleStorageUpdate = () => {
       setStudentsList(StorageService.getUsers());
     };
     window.addEventListener('cbt_storage_change', handleStorageUpdate);
     window.addEventListener('storage', handleStorageUpdate);
+
+    // 3. Tab focus trigger (when admin returns to this browser window)
+    const handleWindowFocus = () => {
+      StorageService.syncWithCloud(true).then(() => {
+        setStudentsList(StorageService.getUsers());
+      });
+    };
+    window.addEventListener('focus', handleWindowFocus);
+
+    // 4. Periodic 12-second polling to capture registrations across remote browsers/devices
+    const syncInterval = setInterval(() => {
+      StorageService.syncWithCloud(true).then(() => {
+        setStudentsList(StorageService.getUsers());
+      });
+    }, 12000);
+
     return () => {
       window.removeEventListener('cbt_storage_change', handleStorageUpdate);
       window.removeEventListener('storage', handleStorageUpdate);
+      window.removeEventListener('focus', handleWindowFocus);
+      clearInterval(syncInterval);
     };
   }, []);
   const [selectedStudentProfile, setSelectedStudentProfile] = useState<any | null>(null);
@@ -1293,10 +1331,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </select>
           </div>
 
-          <span className="px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold rounded-full flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-            Live Database Connected
-          </span>
+          <div className="flex items-center gap-2">
+            {syncToastMsg && (
+              <span className="hidden sm:inline-block text-[11px] text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-full animate-in fade-in">
+                ✓ {syncToastMsg}
+              </span>
+            )}
+            <button
+              onClick={handleManualSync}
+              disabled={isSyncingCloud}
+              className="px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 active:scale-95 border border-amber-500/30 text-amber-400 text-xs font-semibold rounded-full flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              title="Click to sync immediately with Cloud Firestore"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCloud ? 'animate-spin text-amber-300' : 'text-amber-400'}`} />
+              <span>{isSyncingCloud ? 'Syncing...' : 'Live Database Connected'}</span>
+            </button>
+          </div>
         </div>
       </div>
 

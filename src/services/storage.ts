@@ -944,7 +944,16 @@ export class StorageService {
         }
 
         if (usersSnap) {
-          const users = usersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as UserProfile[];
+          const users = usersSnap.docs.map((d) => {
+            const data = d.data() as any;
+            return {
+              id: d.id,
+              ...data,
+              name: data.fullName || data.name || data.username || 'Student',
+              fullName: data.fullName || data.name || data.username || 'Student',
+              role: data.role || 'student',
+            } as UserProfile;
+          });
           this.memoryCache.set(STORAGE_KEYS.USERS, users);
           localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(users));
         }
