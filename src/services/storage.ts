@@ -69,6 +69,20 @@ import {
   onSnapshot,
   Unsubscribe,
 } from 'firebase/firestore';
+import {
+  getSupabaseClient,
+  isSupabaseConfigured,
+  syncResultToSupabase,
+  syncUserToSupabase,
+  syncPaymentToSupabase,
+  syncQuestionsToSupabase,
+  syncQuestionToSupabase,
+  deleteQuestionFromSupabase,
+  syncUniversitiesToSupabase,
+  syncCoursesToSupabase,
+  syncMaterialsToSupabase,
+  toUuid,
+} from '../lib/supabase';
 
 // Custom safe serializer handled by safeStringify and safeClone without altering global JSON.stringify
 
@@ -848,6 +862,31 @@ export class StorageService {
   }
 
   /**
+   * Returns active database provider and operational state
+   */
+  static getActiveDatabase(): {
+    provider: 'supabase' | 'firestore';
+    name: string;
+    isSupabase: boolean;
+    status: 'connected' | 'ready';
+  } {
+    if (isSupabaseConfigured()) {
+      return {
+        provider: 'supabase',
+        name: 'Supabase PostgreSQL',
+        isSupabase: true,
+        status: 'connected',
+      };
+    }
+    return {
+      provider: 'firestore',
+      name: 'Cloud Firestore',
+      isSupabase: false,
+      status: 'ready',
+    };
+  }
+
+  /**
    * Universal Single-Source-of-Truth Database Synchronization
    * Fetches latest state from Supabase / Backend API and Cloud Firestore,
    * updates the local cache, and notifies all subscribing React views.
@@ -866,28 +905,50 @@ export class StorageService {
           const catalog = await resp.json();
           if (catalog.success) {
             if (Array.isArray(catalog.universities)) {
-              this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, catalog.universities);
-              localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(catalog.universities));
+              if (catalog.universities.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, catalog.universities);
+                localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(catalog.universities));
+              } else {
+                const local = this.getUniversities();
+                if (local.length > 0) syncUniversitiesToSupabase(local).catch(() => {});
+              }
             }
             if (Array.isArray(catalog.courses)) {
-              this.memoryCache.set(STORAGE_KEYS.COURSES, catalog.courses);
-              localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(catalog.courses));
+              if (catalog.courses.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.COURSES, catalog.courses);
+                localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(catalog.courses));
+              } else {
+                const local = this.getCourses();
+                if (local.length > 0) syncCoursesToSupabase(local).catch(() => {});
+              }
             }
-            if (Array.isArray(catalog.departments)) {
+            if (Array.isArray(catalog.departments) && catalog.departments.length > 0) {
               this.memoryCache.set(STORAGE_KEYS.DEPARTMENTS, catalog.departments);
               localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, safeStringify(catalog.departments));
             }
-            if (Array.isArray(catalog.faculties)) {
+            if (Array.isArray(catalog.faculties) && catalog.faculties.length > 0) {
               this.memoryCache.set(STORAGE_KEYS.FACULTIES, catalog.faculties);
               localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(catalog.faculties));
             }
             if (Array.isArray(catalog.questions)) {
-              this.memoryCache.set(STORAGE_KEYS.QUESTIONS, catalog.questions);
-              localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(catalog.questions));
+              if (catalog.questions.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.QUESTIONS, catalog.questions);
+                localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(catalog.questions));
+              } else {
+                const local = this.getQuestions();
+                if (local.length > 0) {
+                  syncQuestionsToSupabase(local).catch(() => {});
+                }
+              }
             }
             if (Array.isArray(catalog.materials)) {
-              this.memoryCache.set(STORAGE_KEYS.MATERIALS, catalog.materials);
-              localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(catalog.materials));
+              if (catalog.materials.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.MATERIALS, catalog.materials);
+                localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(catalog.materials));
+              } else {
+                const local = this.getMaterials();
+                if (local.length > 0) syncMaterialsToSupabase(local).catch(() => {});
+              }
             }
             if (Array.isArray(catalog.plans) && catalog.plans.length > 0) {
               this.memoryCache.set(STORAGE_KEYS.PLANS, catalog.plans);
@@ -909,7 +970,85 @@ export class StorageService {
           }
         }
       } catch (apiErr) {
-        console.info('[StorageService] Backend API catalog sync notice; falling back to direct Firestore');
+        console.info('[StorageService] Backend API catalog sync notice; checking client Supabase');
+      }
+
+      // 2. Direct Supabase Client Fallback
+      if (!syncedSuccessfully && isSupabaseConfigured()) {
+        try {
+          const supabase = getSupabaseClient();
+          if (supabase) {
+            const [
+              { data: sbUnis },
+              { data: sbCourses },
+              { data: sbQuestions },
+              { data: sbPlans },
+            ] = await Promise.all([
+              supabase.from('universities').select('*').limit(200),
+              supabase.from('courses').select('*').limit(500),
+              supabase.from('questions').select('*').limit(2000),
+              supabase.from('subscription_plans').select('*').limit(50),
+            ]);
+
+            if (sbUnis && sbUnis.length > 0) {
+              const mappedUnis = sbUnis.map((u: any) => ({
+                id: u.id,
+                name: u.name,
+                shortName: u.code || u.short_name || u.shortName || '',
+                logoUrl: u.logo_url || u.logoUrl || '',
+                website: u.website || '',
+              }));
+              this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, mappedUnis);
+              localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(mappedUnis));
+              syncedSuccessfully = true;
+            }
+
+            if (sbCourses && sbCourses.length > 0) {
+              const mappedCourses = sbCourses.map((c: any) => ({
+                id: c.id,
+                code: c.code,
+                title: c.title,
+                universityId: c.university_id || c.universityId || '',
+                departmentId: c.department_id || c.departmentId || '',
+                level: c.level || '100',
+                description: c.description || '',
+                isActive: c.is_active ?? true,
+              }));
+              this.memoryCache.set(STORAGE_KEYS.COURSES, mappedCourses);
+              localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(mappedCourses));
+              syncedSuccessfully = true;
+            }
+
+            if (sbQuestions && sbQuestions.length > 0) {
+              const mappedQuestions = sbQuestions.map((q: any) => ({
+                id: q.id,
+                courseId: q.course_id || q.courseId || '',
+                universityId: q.university_id || q.universityId || '',
+                departmentId: q.department_id || q.departmentId || '',
+                question: q.question_text || q.question || '',
+                optionA: q.option_a || q.optionA || '',
+                optionB: q.option_b || q.optionB || '',
+                optionC: q.option_c || q.optionC || '',
+                optionD: q.option_d || q.optionD || '',
+                correctAnswer: q.correct_answer || q.correctAnswer || '',
+                explanation: q.explanation || '',
+                topic: q.topic || '',
+                difficulty: q.difficulty || 'Medium',
+              }));
+              this.memoryCache.set(STORAGE_KEYS.QUESTIONS, mappedQuestions);
+              localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(mappedQuestions));
+              syncedSuccessfully = true;
+            }
+
+            if (sbPlans && sbPlans.length > 0) {
+              this.memoryCache.set(STORAGE_KEYS.PLANS, sbPlans);
+              localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(sbPlans));
+              syncedSuccessfully = true;
+            }
+          }
+        } catch (sbErr) {
+          console.info('[StorageService] Client Supabase direct query notice');
+        }
       }
 
       // 2. Secondary Direct Firestore Sync Fallback
@@ -1240,6 +1379,7 @@ export class StorageService {
     if (!syncToFirestore) return;
 
     users.forEach((u) => {
+      syncUserToSupabase(u).catch(() => {});
       setDoc(doc(db, 'users', u.id), safeClone(u), { merge: true }).catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, `users/${u.id}`)
       );
@@ -1332,9 +1472,10 @@ export class StorageService {
 
     if (!syncToFirestore) return;
 
-    // Secure Firestore Sync
+    // Secure Supabase & Firestore Sync
     try {
       if (user && user.id) {
+        syncUserToSupabase(user).catch(() => {});
         setDoc(
           doc(db, 'users', user.id),
           safeClone({
@@ -1354,7 +1495,7 @@ export class StorageService {
         ).catch((err) => handleFirestoreError(err, OperationType.WRITE, `users/${user.id}`));
       }
     } catch (e) {
-      console.warn('Firestore write user error:', e);
+      console.warn('Firestore/Supabase write user error:', e);
     }
   }
 
@@ -1417,7 +1558,10 @@ export class StorageService {
 
     const promises: Promise<any>[] = [];
 
-    // Sync upserts to Firestore
+    // 1. Direct Supabase Client Sync
+    promises.push(syncQuestionsToSupabase(questions).catch(() => {}));
+
+    // 2. Sync upserts to Firestore
     questions.forEach((q) => {
       promises.push(
         setDoc(doc(db, 'questions', q.id), safeClone(q), { merge: true }).catch((err) =>
@@ -1426,10 +1570,11 @@ export class StorageService {
       );
     });
 
-    // Delete removed questions from Firestore
+    // 3. Delete removed questions from Firestore & Supabase
     const newIds = new Set(questions.map((q) => q.id));
     previous.forEach((pq) => {
       if (!newIds.has(pq.id)) {
+        promises.push(deleteQuestionFromSupabase(pq.id).catch(() => {}));
         promises.push(
           deleteDoc(doc(db, 'questions', pq.id)).catch((err) =>
             handleFirestoreError(err, OperationType.DELETE, `questions/${pq.id}`)
@@ -1438,7 +1583,7 @@ export class StorageService {
       }
     });
 
-    // Also sync to Backend API
+    // 4. Also sync to Backend API
     promises.push(
       fetch('/api/catalog/questions', {
         method: 'POST',
@@ -1456,6 +1601,7 @@ export class StorageService {
     this.setItem(STORAGE_KEYS.QUESTIONS, remaining);
 
     await Promise.allSettled([
+      deleteQuestionFromSupabase(id).catch(() => {}),
       deleteDoc(doc(db, 'questions', id)).catch((err) =>
         handleFirestoreError(err, OperationType.DELETE, `questions/${id}`)
       ),
@@ -1471,6 +1617,7 @@ export class StorageService {
     const list = this.getQuestions();
     list.unshift(q);
     this.saveQuestions(list);
+    syncQuestionToSupabase(q).catch(() => {});
   }
 
   // Universities, Faculties, Depts, Courses, Topics
@@ -1484,6 +1631,9 @@ export class StorageService {
     this.setItem(STORAGE_KEYS.UNIVERSITIES, data);
 
     const promises: Promise<any>[] = [];
+
+    // Direct Supabase sync
+    promises.push(syncUniversitiesToSupabase(data).catch(() => {}));
 
     // Sync upserts to Firestore
     data.forEach((u) => {
@@ -1631,6 +1781,9 @@ export class StorageService {
 
     const promises: Promise<any>[] = [];
 
+    // Direct Supabase sync
+    promises.push(syncCoursesToSupabase(data).catch(() => {}));
+
     // Sync upserts to Firestore
     data.forEach((c) => {
       promises.push(
@@ -1715,6 +1868,7 @@ export class StorageService {
   static saveResults(results: TestSessionResult[]): void {
     this.setItem(STORAGE_KEYS.RESULTS, results);
     results.forEach((res) => {
+      syncResultToSupabase(res).catch(() => {});
       setDoc(doc(db, 'results', res.id), safeClone(res), { merge: true }).catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, `results/${res.id}`)
       );
@@ -1883,6 +2037,7 @@ export class StorageService {
   static saveTransactions(transactions: PaymentTransaction[]): void {
     this.setItem(STORAGE_KEYS.TRANSACTIONS, transactions);
     transactions.forEach((tx) => {
+      syncPaymentToSupabase(tx).catch(() => {});
       setDoc(doc(db, 'transactions', tx.id), safeClone(tx), { merge: true }).catch((err) =>
         handleFirestoreError(err, OperationType.WRITE, `transactions/${tx.id}`)
       );
@@ -2154,7 +2309,10 @@ export class StorageService {
 
     const promises: Promise<any>[] = [];
 
-    // Sync upserts to Firestore
+    // 1. Direct Supabase sync
+    promises.push(syncMaterialsToSupabase(materials).catch(() => {}));
+
+    // 2. Sync upserts to Firestore
     materials.forEach((m) => {
       promises.push(
         setDoc(doc(db, 'materials', m.id), safeClone(m), { merge: true }).catch((err) =>
@@ -2163,7 +2321,7 @@ export class StorageService {
       );
     });
 
-    // Delete removed materials from Firestore
+    // 3. Delete removed materials from Firestore
     const newIds = new Set(materials.map((m) => m.id));
     previous.forEach((pm) => {
       if (!newIds.has(pm.id)) {

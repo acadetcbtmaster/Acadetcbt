@@ -247,12 +247,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [syncToastMsg, setSyncToastMsg] = useState<string | null>(null);
 
+  const activeDbInfo = StorageService.getActiveDatabase();
+
   const handleManualSync = async () => {
     setIsSyncingCloud(true);
     try {
       await StorageService.syncWithCloud(true);
       setStudentsList(StorageService.getUsers());
-      setSyncToastMsg('Synced live with Cloud Firestore');
+      setSyncToastMsg(`Synced live with ${activeDbInfo.name}`);
       setTimeout(() => setSyncToastMsg(null), 3000);
     } catch (err) {
       console.warn('[AdminDashboard] Manual sync error:', err);
@@ -1592,11 +1594,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 <div className="flex justify-between items-start">
                   <span className="text-[11px] text-slate-400 font-medium">Database Status</span>
-                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">Syncing</span>
+                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">Active</span>
                 </div>
                 <p className="text-sm font-bold text-emerald-400 mt-2 flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                  Firestore Active
+                  {activeDbInfo.isSupabase ? 'Supabase Active' : 'Firestore Active'}
                 </p>
               </button>
             </div>

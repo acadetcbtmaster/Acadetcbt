@@ -15,9 +15,9 @@ import { initializeFirestore, getFirestore, doc, getDoc, setDoc, setLogLevel } f
 import { getStorage } from 'firebase/storage';
 import firebaseConfigData from '../../firebase-applet-config.json';
 
-// Suppress internal gRPC idle stream disconnection warnings
+// Suppress internal gRPC idle stream disconnection and offline fallback logs
 try {
-  setLogLevel('error');
+  setLogLevel('silent');
 } catch {}
 
 const firebaseConfig = {

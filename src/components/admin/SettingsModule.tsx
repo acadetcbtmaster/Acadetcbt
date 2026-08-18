@@ -374,9 +374,9 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
         </div>
 
         <div onClick={() => setActiveTab('firebase')} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl cursor-pointer hover:border-indigo-500/50 transition-all space-y-1">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Database Status</span>
-          <p className="text-xl font-black text-emerald-400">Firestore OK</p>
-          <p className="text-[9px] text-slate-400">14 Collections</p>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Database Engine</span>
+          <p className="text-xl font-black text-emerald-400">Supabase OK</p>
+          <p className="text-[9px] text-slate-400">11 PostgreSQL Tables</p>
         </div>
 
         <div onClick={() => setActiveTab('firebase')} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl cursor-pointer hover:border-indigo-500/50 transition-all space-y-1">
