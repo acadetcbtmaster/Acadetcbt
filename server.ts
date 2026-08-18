@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 import { initializeApp as initFirebaseApp, getApps as getFirebaseApps, getApp as getFirebaseApp } from "firebase/app";
 import { getAuth as getFirebaseAuth, signInWithEmailAndPassword as signInFirebaseEmail, createUserWithEmailAndPassword as createFirebaseUser } from "firebase/auth";
 import { initializeFirestore, doc, setDoc, getDoc, getDocs, collection, deleteDoc, setLogLevel } from "firebase/firestore";
+import { getSupabaseAdminClient, isSupabaseConfigured } from "./src/lib/supabase.ts";
 
 try {
   setLogLevel('error');
@@ -2400,15 +2401,411 @@ app.get('/api/admin/settings', requireAdminPermission('manage_settings'), async 
   return res.json({ success: true, configs: [] });
 });
 
+// Helper: Deterministically map string IDs (e.g. uni-unilag) to valid PostgreSQL UUIDs if needed
+const toUuid = (id?: string | null): string => {
+  if (!id) return crypto.randomUUID();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return id;
+  const hash = crypto.createHash("md5").update(id).digest("hex");
+  return `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-a${hash.substring(17, 20)}-${hash.substring(20, 32)}`;
+};
+
+// =========================================================================
+// SUPABASE DIAGNOSTICS & STATUS ENDPOINTS
+// =========================================================================
+
+app.get("/api/supabase/status", async (_req, res) => {
+  try {
+    const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+    const rawAnon = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+    const rawService = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+    const isConfigured = Boolean(
+      rawUrl && rawAnon && rawUrl.trim().length > 0 && rawAnon.trim().length > 0 && !rawUrl.includes("placeholder")
+    );
+
+    let maskedUrl = "";
+    if (rawUrl) {
+      try {
+        const u = new URL(rawUrl);
+        maskedUrl = `${u.protocol}//${u.host}`;
+      } catch {
+        maskedUrl = rawUrl.substring(0, 15) + "...";
+      }
+    }
+
+    if (!isConfigured) {
+      return res.json({
+        success: true,
+        configured: false,
+        activeBackend: "firestore",
+        message: "Supabase credentials are not yet configured in environment variables.",
+        hasUrl: Boolean(rawUrl),
+        hasAnonKey: Boolean(rawAnon),
+        hasServiceRoleKey: Boolean(rawService),
+        tables: {},
+      });
+    }
+
+    const supabase = getSupabaseAdminClient();
+    if (!supabase) {
+      return res.json({
+        success: true,
+        configured: true,
+        connected: false,
+        activeBackend: "firestore",
+        error: "Could not create Supabase client instance.",
+      });
+    }
+
+    const tableNames = [
+      "universities",
+      "faculties",
+      "departments",
+      "courses",
+      "questions",
+      "materials",
+      "subscription_plans",
+      "users",
+      "results",
+      "payments",
+      "system_configs",
+    ];
+
+    const tableResults: Record<string, { status: string; count?: number; error?: string }> = {};
+
+    await Promise.all(
+      tableNames.map(async (tbl) => {
+        try {
+          const { data, count, error } = await supabase
+            .from(tbl)
+            .select("*", { count: "exact", head: false })
+            .limit(1);
+
+          if (error) {
+            tableResults[tbl] = {
+              status: "missing_or_error",
+              error: error.message,
+            };
+          } else {
+            tableResults[tbl] = {
+              status: "ready",
+              count: count ?? (Array.isArray(data) ? data.length : 0),
+            };
+          }
+        } catch (err: any) {
+          tableResults[tbl] = {
+            status: "error",
+            error: err?.message || String(err),
+          };
+        }
+      })
+    );
+
+    const allReady = Object.values(tableResults).every((t) => t.status === "ready");
+    const anyMissing = Object.values(tableResults).some((t) => t.status === "missing_or_error");
+
+    return res.json({
+      success: true,
+      configured: true,
+      connected: true,
+      supabaseUrl: maskedUrl,
+      hasAnonKey: Boolean(rawAnon),
+      hasServiceRoleKey: Boolean(rawService),
+      activeBackend: allReady ? "supabase" : "firestore_fallback",
+      allTablesReady: allReady,
+      tables: tableResults,
+      recommendation: anyMissing
+        ? "Some tables were not found in your Supabase database. Please run the SQL queries in `supabase_schema.sql` in your Supabase SQL Editor."
+        : "Supabase connection is fully operational and active as the primary database.",
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || "Failed to check Supabase status.",
+    });
+  }
+});
+
+// Admin Migration Trigger: Seed initial catalog data to Supabase
+app.post("/api/supabase/migrate-seed", requireAdminPermission('manage_settings'), async (req, res) => {
+  try {
+    const supabase = getSupabaseAdminClient();
+    if (!supabase) {
+      return res.status(400).json({ success: false, error: "Supabase client is not configured." });
+    }
+
+    const { universities, courses, departments, faculties, questions, materials, plans } = req.body;
+    const summary: Record<string, number> = {};
+
+    if (Array.isArray(universities) && universities.length > 0) {
+      const records = universities.map((u: any) => ({
+        id: toUuid(u.id),
+        name: u.name,
+        code: u.shortName || u.short_name || u.code || '',
+        logo_url: u.logoUrl || u.logo_url || '',
+        website: u.website || '',
+      }));
+      const { error } = await supabase.from("universities").upsert(records);
+      if (!error) summary.universities = records.length;
+    }
+
+    if (Array.isArray(faculties) && faculties.length > 0) {
+      const records = faculties.map((f: any) => ({
+        id: toUuid(f.id),
+        name: f.name,
+        university_id: f.universityId || f.university_id ? toUuid(f.universityId || f.university_id) : null,
+      }));
+      const { error } = await supabase.from("faculties").upsert(records);
+      if (!error) summary.faculties = records.length;
+    }
+
+    if (Array.isArray(departments) && departments.length > 0) {
+      const records = departments.map((d: any) => ({
+        id: toUuid(d.id),
+        name: d.name,
+        code: d.code || '',
+        faculty_id: d.facultyId || d.faculty_id ? toUuid(d.facultyId || d.faculty_id) : null,
+        university_id: d.universityId || d.university_id ? toUuid(d.universityId || d.university_id) : null,
+      }));
+      const { error } = await supabase.from("departments").upsert(records);
+      if (!error) summary.departments = records.length;
+    }
+
+    if (Array.isArray(courses) && courses.length > 0) {
+      const records = courses.map((c: any) => ({
+        id: toUuid(c.id),
+        code: c.code,
+        title: c.title,
+        university_id: c.universityId || c.university_id ? toUuid(c.universityId || c.university_id) : null,
+        department_id: c.departmentId || c.department_id ? toUuid(c.departmentId || c.department_id) : null,
+        level: c.level || '100',
+        description: c.description || '',
+        is_active: c.isActive ?? true,
+      }));
+      const { error } = await supabase.from("courses").upsert(records);
+      if (!error) summary.courses = records.length;
+    }
+
+    if (Array.isArray(questions) && questions.length > 0) {
+      const records = questions.map((q: any) => ({
+        id: toUuid(q.id),
+        course_id: q.courseId || q.course_id ? toUuid(q.courseId || q.course_id) : null,
+        university_id: q.universityId || q.university_id ? toUuid(q.universityId || q.university_id) : null,
+        department_id: q.departmentId || q.department_id ? toUuid(q.departmentId || q.department_id) : null,
+        question_text: q.question || q.question_text || '',
+        option_a: q.optionA || q.option_a,
+        option_b: q.optionB || q.option_b,
+        option_c: q.optionC || q.option_c,
+        option_d: q.optionD || q.option_d,
+        correct_answer: q.correctAnswer || q.correct_answer,
+        explanation: q.explanation || '',
+        topic: q.topic || '',
+        difficulty: q.difficulty || 'Medium',
+      }));
+      const { error } = await supabase.from("questions").upsert(records);
+      if (!error) summary.questions = records.length;
+    }
+
+    if (Array.isArray(materials) && materials.length > 0) {
+      const records = materials.map((m: any) => ({
+        id: toUuid(m.id),
+        course_id: m.courseId || m.course_id ? toUuid(m.courseId || m.course_id) : null,
+        university_id: m.universityId || m.university_id ? toUuid(m.universityId || m.university_id) : null,
+        title: m.title,
+        file_url: m.fileUrl || m.file_url || '',
+        material_type: m.fileType || m.material_type || 'pdf',
+        description: m.description || '',
+      }));
+      const { error } = await supabase.from("materials").upsert(records);
+      if (!error) summary.materials = records.length;
+    }
+
+    if (Array.isArray(plans) && plans.length > 0) {
+      const records = plans.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        price: Number(p.price || 0),
+        duration_days: p.durationDays || p.duration_days || 30,
+        features: Array.isArray(p.features) ? p.features : [],
+        is_active: p.isActive ?? true,
+      }));
+      const { error } = await supabase.from("subscription_plans").upsert(records);
+      if (!error) summary.plans = records.length;
+    }
+
+    return res.json({
+      success: true,
+      message: "Data seeded to Supabase successfully.",
+      migrated: summary,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || "Migration failed." });
+  }
+});
+
 // =========================================================================
 // CENTRAL DATABASE CATALOG & SYNC REST API ENDPOINTS
 // =========================================================================
 
-// Public / Authenticated Route: Get all catalog entities from Firestore
+// Public / Authenticated Route: Get all catalog entities from Supabase / Firestore
 app.get("/api/catalog/all", async (_req, res) => {
   try {
+    const supabase = getSupabaseAdminClient();
+    if (supabase && isSupabaseConfigured()) {
+      try {
+        const [
+          { data: sbUnis },
+          { data: sbCourses },
+          { data: sbDepts },
+          { data: sbFacs },
+          { data: sbQuestions },
+          { data: sbMaterials },
+          { data: sbPlans },
+          { data: sbUsers },
+          { data: sbPayments },
+          { data: sbConfigs },
+        ] = await Promise.all([
+          supabase.from("universities").select("*").catch(() => ({ data: null })),
+          supabase.from("courses").select("*").catch(() => ({ data: null })),
+          supabase.from("departments").select("*").catch(() => ({ data: null })),
+          supabase.from("faculties").select("*").catch(() => ({ data: null })),
+          supabase.from("questions").select("*").catch(() => ({ data: null })),
+          supabase.from("materials").select("*").catch(() => ({ data: null })),
+          supabase.from("subscription_plans").select("*").catch(() => ({ data: null })),
+          supabase.from("users").select("*").catch(() => ({ data: null })),
+          supabase.from("payments").select("*").catch(() => ({ data: null })),
+          supabase.from("system_configs").select("*").catch(() => ({ data: null })),
+        ]);
+
+        if (sbUnis || sbCourses || sbQuestions || sbPlans) {
+          const universities = (sbUnis || []).map((u: any) => ({
+            id: u.id,
+            name: u.name,
+            shortName: u.code || u.short_name || u.shortName || '',
+            logoUrl: u.logo_url || u.logoUrl || '',
+            website: u.website || '',
+            isActive: u.is_active ?? true,
+          }));
+
+          const courses = (sbCourses || []).map((c: any) => ({
+            id: c.id,
+            code: c.code,
+            title: c.title,
+            universityId: c.university_id || c.universityId,
+            departmentId: c.department_id || c.departmentId,
+            level: c.level || '100',
+            semester: c.semester || 'First',
+            description: c.description || '',
+          }));
+
+          const departments = (sbDepts || []).map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            code: d.code || '',
+            facultyId: d.faculty_id || d.facultyId,
+            universityId: d.university_id || d.universityId,
+          }));
+
+          const faculties = (sbFacs || []).map((f: any) => ({
+            id: f.id,
+            name: f.name,
+            code: f.code || '',
+            universityId: f.university_id || f.universityId,
+          }));
+
+          const questions = (sbQuestions || []).map((q: any) => ({
+            id: q.id,
+            courseId: q.course_id || q.courseId,
+            universityId: q.university_id || q.universityId,
+            departmentId: q.department_id || q.departmentId,
+            question: q.question_text || q.question || '',
+            optionA: q.option_a || q.optionA,
+            optionB: q.option_b || q.optionB,
+            optionC: q.option_c || q.optionC,
+            optionD: q.option_d || q.optionD,
+            correctAnswer: q.correct_answer || q.correctAnswer,
+            explanation: q.explanation || '',
+            year: q.year || '',
+            topic: q.topic || '',
+            imageUrl: q.image_url || q.imageUrl,
+            difficulty: q.difficulty || 'Medium',
+          }));
+
+          const materials = (sbMaterials || []).map((m: any) => ({
+            id: m.id,
+            courseId: m.course_id || m.courseId,
+            universityId: m.university_id || m.universityId,
+            title: m.title,
+            fileUrl: m.file_url || m.fileUrl,
+            fileType: m.material_type || m.file_type || m.fileType || 'pdf',
+            description: m.description || '',
+          }));
+
+          const plans = (sbPlans || []).map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            price: Number(p.price || 0),
+            durationDays: p.duration_days || p.durationDays || 30,
+            features: Array.isArray(p.features) ? p.features : [],
+            isActive: p.is_active ?? true,
+          }));
+
+          const users = (sbUsers || []).map((u: any) => ({
+            id: u.id,
+            name: u.full_name || u.name || 'Student',
+            fullName: u.full_name || u.name || 'Student',
+            username: u.username || '',
+            email: u.email,
+            phone: u.phone || '',
+            role: u.role || 'student',
+            universityName: u.university_name || '',
+            departmentName: u.department_name || '',
+            subscription: u.subscription || { isPremium: false, plan: 'Free Tier' },
+            bookmarks: u.bookmarks || [],
+            streakCount: u.streak_count || 0,
+          }));
+
+          const payments = (sbPayments || []).map((p: any) => ({
+            id: p.id,
+            reference: p.reference,
+            userId: p.user_id || p.userId,
+            userEmail: p.user_email || p.userEmail,
+            amount: Number(p.amount || 0),
+            gateway: p.gateway || 'squad',
+            status: p.status || 'success',
+            planId: p.plan_id || p.planId,
+            metadata: p.metadata || {},
+            createdAt: p.created_at || new Date().toISOString(),
+          }));
+
+          let signupFaculties: any = null;
+          const configEntry = (sbConfigs || []).find((c: any) => c.key === 'signup_faculties' || c.id === 'signup_faculties');
+          if (configEntry && (configEntry.data?.groups || configEntry.config_data?.groups)) {
+            signupFaculties = configEntry.data?.groups || configEntry.config_data?.groups;
+          }
+
+          return res.json({
+            success: true,
+            source: 'supabase',
+            universities,
+            courses,
+            departments,
+            faculties,
+            questions,
+            materials,
+            plans,
+            users,
+            payments,
+            signupFaculties,
+          });
+        }
+      } catch (sbErr) {
+        console.warn("[Supabase] Catalog sync notice:", sbErr);
+      }
+    }
+
     if (!dbServer) {
-      return res.json({ success: true, universities: [], courses: [], departments: [], faculties: [], questions: [], materials: [], plans: [] });
+      return res.json({ success: true, universities: [], courses: [], departments: [], faculties: [], questions: [], materials: [], plans: [], users: [], payments: [] });
     }
 
     const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap, userSnap, paySnap] = await Promise.all([
@@ -2453,6 +2850,7 @@ app.get("/api/catalog/all", async (_req, res) => {
 
     return res.json({
       success: true,
+      source: 'firestore',
       universities,
       courses,
       departments,
@@ -2477,6 +2875,16 @@ app.post("/api/catalog/universities", requireAdminPermission('manage_universitie
     if (!data || !data.id || !data.name) {
       return res.status(400).json({ success: false, error: "Institution ID and name are required." });
     }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from("universities").upsert({
+        id: toUuid(data.id),
+        name: data.name,
+        code: data.shortName || data.short_name || data.code || '',
+        logo_url: data.logoUrl || data.logo_url || '',
+        website: data.website || '',
+      }).catch((sbErr) => console.warn("[Supabase] University save notice:", sbErr));
+    }
     if (dbServer) {
       await setDoc(doc(dbServer, "universities", data.id), data, { merge: true });
     }
@@ -2490,6 +2898,10 @@ app.post("/api/catalog/universities", requireAdminPermission('manage_universitie
 app.delete("/api/catalog/universities/:id", requireAdminPermission('manage_universities'), async (req, res) => {
   try {
     const { id } = req.params;
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from("universities").delete().eq("id", toUuid(id)).catch(() => {});
+    }
     if (dbServer) {
       await deleteDoc(doc(dbServer, "universities", id));
     }
@@ -2506,6 +2918,19 @@ app.post("/api/catalog/courses", requireAdminPermission('manage_courses'), async
     if (!data || !data.id || !data.code || !data.title) {
       return res.status(400).json({ success: false, error: "Course ID, code, and title are required." });
     }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from("courses").upsert({
+        id: toUuid(data.id),
+        code: data.code,
+        title: data.title,
+        university_id: data.universityId ? toUuid(data.universityId) : null,
+        department_id: data.departmentId ? toUuid(data.departmentId) : null,
+        level: data.level || '100',
+        description: data.description || '',
+        is_active: data.isActive ?? true,
+      }).catch((sbErr) => console.warn("[Supabase] Course save notice:", sbErr));
+    }
     if (dbServer) {
       await setDoc(doc(dbServer, "courses", data.id), data, { merge: true });
     }
@@ -2519,6 +2944,10 @@ app.post("/api/catalog/courses", requireAdminPermission('manage_courses'), async
 app.delete("/api/catalog/courses/:id", requireAdminPermission('manage_courses'), async (req, res) => {
   try {
     const { id } = req.params;
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from("courses").delete().eq("id", toUuid(id)).catch(() => {});
+    }
     if (dbServer) {
       await deleteDoc(doc(dbServer, "courses", id));
     }
@@ -2535,6 +2964,25 @@ app.post("/api/catalog/questions", requireAdminPermission('manage_questions'), a
     const items = questions || (question ? [question] : []);
     if (items.length === 0) {
       return res.status(400).json({ success: false, error: "No question data provided." });
+    }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      const records = items.map((q: any) => ({
+        id: toUuid(q.id),
+        course_id: q.courseId || q.course_id ? toUuid(q.courseId || q.course_id) : null,
+        university_id: q.universityId || q.university_id ? toUuid(q.universityId || q.university_id) : null,
+        department_id: q.departmentId || q.department_id ? toUuid(q.departmentId || q.department_id) : null,
+        question_text: q.question || q.question_text || '',
+        option_a: q.optionA || q.option_a,
+        option_b: q.optionB || q.option_b,
+        option_c: q.optionC || q.option_c,
+        option_d: q.optionD || q.option_d,
+        correct_answer: q.correctAnswer || q.correct_answer,
+        explanation: q.explanation || '',
+        topic: q.topic || '',
+        difficulty: q.difficulty || 'Medium',
+      }));
+      await supabase.from("questions").upsert(records).catch((sbErr) => console.warn("[Supabase] Questions save notice:", sbErr));
     }
     if (dbServer) {
       for (const q of items) {
@@ -2553,6 +3001,10 @@ app.post("/api/catalog/questions", requireAdminPermission('manage_questions'), a
 app.delete("/api/catalog/questions/:id", requireAdminPermission('manage_questions'), async (req, res) => {
   try {
     const { id } = req.params;
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from("questions").delete().eq("id", toUuid(id)).catch(() => {});
+    }
     if (dbServer) {
       await deleteDoc(doc(dbServer, "questions", id));
     }
@@ -2565,6 +3017,10 @@ app.delete("/api/catalog/questions/:id", requireAdminPermission('manage_question
 // Clear all questions
 app.post("/api/catalog/questions/clear-all", async (req, res) => {
   try {
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from("questions").delete().neq("id", "00000000-0000-0000-0000-000000000000").catch(() => {});
+    }
     if (dbServer) {
       const snap = await getDocs(collection(dbServer, "questions"));
       for (const d of snap.docs) {

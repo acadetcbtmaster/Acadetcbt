@@ -848,8 +848,8 @@ export class StorageService {
   }
 
   /**
-   * Universal Single-Source-of-Truth Cloud Database Synchronization
-   * Fetches latest state from Cloud Firestore and backend REST API,
+   * Universal Single-Source-of-Truth Database Synchronization
+   * Fetches latest state from Supabase / Backend API and Cloud Firestore,
    * updates the local cache, and notifies all subscribing React views.
    */
   static async syncWithCloud(force: boolean = false): Promise<boolean> {
@@ -857,169 +857,158 @@ export class StorageService {
     this.isSyncing = true;
 
     try {
-      let fetchedFromFirestore = false;
+      let syncedSuccessfully = false;
 
-      // 1. Direct Firestore Fetch for all academic & admin collections
+      // 1. Primary Sync: Backend API (Supabase prioritized)
       try {
-        const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap, adminSnap, usersSnap, paySnap] = await Promise.all([
-          getDocs(collection(db, 'universities')),
-          getDocs(collection(db, 'courses')),
-          getDocs(collection(db, 'departments')),
-          getDocs(collection(db, 'faculties')),
-          getDocs(collection(db, 'questions')),
-          getDocs(collection(db, 'materials')),
-          getDocs(collection(db, 'subscription_plans')),
-          getDocs(collection(db, 'system_configs')),
-          getDocs(collection(db, 'admins')),
-          getDocs(collection(db, 'users')),
-          getDocs(collection(db, 'payments')),
-        ]);
-
-        if (uniSnap && !uniSnap.empty) {
-          const unis = uniSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as University[];
-          this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, unis);
-          localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(unis));
-        } else if (uniSnap && uniSnap.empty) {
-          // Cloud empty on first setup: seed initial universities to cloud
-          SEED_UNIVERSITIES.forEach((u) => {
-            setDoc(doc(db, 'universities', u.id), safeClone(u), { merge: true }).catch(() => {});
-          });
-        }
-
-        if (courseSnap && !courseSnap.empty) {
-          const courses = courseSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Course[];
-          this.memoryCache.set(STORAGE_KEYS.COURSES, courses);
-          localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(courses));
-        } else if (courseSnap && courseSnap.empty) {
-          SEED_COURSES.forEach((c) => {
-            setDoc(doc(db, 'courses', c.id), safeClone(c), { merge: true }).catch(() => {});
-          });
-        }
-
-        if (deptSnap && !deptSnap.empty) {
-          const depts = deptSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Department[];
-          this.memoryCache.set(STORAGE_KEYS.DEPARTMENTS, depts);
-          localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, safeStringify(depts));
-        }
-
-        if (facSnap && !facSnap.empty) {
-          const facs = facSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Faculty[];
-          this.memoryCache.set(STORAGE_KEYS.FACULTIES, facs);
-          localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(facs));
-        }
-
-        if (qSnap && !qSnap.empty) {
-          const questions = qSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Question[];
-          this.memoryCache.set(STORAGE_KEYS.QUESTIONS, questions);
-          localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(questions));
-        } else if (qSnap && qSnap.empty) {
-          this.memoryCache.set(STORAGE_KEYS.QUESTIONS, []);
-          localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify([]));
-        }
-
-        if (matSnap && !matSnap.empty) {
-          const materials = matSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as StudyMaterial[];
-          this.memoryCache.set(STORAGE_KEYS.MATERIALS, materials);
-          localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(materials));
-        }
-
-        if (planSnap && !planSnap.empty) {
-          const plans = planSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as SubscriptionPlan[];
-          this.memoryCache.set(STORAGE_KEYS.PLANS, plans);
-          localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(plans));
-        }
-
-        if (adminSnap && !adminSnap.empty) {
-          const admins = adminSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as AdminAccount[];
-          this.memoryCache.set(STORAGE_KEYS.ADMIN_ACCOUNTS, admins);
-          localStorage.setItem(STORAGE_KEYS.ADMIN_ACCOUNTS, safeStringify(admins));
-        }
-
-        if (configSnap && !configSnap.empty) {
-          const signupDoc = configSnap.docs.find((d) => d.id === 'signup_faculties');
-          if (signupDoc && signupDoc.data()?.groups) {
-            this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, signupDoc.data().groups);
-            localStorage.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, safeStringify(signupDoc.data().groups));
+        const resp = await fetch('/api/catalog/all');
+        if (resp.ok) {
+          const catalog = await resp.json();
+          if (catalog.success) {
+            if (Array.isArray(catalog.universities)) {
+              this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, catalog.universities);
+              localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(catalog.universities));
+            }
+            if (Array.isArray(catalog.courses)) {
+              this.memoryCache.set(STORAGE_KEYS.COURSES, catalog.courses);
+              localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(catalog.courses));
+            }
+            if (Array.isArray(catalog.departments)) {
+              this.memoryCache.set(STORAGE_KEYS.DEPARTMENTS, catalog.departments);
+              localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, safeStringify(catalog.departments));
+            }
+            if (Array.isArray(catalog.faculties)) {
+              this.memoryCache.set(STORAGE_KEYS.FACULTIES, catalog.faculties);
+              localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(catalog.faculties));
+            }
+            if (Array.isArray(catalog.questions)) {
+              this.memoryCache.set(STORAGE_KEYS.QUESTIONS, catalog.questions);
+              localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(catalog.questions));
+            }
+            if (Array.isArray(catalog.materials)) {
+              this.memoryCache.set(STORAGE_KEYS.MATERIALS, catalog.materials);
+              localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(catalog.materials));
+            }
+            if (Array.isArray(catalog.plans) && catalog.plans.length > 0) {
+              this.memoryCache.set(STORAGE_KEYS.PLANS, catalog.plans);
+              localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(catalog.plans));
+            }
+            if (Array.isArray(catalog.users) && catalog.users.length > 0) {
+              this.memoryCache.set(STORAGE_KEYS.USERS, catalog.users);
+              localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(catalog.users));
+            }
+            if (Array.isArray(catalog.payments) && catalog.payments.length > 0) {
+              this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, catalog.payments);
+              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(catalog.payments));
+            }
+            if (catalog.signupFaculties && Array.isArray(catalog.signupFaculties)) {
+              this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, catalog.signupFaculties);
+              localStorage.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, safeStringify(catalog.signupFaculties));
+            }
+            syncedSuccessfully = true;
           }
         }
-
-        if (usersSnap) {
-          const users = usersSnap.docs.map((d) => {
-            const data = d.data() as any;
-            return {
-              id: d.id,
-              ...data,
-              name: data.fullName || data.name || data.username || 'Student',
-              fullName: data.fullName || data.name || data.username || 'Student',
-              role: data.role || 'student',
-            } as UserProfile;
-          });
-          this.memoryCache.set(STORAGE_KEYS.USERS, users);
-          localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(users));
-        }
-
-        if (paySnap) {
-          const txs = paySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as PaymentTransaction[];
-          this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, txs);
-          localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(txs));
-        }
-
-        fetchedFromFirestore = true;
-      } catch (err) {
-        console.info('[StorageService] Direct Firestore sync notice; falling back to Backend API');
+      } catch (apiErr) {
+        console.info('[StorageService] Backend API catalog sync notice; falling back to direct Firestore');
       }
 
-      // 2. Secondary Backend REST API Fallback
-      if (!fetchedFromFirestore) {
+      // 2. Secondary Direct Firestore Sync Fallback
+      if (!syncedSuccessfully) {
         try {
-          const resp = await fetch('/api/catalog/all');
-          if (resp.ok) {
-            const catalog = await resp.json();
-            if (catalog.success) {
-              if (catalog.universities && catalog.universities.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, catalog.universities);
-                localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(catalog.universities));
-              }
-              if (catalog.courses && catalog.courses.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.COURSES, catalog.courses);
-                localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(catalog.courses));
-              }
-              if (catalog.departments && catalog.departments.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.DEPARTMENTS, catalog.departments);
-                localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, safeStringify(catalog.departments));
-              }
-              if (catalog.faculties && catalog.faculties.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.FACULTIES, catalog.faculties);
-                localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(catalog.faculties));
-              }
-              if (catalog.questions && Array.isArray(catalog.questions)) {
-                this.memoryCache.set(STORAGE_KEYS.QUESTIONS, catalog.questions);
-                localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(catalog.questions));
-              }
-              if (catalog.materials && catalog.materials.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.MATERIALS, catalog.materials);
-                localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(catalog.materials));
-              }
-              if (catalog.plans && catalog.plans.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.PLANS, catalog.plans);
-                localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(catalog.plans));
-              }
-              if (catalog.users && Array.isArray(catalog.users)) {
-                this.memoryCache.set(STORAGE_KEYS.USERS, catalog.users);
-                localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(catalog.users));
-              }
-              if (catalog.payments && Array.isArray(catalog.payments)) {
-                this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, catalog.payments);
-                localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(catalog.payments));
-              }
-              if (catalog.signupFaculties && catalog.signupFaculties.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, catalog.signupFaculties);
-                localStorage.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, safeStringify(catalog.signupFaculties));
-              }
+          const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap, adminSnap, usersSnap, paySnap] = await Promise.all([
+            getDocs(collection(db, 'universities')),
+            getDocs(collection(db, 'courses')),
+            getDocs(collection(db, 'departments')),
+            getDocs(collection(db, 'faculties')),
+            getDocs(collection(db, 'questions')),
+            getDocs(collection(db, 'materials')),
+            getDocs(collection(db, 'subscription_plans')),
+            getDocs(collection(db, 'system_configs')),
+            getDocs(collection(db, 'admins')),
+            getDocs(collection(db, 'users')),
+            getDocs(collection(db, 'payments')),
+          ]);
+
+          if (uniSnap && !uniSnap.empty) {
+            const unis = uniSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as University[];
+            this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, unis);
+            localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(unis));
+          }
+
+          if (courseSnap && !courseSnap.empty) {
+            const courses = courseSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Course[];
+            this.memoryCache.set(STORAGE_KEYS.COURSES, courses);
+            localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(courses));
+          }
+
+          if (deptSnap && !deptSnap.empty) {
+            const depts = deptSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Department[];
+            this.memoryCache.set(STORAGE_KEYS.DEPARTMENTS, depts);
+            localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, safeStringify(depts));
+          }
+
+          if (facSnap && !facSnap.empty) {
+            const facs = facSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Faculty[];
+            this.memoryCache.set(STORAGE_KEYS.FACULTIES, facs);
+            localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(facs));
+          }
+
+          if (qSnap && !qSnap.empty) {
+            const questions = qSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Question[];
+            this.memoryCache.set(STORAGE_KEYS.QUESTIONS, questions);
+            localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(questions));
+          }
+
+          if (matSnap && !matSnap.empty) {
+            const materials = matSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as StudyMaterial[];
+            this.memoryCache.set(STORAGE_KEYS.MATERIALS, materials);
+            localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(materials));
+          }
+
+          if (planSnap && !planSnap.empty) {
+            const plans = planSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as SubscriptionPlan[];
+            this.memoryCache.set(STORAGE_KEYS.PLANS, plans);
+            localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(plans));
+          }
+
+          if (adminSnap && !adminSnap.empty) {
+            const admins = adminSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as AdminAccount[];
+            this.memoryCache.set(STORAGE_KEYS.ADMIN_ACCOUNTS, admins);
+            localStorage.setItem(STORAGE_KEYS.ADMIN_ACCOUNTS, safeStringify(admins));
+          }
+
+          if (configSnap && !configSnap.empty) {
+            const signupDoc = configSnap.docs.find((d) => d.id === 'signup_faculties');
+            if (signupDoc && signupDoc.data()?.groups) {
+              this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, signupDoc.data().groups);
+              localStorage.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, safeStringify(signupDoc.data().groups));
             }
           }
-        } catch (apiErr) {
-          console.warn('[StorageService] REST catalog sync notice:', apiErr);
+
+          if (usersSnap && !usersSnap.empty) {
+            const users = usersSnap.docs.map((d) => {
+              const data = d.data() as any;
+              return {
+                id: d.id,
+                ...data,
+                name: data.fullName || data.name || data.username || 'Student',
+                fullName: data.fullName || data.name || data.username || 'Student',
+                role: data.role || 'student',
+              } as UserProfile;
+            });
+            this.memoryCache.set(STORAGE_KEYS.USERS, users);
+            localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(users));
+          }
+
+          if (paySnap && !paySnap.empty) {
+            const txs = paySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as PaymentTransaction[];
+            this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, txs);
+            localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(txs));
+          }
+
+          syncedSuccessfully = true;
+        } catch (err) {
+          console.info('[StorageService] Direct Firestore sync notice');
         }
       }
 
