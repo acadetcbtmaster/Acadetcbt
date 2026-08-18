@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, X, AlertTriangle, ArrowLeft } from 'lucide-react';
-import { auth, db } from './lib/firebase';
+import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
 import {
   UserProfile,
   Question,
@@ -350,82 +349,16 @@ export default function App() {
     window.addEventListener('storage', debouncedSyncAllData);
     window.addEventListener('cbt_storage_change', debouncedSyncAllData);
 
-    // Real-time Firestore subscription_plans listener
-    const unsubPlans = onSnapshot(collection(db, 'subscription_plans'), (snapshot) => {
-      if (!snapshot.empty) {
-        const livePlans: SubscriptionPlan[] = [];
-        snapshot.forEach((docSnap) => {
-          const d = docSnap.data();
-          livePlans.push({
-            id: docSnap.id,
-            name: d.name || 'Plan',
-            price: Number(d.price) || 0,
-            currency: d.currency || 'NGN',
-            durationDays: Number(d.durationDays) || 30,
-            description: d.description || '',
-            active: d.active !== false,
-            features: d.features || [],
-            popular: !!d.popular,
-            createdAt: d.createdAt || new Date().toISOString(),
-            updatedAt: d.updatedAt || new Date().toISOString(),
-          });
-        });
-        if (livePlans.length > 0) {
-          setPlans(livePlans);
-          StorageService.saveLocalPlansOnly(livePlans);
-        }
-      }
-    }, (err) => {
-      console.warn('subscription_plans snapshot listener notice:', err?.message || err);
-    });
-
     return () => {
       if (syncTimeout) clearTimeout(syncTimeout);
       clearInterval(cloudSyncInterval);
       window.removeEventListener('focus', handleWindowFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       unsubscribe();
-      unsubPlans();
       window.removeEventListener('storage', debouncedSyncAllData);
       window.removeEventListener('cbt_storage_change', debouncedSyncAllData);
     };
   }, []);
-
-  // Real-time Firestore user profile & subscription unlock listener
-  useEffect(() => {
-    if (!currentUser || !currentUser.id) return;
-
-    const currentId = currentUser.id;
-    const unsubUserDoc = onSnapshot(
-      doc(db, 'users', currentId),
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const d = docSnap.data();
-          const base = StorageService.getUser() || currentUser;
-          const updatedProfile: UserProfile = {
-            ...base,
-            ...d,
-            id: docSnap.id,
-            name: d.fullName || d.name || base.name,
-            email: d.email || base.email,
-            role: d.role || base.role,
-            subscriptionStatus: d.subscriptionStatus,
-            subscriptionPlan: d.subscriptionPlan,
-            subscription: d.subscription || base.subscription,
-          };
-          StorageService.saveLocalUserOnly(updatedProfile);
-          setCurrentUser(updatedProfile);
-        }
-      },
-      (err) => {
-        console.warn('Real-time currentUser document listener notice:', err);
-      }
-    );
-
-    return () => {
-      unsubUserDoc();
-    };
-  }, [currentUser?.id]);
 
   // Detect Squad Payment Return Redirect
   useEffect(() => {

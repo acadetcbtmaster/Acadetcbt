@@ -11,9 +11,7 @@ import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
   updateProfile,
-  db,
 } from '../lib/firebase';
-import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import {
   X,
   Mail,
@@ -560,32 +558,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         createdDate: new Date().toISOString(),
       };
 
-      // Create student profile in Cloud Firestore
-      try {
-        await setDoc(doc(db, 'users', newUserId), {
-          fullName: newUser.name,
-          username: newUser.username,
-          email: newUser.email,
-          phone: newUser.phone,
-          passwordHint: newUser.passwordHint,
-          password: newUser.password,
-          role: newUser.role,
-          authProvider: 'Email',
-          universityName: newUser.universityName,
-          departmentName: newUser.departmentName,
-          subscription: newUser.subscription,
-          createdDate: newUser.createdDate,
-        });
-      } catch (dbErr) {
-        console.warn('Firestore user profile creation warning:', dbErr);
-      }
-
-      // 3. Save user profile locally & in state
+      // Save user profile locally & push to Supabase via StorageService
       const freshUsers = StorageService.getUsers();
       StorageService.saveUsers([newUser, ...freshUsers.filter((u) => u.email !== newUser.email)]);
       StorageService.saveUser(newUser);
 
-      // 4. Success Actions
+      // Success Actions
       const successMessage = "Your account has been created successfully.";
       setTopBannerSuccess(successMessage);
 
@@ -735,41 +713,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
 
-      // Step 3: Fetch Latest Profile from Firestore or Local Storage after Firebase Auth success
-      if (!matched) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', auth.currentUser?.uid || ''));
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            matched = {
-              id: auth.currentUser?.uid || `usr-${Date.now()}`,
-              name: data.fullName || targetEmail.split('@')[0],
-              username: data.username || `student_${Date.now()}`,
-              email: targetEmail,
-              phone: data.phone || '',
-              role: (data.role as UserRole) || 'student',
-              authProvider: 'Email',
-              universityId: 'uni-ful',
-              universityName: data.universityName || 'Federal University Lokoja, Kogi State (FUL)',
-              departmentId: 'dept-ful-1',
-              departmentName: data.departmentName || 'Computer Science',
-              subscription: data.subscription || {
-                isPremium: false,
-                plan: '30-Question Free Tier',
-                startDate: new Date().toISOString(),
-                expiryDate: null,
-                questionsAttemptedCount: 0,
-                freeLimit: 30,
-              },
-              bookmarks: [],
-              createdDate: data.createdDate || new Date().toISOString(),
-            };
-          }
-        } catch (dbFetchErr) {
-          console.warn('Firestore fetch user note:', dbFetchErr);
-        }
-      }
-
       const loginUser: UserProfile = matched || {
         id: auth.currentUser?.uid || `usr-${Date.now()}`,
         name: targetEmail.split('@')[0] || 'University Student',
@@ -902,42 +845,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       (u) => (u.email && u.email.toLowerCase() === userEmail.toLowerCase()) || u.googleUserId === googleUid
     );
 
-    if (!matchedUser) {
-      try {
-        const userDocRef = doc(db, 'users', googleUid);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          const firestoreData = userDocSnap.data();
-          matchedUser = {
-            id: googleUid,
-            name: firestoreData.fullName || userDisplayName,
-            username: firestoreData.username || `user_${googleUid.substring(0, 8)}`,
-            email: userEmail,
-            photoUrl: userPhotoUrl,
-            googleUserId: googleUid,
-            authProvider: 'Google',
-            role: 'student',
-            universityId: 'uni-ful',
-            universityName: firestoreData.universityName || 'Federal University Lokoja, Kogi State (FUL)',
-            departmentId: 'dept-ful-1',
-            departmentName: firestoreData.departmentName || 'Computer Science',
-            subscription: firestoreData.subscription || {
-              isPremium: false,
-              plan: '30-Question Free Tier',
-              startDate: new Date().toISOString(),
-              expiryDate: null,
-              questionsAttemptedCount: 0,
-              freeLimit: 30,
-            },
-            bookmarks: [],
-            createdDate: firestoreData.createdDate || new Date().toISOString(),
-          };
-        }
-      } catch (fErr) {
-        console.warn('Firestore fetch note:', fErr);
-      }
-    }
-
     if (matchedUser) {
       matchedUser.photoUrl = userPhotoUrl || matchedUser.photoUrl;
       matchedUser.googleUserId = googleUid;
@@ -978,23 +885,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       StorageService.saveUsers([newGoogleUser, ...currentUsers]);
       StorageService.saveUser(newGoogleUser);
-
-      try {
-        await setDoc(doc(db, 'users', googleUid), {
-          fullName: userDisplayName,
-          email: userEmail,
-          photoUrl: userPhotoUrl,
-          googleUserId: googleUid,
-          authProvider: 'Google',
-          role: 'student',
-          universityName: uniName,
-          departmentName: defaultDept,
-          subscription: newGoogleUser.subscription,
-          createdDate: newGoogleUser.createdDate,
-        });
-      } catch (dbErr) {
-        console.warn('Firestore write error:', dbErr);
-      }
 
       onLoginSuccess(newGoogleUser, "Your Google account has been created successfully.");
     }
@@ -1102,50 +992,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsVerifying(true);
 
     try {
-      // 1. Search Local Storage
+      // 1. Search Local Storage / StorageService users
       const currentUsers = StorageService.getUsers();
       let matched = currentUsers.find(
         (u) => u.email && u.email.trim().toLowerCase() === cleanEmail
       );
-
-      // 2. Search Firebase Firestore
-      try {
-        const usersCol = collection(db, 'users');
-        const q = query(usersCol, where('email', '==', cleanEmail));
-        const querySnap = await getDocs(q);
-
-        if (!querySnap.empty) {
-          const docSnap = querySnap.docs[0];
-          const firestoreData = docSnap.data();
-
-          matched = {
-            id: docSnap.id,
-            name: firestoreData.fullName || firestoreData.name || cleanEmail.split('@')[0],
-            username: firestoreData.username || '',
-            email: firestoreData.email || cleanEmail,
-            phone: firestoreData.phone || '',
-            passwordHint: firestoreData.passwordHint || '',
-            password: firestoreData.password || '',
-            role: (firestoreData.role as UserRole) || 'student',
-            universityId: firestoreData.universityId || 'uni-ful',
-            universityName: firestoreData.universityName || '',
-            departmentId: firestoreData.departmentId || 'dept-ful-1',
-            departmentName: firestoreData.departmentName || '',
-            subscription: firestoreData.subscription || {
-              isPremium: false,
-              plan: '30-Question Free Tier',
-              startDate: new Date().toISOString(),
-              expiryDate: null,
-              questionsAttemptedCount: 0,
-              freeLimit: 30,
-            },
-            bookmarks: firestoreData.bookmarks || [],
-            createdDate: firestoreData.createdDate || new Date().toISOString(),
-          };
-        }
-      } catch (fsErr) {
-        console.warn('Firestore user fetch warning during recovery:', (fsErr as any)?.message || String(fsErr));
-      }
 
       if (!matched) {
         setRecoveryError('No account was found with this email address.');
@@ -1206,21 +1057,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         password: newPassword,
       };
 
-      // 1. Update in Firebase Firestore
-      try {
-        await setDoc(
-          doc(db, 'users', verifiedUser.id),
-          {
-            password: newPassword,
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-      } catch (fsErr) {
-        console.warn('Firestore password update warning:', fsErr);
-      }
-
-      // 2. Update in StorageService
+      // Update in StorageService (pushes to Supabase)
       const currentUsers = StorageService.getUsers();
       const updatedList = currentUsers.map((u) =>
         u.id === verifiedUser.id || (u.email && u.email.toLowerCase() === verifiedUser.email.toLowerCase())
@@ -1228,6 +1065,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           : u
       );
       StorageService.saveUsers(updatedList);
+      StorageService.saveUser(updatedUser);
 
       setRecoverySuccess('Password changed successfully.');
 

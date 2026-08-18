@@ -11,14 +11,8 @@ import {
   updateProfile,
   User,
 } from 'firebase/auth';
-import { initializeFirestore, getFirestore, doc, getDoc, setDoc, setLogLevel } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfigData from '../../firebase-applet-config.json';
-
-// Suppress internal gRPC idle stream disconnection and offline fallback logs
-try {
-  setLogLevel('silent');
-} catch {}
 
 const firebaseConfig = {
   apiKey: (import.meta as any).env?.VITE_FIREBASE_API_KEY || firebaseConfigData.apiKey,
@@ -36,32 +30,11 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-// Initialize Firebase Storage
+// Initialize Firebase Storage for attachments if needed
 export const storage = getStorage(app);
 
-// Initialize Firestore with default WebChannel transport
-const configuredDbId = firebaseConfigData.firestoreDatabaseId || '(default)';
-const targetDbId =
-  !configuredDbId ||
-  configuredDbId === '(default)' ||
-  configuredDbId === 'ai-studio-aicbtsimulator-24029710-e20e-4e1e-a3cf-846d58bd47cf'
-    ? undefined
-    : configuredDbId;
-
-let firestoreInstance;
-try {
-  const firestoreSettings = {
-    ignoreUndefinedProperties: true,
-    experimentalForceLongPolling: true,
-  };
-  firestoreInstance = targetDbId
-    ? initializeFirestore(app, firestoreSettings, targetDbId)
-    : initializeFirestore(app, firestoreSettings);
-} catch {
-  firestoreInstance = targetDbId ? getFirestore(app, targetDbId) : getFirestore(app);
-}
-
-export const db = firestoreInstance;
+// Firestore is completely removed in favor of Supabase Database
+export const db = null as any;
 
 export {
   signInWithPopup,
