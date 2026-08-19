@@ -1,24 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
 import { StorageService, safeStringify } from './storage';
-
-function getClientGeminiApiKey(): string {
-  const meta = import.meta as any;
-  if (meta && meta.env && meta.env.VITE_GEMINI_API_KEY) {
-    return meta.env.VITE_GEMINI_API_KEY;
-  }
-  if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-    return process.env.GEMINI_API_KEY;
-  }
-  return '';
-}
-
-function getGeminiClient() {
-  const key = getClientGeminiApiKey();
-  if (!key) {
-    throw new Error('Gemini API Key is not configured in client environment.');
-  }
-  return new GoogleGenAI({ apiKey: key });
-}
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(endpoint, options);
@@ -41,14 +21,12 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
 export const ApiClient = {
   // 1. AI Question Generation (PDF, Image, Text, Course materials)
   async generateQuestions(payload: any): Promise<{ success: boolean; questions: any[]; error?: string }> {
-    try {
-      return await fetchApi<{ success: boolean; questions: any[] }>('/api/ai/generate-questions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: safeStringify(payload),
-      });
-    } catch (err) {
-      console.warn('Backend /api/ai/generate-questions endpoint unavailable, using client-side Gemini fallback:', err);
+    return await fetchApi<{ success: boolean; questions: any[]; error?: string }>('/api/ai/generate-questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: safeStringify(payload),
+    });
+    /*
       try {
         const {
           materialText,
@@ -152,18 +130,18 @@ Requirements for each question:
         console.error('Client-side Gemini Fallback Error:', fallbackErr);
         throw new Error(fallbackErr.message || 'Failed to generate questions.');
       }
-    }
+    */
   },
 
   // 2. AI Question Explanation
   async explainQuestion(payload: any): Promise<{ success: boolean; explanation: string }> {
-    try {
-      return await fetchApi<{ success: boolean; explanation: string }>('/api/ai/explain-question', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: safeStringify(payload),
-      });
-    } catch (err) {
+    return await fetchApi<{ success: boolean; explanation: string }>('/api/ai/explain-question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: safeStringify(payload),
+    });
+    /*
+      try {
       console.warn('Backend /api/ai/explain-question endpoint unavailable, using client-side Gemini fallback:', err);
       try {
         const { question, optionA, optionB, optionC, optionD, correctAnswer, userAnswer } = payload;
@@ -192,17 +170,18 @@ Explain step-by-step why Option ${correctAnswer} is correct and why the student'
         };
       }
     }
+    */
   },
 
   // 3. AI Performance Analysis
   async analyzePerformance(payload: any): Promise<{ success: boolean; analysis: any }> {
-    try {
-      return await fetchApi<{ success: boolean; analysis: any }>('/api/ai/analyze-performance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: safeStringify(payload),
-      });
-    } catch (err) {
+    return await fetchApi<{ success: boolean; analysis: any }>('/api/ai/analyze-performance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: safeStringify(payload),
+    });
+    /*
+      try {
       console.warn('Backend /api/ai/analyze-performance endpoint unavailable, using client-side fallback:', err);
       try {
         const { score, totalQuestions, courseCode, timeSpentSeconds, weakTopics, strongTopics } = payload;
@@ -254,6 +233,7 @@ Return JSON format with:
         };
       }
     }
+    */
   },
 
   // 4. Practice Session Validation
@@ -353,53 +333,11 @@ Return JSON format with:
 
   // 6. Admin Authentication & RBAC APIs
   async adminLogin(payload: { username: string; password: string }): Promise<any> {
-    try {
-      const response = await fetchApi<any>('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: safeStringify(payload),
-      });
-      return response;
-    } catch (err: any) {
-      console.warn('[ApiClient] Backend admin login fallback:', err?.message || err);
-      // Fallback to local authentication service
-      const localAuth = StorageService.authenticateAdminLocally(payload.username, payload.password);
-      if (localAuth.success && localAuth.admin) {
-        const adminAcc = localAuth.admin;
-        const sessionToken = `admin_token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-        return {
-          success: true,
-          token: sessionToken,
-          adminUser: {
-            id: adminAcc.id,
-            name: adminAcc.fullName,
-            username: adminAcc.username,
-            email: adminAcc.email,
-            role: 'admin',
-            adminRole: adminAcc.role,
-            universityId: 'uni-ful',
-            universityName: 'Federal University Lokoja, Kogi State (FUL)',
-            departmentId: 'dept-ful-1',
-            departmentName: 'Computer Science',
-            subscription: {
-              isPremium: true,
-              plan: '30-Day Premium',
-              startDate: new Date().toISOString(),
-              expiryDate: null,
-              questionsAttemptedCount: 0,
-              freeLimit: 999999,
-            },
-            bookmarks: [],
-            createdDate: adminAcc.createdDate,
-          },
-          adminAccount: adminAcc,
-        };
-      }
-      return {
-        success: false,
-        error: localAuth.error || 'Invalid administrator username or password.',
-      };
-    }
+    return await fetchApi<any>('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: safeStringify(payload),
+    });
   },
 
   async getAdmins(): Promise<{ success: boolean; admins?: any[]; error?: string }> {

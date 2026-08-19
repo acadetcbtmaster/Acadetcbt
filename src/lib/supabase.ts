@@ -136,8 +136,10 @@ function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   try {
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('cbt_admin_token') || 'adm_sess_master_admin_session';
-      headers['Authorization'] = `Bearer ${token}`;
+      const token = localStorage.getItem('cbt_admin_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
     }
   } catch {}
   return headers;

@@ -53,7 +53,6 @@ import {
   AdminPermission,
   DEFAULT_ADMIN_ACCOUNTS,
   hashPasswordSync,
-  verifyPassword,
   hasPermission,
   getRoleDisplayName,
   normalizeAdminRole,
@@ -3799,61 +3798,6 @@ export class StorageService {
   }
 
   /**
-   * Authenticates an administrator against local seeds/cache fallback
-   */
-  static authenticateAdminLocally(username: string, password: string): { success: boolean; admin?: AdminAccount; error?: string } {
-    const accounts = this.getAdminAccounts();
-    const trimmedUser = username.trim().toLowerCase();
-
-    // Check for match
-    const found = accounts.find(
-      (a) => a.username.trim().toLowerCase() === trimmedUser || a.email.trim().toLowerCase() === trimmedUser
-    );
-
-    // Fallback support for default admin credentials
-    if (!found) {
-      if (
-        (trimmedUser === 'superadmin' || trimmedUser === 'menmex') &&
-        (password === 'Admin@1234' || password === 'joyce@menmex')
-      ) {
-        const rootAdmin = DEFAULT_ADMIN_ACCOUNTS[0];
-        return { success: true, admin: rootAdmin };
-      }
-      return { success: false, error: 'Invalid administrator username or password.' };
-    }
-
-    if (found.status === 'Suspended' || found.status === 'Inactive') {
-      return {
-        success: false,
-        error: 'Your administrator account has been deactivated or suspended. Please contact the Super Administrator.',
-      };
-    }
-
-    const isMatch = verifyPassword(password, found.passwordHash) ||
-      (found.username === 'superadmin' && (password === 'Admin@1234' || password === 'Admin@2025!' || password === 'joyce@menmex')) ||
-      (found.username === 'studentadmin' && (password === 'Student@1234' || password === 'Student@2025!')) ||
-      (found.username === 'questionadmin' && (password === 'Question@1234' || password === 'Question@2025!')) ||
-      (found.username === 'courseadmin' && (password === 'Course@1234' || password === 'Course@2025!')) ||
-      (found.username === 'paymentadmin' && (password === 'Payment@1234' || password === 'Payment@2025!')) ||
-      (found.username === 'supportadmin' && (password === 'Support@1234' || password === 'Support@2025!')) ||
-      (found.username === 'reportadmin' && (password === 'Report@1234' || password === 'Report@2025!')) ||
-      (found.username === 'contentadmin' && (password === 'Content@1234' || password === 'Content@2025!')) ||
-      (found.username === 'systemadmin' && (password === 'System@1234' || password === 'System@2025!')) ||
-      (found.username.toLowerCase() === 'menmex' && (password === 'joyce@menmex' || password === 'Admin@1234' || password === 'Admin@2025!'));
-
-    if (!isMatch) {
-      return { success: false, error: 'Invalid administrator username or password.' };
-    }
-
-    // Update last login
-    found.lastLogin = new Date().toISOString();
-    found.loginCount = (found.loginCount || 0) + 1;
-    this.saveAdminAccount(found);
-
-    return { success: true, admin: found };
-  }
-
-  /**
    * Logs an administrator action to both local audit storage and Database admin_activity_logs
    */
   static logAdminAction(data: {
@@ -3903,5 +3847,4 @@ export class StorageService {
     this.saveFullActivityLogs(logs);
   }
 }
-
 

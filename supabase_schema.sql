@@ -160,6 +160,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_reference ON public.payments(reference);
 -- ------------------------------------------------------------------------------
 -- Row Level Security (RLS) Configuration
 -- ------------------------------------------------------------------------------
+-- Re-run these policy changes against the live Supabase project after deployment.
 ALTER TABLE public.universities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faculties ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
@@ -183,14 +184,25 @@ CREATE POLICY "Public Read Plans" ON public.subscription_plans FOR SELECT USING 
 CREATE POLICY "Public Read Configs" ON public.system_configs FOR SELECT USING (true);
 
 -- Authenticated / Service-Role Full Access Policies
-CREATE POLICY "Full Access Universities" ON public.universities FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full Access Faculties" ON public.faculties FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full Access Departments" ON public.departments FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full Access Courses" ON public.courses FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full Access Questions" ON public.questions FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full Access Materials" ON public.materials FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full Access Plans" ON public.subscription_plans FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full Access Users" ON public.users FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full Access Results" ON public.results FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full Access Payments" ON public.payments FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Full Access Configs" ON public.system_configs FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Universities" ON public.universities FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Faculties" ON public.faculties FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Departments" ON public.departments FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Courses" ON public.courses FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Questions" ON public.questions FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Materials" ON public.materials FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Plans" ON public.subscription_plans FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Users" ON public.users FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Results" ON public.results FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Payments" ON public.payments FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Configs" ON public.system_configs FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+CREATE POLICY "Users select own profile" ON public.users FOR SELECT TO authenticated
+  USING ((auth.uid())::text = id);
+CREATE POLICY "Users update own profile" ON public.users FOR UPDATE TO authenticated
+  USING ((auth.uid())::text = id) WITH CHECK ((auth.uid())::text = id);
+CREATE POLICY "Results select own" ON public.results FOR SELECT TO authenticated
+  USING ((auth.uid())::text = user_id);
+CREATE POLICY "Results insert own" ON public.results FOR INSERT TO authenticated
+  WITH CHECK ((auth.uid())::text = user_id);
+CREATE POLICY "Payments select own" ON public.payments FOR SELECT TO authenticated
+  USING ((auth.uid())::text = user_id);
