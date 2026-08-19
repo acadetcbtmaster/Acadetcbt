@@ -10,6 +10,31 @@ import { getAuth as getFirebaseAuth } from "firebase/auth";
 import { cert as firebaseAdminCert, getApps as getFirebaseAdminApps, getApp as getFirebaseAdminApp, initializeApp as initFirebaseAdminApp } from "firebase-admin/app";
 import { getAuth as getFirebaseAdminAuth } from "firebase-admin/auth";
 import { getSupabaseAdminClient, isSupabaseConfigured } from "./src/lib/supabase";
+import {
+  adminFromRow,
+  adminToRow,
+  courseFromRow,
+  courseToRow,
+  departmentFromRow,
+  departmentToRow,
+  facultyFromRow,
+  facultyToRow,
+  materialFromRow,
+  materialToRow,
+  paymentFromRow,
+  paymentToRow,
+  planFromRow,
+  planToRow,
+  questionFromRow,
+  questionToRow,
+  resultToRow,
+  systemConfigFromRow,
+  systemConfigToRow,
+  universityFromRow,
+  universityToRow,
+  userFromRow,
+  userToRow,
+} from "./src/lib/dbMappers";
 
 dotenv.config();
 
@@ -147,12 +172,14 @@ const createPendingPaymentInFirestore = async (params: {
     const provider = params.provider || (params.reference.includes("_KORA_") ? "korapay" : "squad");
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      await supabase.from("payments").upsert({
-        id: toUuid(params.reference),
-        user_id: toUuid(params.userId),
+      const { error } = await supabase.from("payments").upsert({
+        id: params.reference,
+        user_id: params.userId,
+        user_name: params.fullName || "Acadet Student",
         user_email: params.email,
         amount: params.amount,
         plan_id: params.planId || "premium",
+        plan_name: params.plan || "Premium Membership",
         gateway: provider,
         reference: params.reference,
         status: "pending",
@@ -163,6 +190,7 @@ const createPendingPaymentInFirestore = async (params: {
         },
         created_at: new Date().toISOString(),
       });
+      if (error) throw new Error(error.message);
     }
     console.log(`[Database Server] Created pending payment record: ${params.reference} (Amount: ₦${params.amount}, Duration: ${params.durationDays || 30} days, Provider: ${provider})`);
   } catch (err) {
@@ -175,18 +203,21 @@ const processReferralReward = async (uid: string) => {
   try {
     const supabase = getSupabaseAdminClient();
     if (!supabase) return;
-    const { data: user } = await supabase.from("users").select("*").eq("id", toUuid(uid)).maybeSingle();
+    const { data: user, error: userError } = await supabase.from("users").select("*").eq("id", uid).maybeSingle();
+    if (userError) throw new Error(userError.message);
     if (!user) return;
     const referrerId = user.referred_by || user.referrer_id || null;
     if (!referrerId) return;
 
     // Increment referrer's streak/referral stats
-    const { data: referrer } = await supabase.from("users").select("*").eq("id", toUuid(referrerId)).maybeSingle();
+    const { data: referrer, error: referrerError } = await supabase.from("users").select("*").eq("id", referrerId).maybeSingle();
+    if (referrerError) throw new Error(referrerError.message);
     if (referrer) {
-      await supabase.from("users").update({
+      const { error } = await supabase.from("users").update({
         streak_count: (referrer.streak_count || 0) + 1,
         updated_at: new Date().toISOString(),
-      }).eq("id", toUuid(referrerId));
+      }).eq("id", referrerId);
+      if (error) throw new Error(error.message);
       console.log(`[Referral System] Successfully credited Referrer ${referrerId} for user ${uid}`);
     }
   } catch (err) {
@@ -204,6 +235,7 @@ const activateSubscriptionInFirestore = async (params: {
   squadTransactionId?: string;
   amount: number;
   planName: string;
+  planId?: string;
   durationDays: number;
   paymentMethod?: string;
   provider?: string;
@@ -269,8 +301,8 @@ const activateSubscriptionInFirestore = async (params: {
   if (supabase) {
     try {
       // 1. Update User in Supabase
-      await supabase.from("users").upsert({
-        id: toUuid(params.userId),
+      const { error: userWriteError } = await supabase.from("users").upsert({
+        id: params.userId,
         full_name: params.userName || "Acadet Student",
         email: params.userEmail,
         role: "student",
@@ -279,18 +311,25 @@ const activateSubscriptionInFirestore = async (params: {
       });
 
       // 2. Update Payment Record in Supabase
-      await supabase.from("payments").upsert({
-        id: toUuid(params.reference),
-        user_id: toUuid(params.userId),
+      if (userWriteError) throw new Error(userWriteError.message);
+
+      const { error: paymentWriteError } = await supabase.from("payments").upsert({
+        id: params.reference,
+        user_id: params.userId,
+        user_name: params.userName || "Acadet Student",
         user_email: params.userEmail,
         amount: params.amount,
-        plan_id: params.planName || "premium",
+        plan_id: params.planId || "premium",
+        plan_name: params.planName || "Premium Membership",
+        payment_method: params.paymentMethod || gatewayDisplayName,
         gateway: provider,
         reference: params.reference,
         status: "success",
         metadata: paymentRecord,
         created_at: paidAt,
       });
+
+      if (paymentWriteError) throw new Error(paymentWriteError.message);
 
       // 3. Referral processing
       await processReferralReward(params.userId);
@@ -317,7 +356,7 @@ const cancelAllUserSubscriptionsInFirestore = async () => {
 
     for (const u of users || []) {
       if (u.role === "admin") continue;
-      await supabase.from("users").update({
+      const { error: updateError } = await supabase.from("users").update({
         subscription: {
           isPremium: false,
           plan: "30-Question Free Tier",
@@ -328,6 +367,7 @@ const cancelAllUserSubscriptionsInFirestore = async () => {
         },
         updated_at: nowIso,
       }).eq("id", u.id);
+      if (updateError) throw new Error(updateError.message);
       cancelledCount++;
     }
 
@@ -781,7 +821,8 @@ const getLivePlanFromFirestore = async (planId: string) => {
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { data } = await supabase.from("subscription_plans").select("*").eq("id", toUuid(planId)).maybeSingle();
+      const { data, error } = await supabase.from("subscription_plans").select("*").eq("id", planId).maybeSingle();
+      if (error) throw new Error(error.message);
       if (data) {
         return {
           id: data.id,
@@ -802,11 +843,8 @@ const getStoredPendingPayment = async (reference: string): Promise<any | null> =
   try {
     const supabase = getSupabaseAdminClient();
     if (!supabase) return null;
-    let { data } = await supabase.from("payments").select("*").eq("reference", reference).maybeSingle();
-    if (!data) {
-      const fallback = await supabase.from("payments").select("*").eq("transaction_reference", reference).maybeSingle();
-      data = fallback.data;
-    }
+    const { data, error } = await supabase.from("payments").select("*").eq("reference", reference).maybeSingle();
+    if (error) throw new Error(error.message);
     if (!data) return null;
     const metadata = data.metadata || {};
     return {
@@ -1217,8 +1255,9 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       try {
         const supabase = getSupabaseAdminClient();
         if (supabase) {
-          const { data: pDoc } = await supabase.from("payments").select("payment_gateway, metadata").eq("transaction_reference", reference).maybeSingle();
-          if (pDoc && (pDoc.payment_gateway === "korapay" || (pDoc.metadata as any)?.provider === "korapay")) {
+          const { data: pDoc, error: paymentLookupError } = await supabase.from("payments").select("gateway, metadata").eq("reference", reference).maybeSingle();
+          if (paymentLookupError) throw new Error(paymentLookupError.message);
+          if (pDoc && (pDoc.gateway === "korapay" || (pDoc.metadata as any)?.provider === "korapay")) {
             isKorapay = true;
           }
         }
@@ -1259,10 +1298,11 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
         try {
           const supabase = getSupabaseAdminClient();
           if (supabase) {
-            await supabase.from("payments").update({
+            const { error } = await supabase.from("payments").update({
               status: "failed",
               metadata: { korapayResponse: verifyData, updatedAt: new Date().toISOString() },
-            }).eq("transaction_reference", reference);
+            }).eq("reference", reference);
+            if (error) throw new Error(error.message);
           }
         } catch (err) {
           console.error("Failed to set payment failed status:", err);
@@ -1361,10 +1401,11 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       try {
         const supabase = getSupabaseAdminClient();
         if (supabase) {
-          await supabase.from("payments").update({
+          const { error } = await supabase.from("payments").update({
             status: "failed",
             metadata: { squadResponse: verifyData, updatedAt: new Date().toISOString() },
-          }).eq("transaction_reference", reference);
+          }).eq("reference", reference);
+          if (error) throw new Error(error.message);
         }
       } catch (err) {
         console.error("Failed to set payment failed status:", err);
@@ -1886,26 +1927,16 @@ async function loadAdminsFromFirestore() {
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { data: admins } = await supabase.from('admins').select('*');
+      const { data: admins, error } = await supabase.from('admins').select('*');
+      if (error) throw new Error(error.message);
       if (admins && admins.length > 0) {
         admins.forEach((data: any) => {
           if (data.id === 'ADM-1001') return;
-          inMemoryAdmins.set(data.id, {
-            id: data.id,
-            fullName: data.full_name || data.fullName,
-            username: data.username,
-            email: data.email,
-            phone: data.phone,
-            role: data.role,
-            status: data.status,
-            passwordHash: String(data.password_hash || data.passwordHash || "").startsWith("scrypt$")
-              ? data.password_hash || data.passwordHash
-              : undefined,
-            createdDate: data.created_date || data.createdDate,
-            lastLogin: data.last_login || data.lastLogin,
-            loginCount: data.login_count || data.loginCount,
-            createdBy: data.created_by || data.createdBy,
-          });
+          const admin = adminFromRow(data) as AdminAccountServer;
+          admin.passwordHash = String(admin.passwordHash || "").startsWith("scrypt$")
+            ? admin.passwordHash
+            : undefined;
+          inMemoryAdmins.set(data.id, admin);
         });
       }
     }
@@ -2047,18 +2078,8 @@ app.post('/api/admin/login', async (req, res) => {
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      await supabase.from('admins').upsert({
-        id: targetAdmin.id,
-        full_name: targetAdmin.fullName,
-        username: targetAdmin.username,
-        email: targetAdmin.email,
-        phone: targetAdmin.phone,
-        role: targetAdmin.role,
-        status: targetAdmin.status,
-        password_hash: targetAdmin.passwordHash,
-        last_login: targetAdmin.lastLogin,
-        login_count: targetAdmin.loginCount,
-      });
+      const { error } = await supabase.from('admins').upsert(adminToRow(targetAdmin));
+      if (error) throw new Error(error.message);
     }
   } catch {}
 
@@ -2213,18 +2234,8 @@ app.post('/api/admin/admins', requireAdminPermission('manage_other_administrator
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      await supabase.from('admins').upsert({
-        id: newAdmin.id,
-        full_name: newAdmin.fullName,
-        username: newAdmin.username,
-        email: newAdmin.email,
-        phone: newAdmin.phone,
-        role: newAdmin.role,
-        status: newAdmin.status,
-        password_hash: newAdmin.passwordHash,
-        created_date: newAdmin.createdDate,
-        created_by: newAdmin.createdBy,
-      });
+      const { error } = await supabase.from('admins').upsert(adminToRow(newAdmin));
+      if (error) throw new Error(error.message);
     }
   } catch (err) {
     console.warn('[RBAC Server] Failed to save new admin in database:', err);
@@ -2277,16 +2288,8 @@ app.put('/api/admin/admins/:id', requireAdminPermission('manage_other_administra
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      await supabase.from('admins').upsert({
-        id: target.id,
-        full_name: target.fullName,
-        username: target.username,
-        email: target.email,
-        phone: target.phone,
-        role: target.role,
-        status: target.status,
-        password_hash: target.passwordHash,
-      });
+      const { error } = await supabase.from('admins').upsert(adminToRow(target));
+      if (error) throw new Error(error.message);
     }
   } catch (err) {
     console.warn('[RBAC Server] Failed to update admin in database:', err);
@@ -2325,7 +2328,8 @@ app.delete('/api/admin/admins/:id', requireAdminPermission('manage_other_adminis
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      await supabase.from('admins').delete().eq('id', id);
+      const { error } = await supabase.from('admins').delete().eq('id', id);
+      if (error) throw new Error(error.message);
     }
   } catch {}
 
@@ -2337,7 +2341,8 @@ app.get('/api/admin/activity-logs', requireAdminPermission('view_activity_logs')
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { data: logs } = await supabase.from('full_activity_logs').select('*').limit(100);
+      const { data: logs, error } = await supabase.from('full_activity_logs').select('*').limit(100);
+      if (error) return res.status(500).json({ success: false, error: error.message });
       if (logs) return res.json({ success: true, logs });
     }
   } catch (err) {
@@ -2365,20 +2370,10 @@ app.get(['/api/payments', '/api/admin/payments'], requireAdminPermission('manage
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { data: payments } = await supabase.from('payments').select('*').order('created_at', { ascending: false }).limit(200);
+      const { data: payments, error } = await supabase.from('payments').select('*').order('created_at', { ascending: false }).limit(200);
+      if (error) return res.status(500).json({ success: false, error: error.message });
       if (payments) {
-        const transactions = payments.map((p: any) => ({
-          id: p.id,
-          reference: p.reference,
-          userId: p.user_id || p.userId,
-          userEmail: p.user_email || p.userEmail,
-          amount: Number(p.amount || 0),
-          gateway: p.gateway || 'squad',
-          status: p.status || 'success',
-          planId: p.plan_id || p.planId,
-          metadata: p.metadata || {},
-          createdAt: p.created_at || new Date().toISOString(),
-        }));
+        const transactions = payments.map(paymentFromRow);
         return res.json({ success: true, transactions });
       }
     }
@@ -2393,22 +2388,10 @@ app.get('/api/admin/students', requireAdminPermission('manage_students'), async 
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { data: users } = await supabase.from('users').select('*').order('created_at', { ascending: false }).limit(500);
+      const { data: users, error } = await supabase.from('users').select('*').order('created_at', { ascending: false }).limit(500);
+      if (error) return res.status(500).json({ success: false, error: error.message });
       if (users) {
-        const students = users.map((u: any) => ({
-          id: u.id,
-          name: u.full_name || u.name || 'Student',
-          fullName: u.full_name || u.name || 'Student',
-          username: u.username || '',
-          email: u.email,
-          phone: u.phone || '',
-          role: u.role || 'student',
-          universityName: u.university_name || '',
-          departmentName: u.department_name || '',
-          subscription: u.subscription || { isPremium: false, plan: 'Free Tier' },
-          bookmarks: u.bookmarks || [],
-          streakCount: u.streak_count || 0,
-        }));
+        const students = users.map(userFromRow);
         return res.json({ success: true, students });
       }
     }
@@ -2432,7 +2415,8 @@ app.get('/api/admin/settings', requireAdminPermission('manage_settings'), async 
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { data: configs } = await supabase.from('system_configs').select('*');
+      const { data: configs, error } = await supabase.from('system_configs').select('*');
+      if (error) return res.status(500).json({ success: false, error: error.message });
       if (configs) {
         return res.json({ success: true, configs });
       }
@@ -2443,7 +2427,7 @@ app.get('/api/admin/settings', requireAdminPermission('manage_settings'), async 
   return res.json({ success: true, configs: [] });
 });
 
-// Helper: Deterministically map string IDs (e.g. uni-unilag) to valid PostgreSQL UUIDs if needed
+// Helper: Deterministically map string IDs to valid PostgreSQL UUIDs when needed
 const toUuid = (id?: string | null): string => {
   if (!id) return crypto.randomUUID();
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return id;
@@ -2511,6 +2495,7 @@ app.get("/api/supabase/status", requireAdminPermission('manage_settings'), async
       "results",
       "payments",
       "system_configs",
+      "admins",
     ];
 
     const tableResults: Record<string, { status: string; count?: number; error?: string }> = {};
@@ -2580,99 +2565,54 @@ app.post("/api/supabase/migrate-seed", requireAdminPermission('manage_settings')
     const summary: Record<string, number> = {};
 
     if (Array.isArray(universities) && universities.length > 0) {
-      const records = universities.map((u: any) => ({
-        id: toUuid(u.id),
-        name: u.name,
-        code: u.shortName || u.short_name || u.code || '',
-        logo_url: u.logoUrl || u.logo_url || '',
-        website: u.website || '',
-      }));
+      const records = universities.map((u: any) => universityToRow(u));
       const { error } = await supabase.from("universities").upsert(records);
-      if (!error) summary.universities = records.length;
+      if (error) throw new Error(error.message);
+      summary.universities = records.length;
     }
 
     if (Array.isArray(faculties) && faculties.length > 0) {
-      const records = faculties.map((f: any) => ({
-        id: toUuid(f.id),
-        name: f.name,
-        university_id: f.universityId || f.university_id ? toUuid(f.universityId || f.university_id) : null,
-      }));
+      const records = faculties.map((f: any) => facultyToRow(f));
       const { error } = await supabase.from("faculties").upsert(records);
-      if (!error) summary.faculties = records.length;
+      if (error) throw new Error(error.message);
+      summary.faculties = records.length;
     }
 
     if (Array.isArray(departments) && departments.length > 0) {
-      const records = departments.map((d: any) => ({
-        id: toUuid(d.id),
-        name: d.name,
-        code: d.code || '',
-        faculty_id: d.facultyId || d.faculty_id ? toUuid(d.facultyId || d.faculty_id) : null,
-        university_id: d.universityId || d.university_id ? toUuid(d.universityId || d.university_id) : null,
-      }));
+      const records = departments.map((d: any) => departmentToRow(d));
       const { error } = await supabase.from("departments").upsert(records);
-      if (!error) summary.departments = records.length;
+      if (error) throw new Error(error.message);
+      summary.departments = records.length;
     }
 
     if (Array.isArray(courses) && courses.length > 0) {
-      const records = courses.map((c: any) => ({
-        id: toUuid(c.id),
-        code: c.code,
-        title: c.title,
-        university_id: c.universityId || c.university_id ? toUuid(c.universityId || c.university_id) : null,
-        department_id: c.departmentId || c.department_id ? toUuid(c.departmentId || c.department_id) : null,
-        level: c.level || '100',
-        description: c.description || '',
-        is_active: c.isActive ?? true,
-      }));
+      const records = courses.map((c: any) => courseToRow(c));
       const { error } = await supabase.from("courses").upsert(records);
-      if (!error) summary.courses = records.length;
+      if (error) throw new Error(error.message);
+      summary.courses = records.length;
     }
 
     if (Array.isArray(questions) && questions.length > 0) {
-      const records = questions.map((q: any) => ({
-        id: toUuid(q.id),
-        course_id: q.courseId || q.course_id ? toUuid(q.courseId || q.course_id) : null,
-        university_id: q.universityId || q.university_id ? toUuid(q.universityId || q.university_id) : null,
-        department_id: q.departmentId || q.department_id ? toUuid(q.departmentId || q.department_id) : null,
-        question_text: q.question || q.question_text || '',
-        option_a: q.optionA || q.option_a,
-        option_b: q.optionB || q.option_b,
-        option_c: q.optionC || q.option_c,
-        option_d: q.optionD || q.option_d,
-        correct_answer: q.correctAnswer || q.correct_answer,
-        explanation: q.explanation || '',
-        topic: q.topic || '',
-        difficulty: q.difficulty || 'Medium',
-      }));
+      const invalid = questions.find((q: any) => !q.question && !q.question_text || !q.optionA && !q.option_a || !q.optionB && !q.option_b || !q.optionC && !q.option_c || !q.optionD && !q.option_d || !q.correctAnswer && !q.correct_answer);
+      if (invalid) return res.status(400).json({ success: false, error: "Each question requires question text, options A-D, and a correct answer." });
+      const records = questions.map((q: any) => questionToRow(q));
       const { error } = await supabase.from("questions").upsert(records);
-      if (!error) summary.questions = records.length;
+      if (error) throw new Error(error.message);
+      summary.questions = records.length;
     }
 
     if (Array.isArray(materials) && materials.length > 0) {
-      const records = materials.map((m: any) => ({
-        id: toUuid(m.id),
-        course_id: m.courseId || m.course_id ? toUuid(m.courseId || m.course_id) : null,
-        university_id: m.universityId || m.university_id ? toUuid(m.universityId || m.university_id) : null,
-        title: m.title,
-        file_url: m.fileUrl || m.file_url || '',
-        material_type: m.fileType || m.material_type || 'pdf',
-        description: m.description || '',
-      }));
+      const records = materials.map((m: any) => materialToRow(m));
       const { error } = await supabase.from("materials").upsert(records);
-      if (!error) summary.materials = records.length;
+      if (error) throw new Error(error.message);
+      summary.materials = records.length;
     }
 
     if (Array.isArray(plans) && plans.length > 0) {
-      const records = plans.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        price: Number(p.price || 0),
-        duration_days: p.durationDays || p.duration_days || 30,
-        features: Array.isArray(p.features) ? p.features : [],
-        is_active: p.isActive ?? true,
-      }));
+      const records = plans.map((p: any) => planToRow(p));
       const { error } = await supabase.from("subscription_plans").upsert(records);
-      if (!error) summary.plans = records.length;
+      if (error) throw new Error(error.message);
+      summary.plans = records.length;
     }
 
     return res.json({
@@ -2695,103 +2635,41 @@ app.get("/api/catalog/all", async (_req, res) => {
     const supabase = getSupabaseAdminClient();
     if (supabase && isSupabaseConfigured()) {
       try {
-        const [
-          { data: sbUnis },
-          { data: sbCourses },
-          { data: sbDepts },
-          { data: sbFacs },
-          { data: sbQuestions },
-          { data: sbMaterials },
-          { data: sbPlans },
-          { data: sbConfigs },
-        ] = await Promise.all([
-          Promise.resolve(supabase.from("universities").select("*")).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from("courses").select("*")).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from("departments").select("*")).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from("faculties").select("*")).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from("questions").select("*")).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from("materials").select("*")).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from("subscription_plans").select("*")).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from("system_configs").select("*")).catch(() => ({ data: null })),
+        const results = await Promise.all([
+          supabase.from("universities").select("*"),
+          supabase.from("courses").select("*"),
+          supabase.from("departments").select("*"),
+          supabase.from("faculties").select("*"),
+          supabase.from("questions").select("*"),
+          supabase.from("materials").select("*"),
+          supabase.from("subscription_plans").select("*"),
+          supabase.from("system_configs").select("*"),
         ]);
+        const firstError = results.find((result) => result.error);
+        if (firstError?.error) throw new Error(firstError.error.message);
+        const [unisResult, coursesResult, deptsResult, facsResult, questionsResult, materialsResult, plansResult, configsResult] = results;
+        const sbUnis = unisResult.data;
+        const sbCourses = coursesResult.data;
+        const sbDepts = deptsResult.data;
+        const sbFacs = facsResult.data;
+        const sbQuestions = questionsResult.data;
+        const sbMaterials = materialsResult.data;
+        const sbPlans = plansResult.data;
+        const sbConfigs = configsResult.data;
 
         if (sbUnis || sbCourses || sbQuestions || sbPlans) {
-          const universities = (sbUnis || []).map((u: any) => ({
-            id: u.id,
-            name: u.name,
-            shortName: u.code || u.short_name || u.shortName || '',
-            logoUrl: u.logo_url || u.logoUrl || '',
-            website: u.website || '',
-            isActive: u.is_active ?? true,
-          }));
-
-          const courses = (sbCourses || []).map((c: any) => ({
-            id: c.id,
-            code: c.code,
-            title: c.title,
-            universityId: c.university_id || c.universityId,
-            departmentId: c.department_id || c.departmentId,
-            level: c.level || '100',
-            semester: c.semester || 'First',
-            description: c.description || '',
-          }));
-
-          const departments = (sbDepts || []).map((d: any) => ({
-            id: d.id,
-            name: d.name,
-            code: d.code || '',
-            facultyId: d.faculty_id || d.facultyId,
-            universityId: d.university_id || d.universityId,
-          }));
-
-          const faculties = (sbFacs || []).map((f: any) => ({
-            id: f.id,
-            name: f.name,
-            code: f.code || '',
-            universityId: f.university_id || f.universityId,
-          }));
-
-          const questions = (sbQuestions || []).map((q: any) => ({
-            id: q.id,
-            courseId: q.course_id || q.courseId,
-            universityId: q.university_id || q.universityId,
-            departmentId: q.department_id || q.departmentId,
-            question: q.question_text || q.question || '',
-            optionA: q.option_a || q.optionA,
-            optionB: q.option_b || q.optionB,
-            optionC: q.option_c || q.optionC,
-            optionD: q.option_d || q.optionD,
-            correctAnswer: q.correct_answer || q.correctAnswer,
-            explanation: q.explanation || '',
-            year: q.year || '',
-            topic: q.topic || '',
-            imageUrl: q.image_url || q.imageUrl,
-            difficulty: q.difficulty || 'Medium',
-          }));
-
-          const materials = (sbMaterials || []).map((m: any) => ({
-            id: m.id,
-            courseId: m.course_id || m.courseId,
-            universityId: m.university_id || m.universityId,
-            title: m.title,
-            fileUrl: m.file_url || m.fileUrl,
-            fileType: m.material_type || m.file_type || m.fileType || 'pdf',
-            description: m.description || '',
-          }));
-
-          const plans = (sbPlans || []).map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            price: Number(p.price || 0),
-            durationDays: p.duration_days || p.durationDays || 30,
-            features: Array.isArray(p.features) ? p.features : [],
-            isActive: p.is_active ?? true,
-          }));
+          const universities = (sbUnis || []).map(universityFromRow);
+          const courses = (sbCourses || []).map(courseFromRow);
+          const departments = (sbDepts || []).map(departmentFromRow);
+          const faculties = (sbFacs || []).map(facultyFromRow);
+          const questions = (sbQuestions || []).map(questionFromRow);
+          const materials = (sbMaterials || []).map(materialFromRow);
+          const plans = (sbPlans || []).map(planFromRow);
 
           let signupFaculties: any = null;
           const configEntry = (sbConfigs || []).find((c: any) => c.key === 'signup_faculties' || c.id === 'signup_faculties');
-          if (configEntry && (configEntry.data?.groups || configEntry.config_data?.groups)) {
-            signupFaculties = configEntry.data?.groups || configEntry.config_data?.groups;
+          if (configEntry && systemConfigFromRow(configEntry).data?.groups) {
+            signupFaculties = systemConfigFromRow(configEntry).data.groups;
           }
 
           return res.json({
@@ -2837,17 +2715,8 @@ app.post("/api/catalog/universities", requireAdminPermission('manage_universitie
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("universities").upsert({
-          id: toUuid(data.id),
-          name: data.name,
-          code: data.shortName || data.short_name || data.code || '',
-          logo_url: data.logoUrl || data.logo_url || '',
-          website: data.website || '',
-        });
-      } catch (sbErr) {
-        console.warn("[Supabase] University save notice:", sbErr);
-      }
+      const { error } = await supabase.from("universities").upsert(universityToRow(data));
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, university: data });
   } catch (err: any) {
@@ -2861,9 +2730,8 @@ app.delete("/api/catalog/universities/:id", requireAdminPermission('manage_unive
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("universities").delete().eq("id", toUuid(id));
-      } catch {}
+      const { error } = await supabase.from("universities").delete().eq("id", id);
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `University ${id} deleted successfully.` });
   } catch (err: any) {
@@ -2880,20 +2748,8 @@ app.post("/api/catalog/courses", requireAdminPermission('manage_courses'), async
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("courses").upsert({
-          id: toUuid(data.id),
-          code: data.code,
-          title: data.title,
-          university_id: data.universityId ? toUuid(data.universityId) : null,
-          department_id: data.departmentId ? toUuid(data.departmentId) : null,
-          level: data.level || '100',
-          description: data.description || '',
-          is_active: data.isActive ?? true,
-        });
-      } catch (sbErr) {
-        console.warn("[Supabase] Course save notice:", sbErr);
-      }
+      const { error } = await supabase.from("courses").upsert(courseToRow(data));
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, course: data });
   } catch (err: any) {
@@ -2907,9 +2763,8 @@ app.delete("/api/catalog/courses/:id", requireAdminPermission('manage_courses'),
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("courses").delete().eq("id", toUuid(id));
-      } catch {}
+      const { error } = await supabase.from("courses").delete().eq("id", id);
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Course ${id} deleted successfully.` });
   } catch (err: any) {
@@ -2925,28 +2780,21 @@ app.post("/api/catalog/questions", requireAdminPermission('manage_questions'), a
     if (items.length === 0) {
       return res.status(400).json({ success: false, error: "No question data provided." });
     }
+    const invalid = items.find((q: any) =>
+      !q.question && !q.question_text ||
+      !q.optionA && !q.option_a ||
+      !q.optionB && !q.option_b ||
+      !q.optionC && !q.option_c ||
+      !q.optionD && !q.option_d ||
+      !q.correctAnswer && !q.correct_answer
+    );
+    if (invalid) {
+      return res.status(400).json({ success: false, error: "Each question requires question text, options A-D, and a correct answer." });
+    }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        const records = items.map((q: any) => ({
-          id: toUuid(q.id),
-          course_id: q.courseId || q.course_id ? toUuid(q.courseId || q.course_id) : null,
-          university_id: q.universityId || q.university_id ? toUuid(q.universityId || q.university_id) : null,
-          department_id: q.departmentId || q.department_id ? toUuid(q.departmentId || q.department_id) : null,
-          question_text: q.question || q.question_text || '',
-          option_a: q.optionA || q.option_a,
-          option_b: q.optionB || q.option_b,
-          option_c: q.optionC || q.option_c,
-          option_d: q.optionD || q.option_d,
-          correct_answer: q.correctAnswer || q.correct_answer,
-          explanation: q.explanation || '',
-          topic: q.topic || '',
-          difficulty: q.difficulty || 'Medium',
-        }));
-        await supabase.from("questions").upsert(records);
-      } catch (sbErr) {
-        console.warn("[Supabase] Questions save notice:", sbErr);
-      }
+      const { error } = await supabase.from("questions").upsert(items.map((q: any) => questionToRow(q)));
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, count: items.length });
   } catch (err: any) {
@@ -2960,9 +2808,8 @@ app.delete("/api/catalog/questions/:id", requireAdminPermission('manage_question
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("questions").delete().eq("id", toUuid(id));
-      } catch {}
+      const { error } = await supabase.from("questions").delete().eq("id", id);
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Question ${id} deleted successfully.` });
   } catch (err: any) {
@@ -2975,9 +2822,8 @@ app.post("/api/catalog/questions/clear-all", requireAdminPermission('manage_ques
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("questions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      } catch {}
+      const { error } = await supabase.from("questions").delete().neq("id", "");
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: "All questions cleared from database." });
   } catch (err: any) {
@@ -2994,16 +2840,8 @@ app.post("/api/catalog/faculties", requireAdminPermission('manage_universities')
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("faculties").upsert({
-          id: toUuid(data.id),
-          name: data.name,
-          code: data.code || '',
-          university_id: data.universityId ? toUuid(data.universityId) : null,
-        });
-      } catch (sbErr) {
-        console.warn("[Supabase] Faculty save notice:", sbErr);
-      }
+      const { error } = await supabase.from("faculties").upsert(facultyToRow(data));
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, faculty: data });
   } catch (err: any) {
@@ -3017,9 +2855,8 @@ app.delete("/api/catalog/faculties/:id", requireAdminPermission('manage_universi
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("faculties").delete().eq("id", toUuid(id));
-      } catch {}
+      const { error } = await supabase.from("faculties").delete().eq("id", id);
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Faculty ${id} deleted successfully.` });
   } catch (err: any) {
@@ -3036,17 +2873,8 @@ app.post("/api/catalog/departments", requireAdminPermission('manage_universities
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("departments").upsert({
-          id: toUuid(data.id),
-          name: data.name,
-          code: data.code || '',
-          university_id: data.universityId ? toUuid(data.universityId) : null,
-          faculty_id: data.facultyId ? toUuid(data.facultyId) : null,
-        });
-      } catch (sbErr) {
-        console.warn("[Supabase] Department save notice:", sbErr);
-      }
+      const { error } = await supabase.from("departments").upsert(departmentToRow(data));
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, department: data });
   } catch (err: any) {
@@ -3060,9 +2888,8 @@ app.delete("/api/catalog/departments/:id", requireAdminPermission('manage_univer
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("departments").delete().eq("id", toUuid(id));
-      } catch {}
+      const { error } = await supabase.from("departments").delete().eq("id", id);
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Department ${id} deleted successfully.` });
   } catch (err: any) {
@@ -3079,19 +2906,8 @@ app.post("/api/catalog/materials", requireAdminPermission('manage_materials'), a
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("materials").upsert({
-          id: toUuid(data.id),
-          course_id: data.courseId ? toUuid(data.courseId) : null,
-          university_id: data.universityId ? toUuid(data.universityId) : null,
-          title: data.title,
-          file_url: data.fileUrl || data.file_url || '',
-          material_type: data.fileType || data.material_type || 'pdf',
-          description: data.description || '',
-        });
-      } catch (sbErr) {
-        console.warn("[Supabase] Material save notice:", sbErr);
-      }
+      const { error } = await supabase.from("materials").upsert(materialToRow(data));
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, material: data });
   } catch (err: any) {
@@ -3105,9 +2921,8 @@ app.delete("/api/catalog/materials/:id", requireAdminPermission('manage_material
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("materials").delete().eq("id", toUuid(id));
-      } catch {}
+      const { error } = await supabase.from("materials").delete().eq("id", id);
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Material ${id} deleted successfully.` });
   } catch (err: any) {
@@ -3124,18 +2939,8 @@ app.post("/api/catalog/plans", requireAdminPermission('manage_payments'), async 
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("subscription_plans").upsert({
-          id: toUuid(data.id),
-          name: data.name,
-          price: Number(data.price || 0),
-          duration_days: Number(data.durationDays || data.duration_days || 30),
-          features: Array.isArray(data.features) ? data.features : [],
-          is_active: data.isActive ?? true,
-        });
-      } catch (sbErr) {
-        console.warn("[Supabase] Plan save notice:", sbErr);
-      }
+      const { error } = await supabase.from("subscription_plans").upsert(planToRow(data));
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, plan: data });
   } catch (err: any) {
@@ -3149,9 +2954,8 @@ app.delete("/api/catalog/plans/:id", requireAdminPermission('manage_payments'), 
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      try {
-        await supabase.from("subscription_plans").delete().eq("id", toUuid(id));
-      } catch {}
+      const { error } = await supabase.from("subscription_plans").delete().eq("id", id);
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Plan ${id} deleted successfully.` });
   } catch (err: any) {
@@ -3160,6 +2964,45 @@ app.delete("/api/catalog/plans/:id", requireAdminPermission('manage_payments'), 
 });
 
 // Sync users
+app.post("/api/results/sync", async (req, res) => {
+  try {
+    const { result, results } = req.body || {};
+    const items = results || (result ? [result] : [req.body]);
+    if (!Array.isArray(items) || items.length === 0 || items.some((item: any) => !item?.id)) {
+      return res.status(400).json({ success: false, error: "A result with an id is required." });
+    }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      const { error } = await supabase.from("results").upsert(items.map((item: any) => resultToRow(item)));
+      if (error) return res.status(500).json({ success: false, error: error.message });
+    }
+    return res.json({ success: true, count: items.length });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to sync results." });
+  }
+});
+
+app.post("/api/payments/sync", async (req, res) => {
+  try {
+    const { payment, payments } = req.body || {};
+    const items = payments || (payment ? [payment] : [req.body]);
+    if (!Array.isArray(items) || items.length === 0 || items.some((item: any) => !item?.id && !item?.reference)) {
+      return res.status(400).json({ success: false, error: "A payment with an id or reference is required." });
+    }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      const { error } = await supabase.from("payments").upsert(items.map((item: any) => paymentToRow({
+        ...item,
+        id: item.id || item.reference,
+      })));
+      if (error) return res.status(500).json({ success: false, error: error.message });
+    }
+    return res.json({ success: true, count: items.length });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to sync payments." });
+  }
+});
+
 app.post("/api/users/sync", async (req, res) => {
   try {
     const { user, users } = req.body;
@@ -3190,22 +3033,21 @@ app.post("/api/users/sync", async (req, res) => {
     if (supabase && items.length > 0) {
       const records = await Promise.all(items.map(async (u: any) => {
         const id = toUuid(u.id);
-        const { data: existing } = await supabase.from("users").select("role, subscription").eq("id", id).maybeSingle();
-        return {
+        const { data: existing, error: existingError } = await supabase
+          .from("users")
+          .select("role, subscription")
+          .eq("id", id)
+          .maybeSingle();
+        if (existingError) throw new Error(existingError.message);
+        return userToRow({
+          ...u,
           id,
-          full_name: u.fullName || u.name || 'Student',
-          email: u.email,
-          phone: u.phone || null,
-          role: existing?.role || 'student',
-          university_name: u.universityName || null,
-          department_name: u.departmentName || null,
+          role: existing?.role || "student",
           subscription: existing?.subscription || {},
-          bookmarks: u.bookmarks || [],
-          streak_count: Number(u.streakCount || 0),
-          updated_at: new Date().toISOString(),
-        };
+        });
       }));
-      await supabase.from("users").upsert(records);
+      const { error } = await supabase.from("users").upsert(records);
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, count: items.length });
   } catch (err: any) {
@@ -3219,7 +3061,8 @@ app.delete("/api/users/:id", requireAdminPermission('manage_users'), async (req,
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      await supabase.from("users").delete().eq("id", toUuid(id));
+      const { error } = await supabase.from("users").delete().eq("id", id);
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `User ${id} deleted successfully.` });
   } catch (err: any) {
@@ -3232,7 +3075,8 @@ app.post("/api/users/clear-all", requireAdminPermission('manage_users'), async (
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      await supabase.from("users").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      const { error } = await supabase.from("users").delete().neq("id", "");
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: "All users cleared from database." });
   } catch (err: any) {
@@ -3249,12 +3093,11 @@ app.post("/api/catalog/signup-faculties", requireAdminPermission('manage_univers
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      await supabase.from("system_configs").upsert({
-        id: "signup_faculties",
+      const { error } = await supabase.from("system_configs").upsert(systemConfigToRow({
         key: "signup_faculties",
-        config_data: { groups },
-        updated_at: new Date().toISOString(),
-      });
+        data: { groups },
+      }));
+      if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, groups });
   } catch (err: any) {

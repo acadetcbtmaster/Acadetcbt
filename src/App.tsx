@@ -731,11 +731,9 @@ export default function App() {
             onUpdateQuestions={handleUpdateQuestions}
             onUpdateUniversities={(data) => {
               setUniversities(data);
-              StorageService.saveUniversities(data);
             }}
             onUpdateCourses={(data) => {
               setCourses(data);
-              StorageService.saveCourses(data);
             }}
             onUpdateTopics={(data) => {
               setTopics(data);

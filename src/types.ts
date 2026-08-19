@@ -42,6 +42,7 @@ export interface UserProfile {
   banReason?: string;
   isDeleted?: boolean;
   deletedAt?: string;
+  referredBy?: string;
 }
 
 export interface University {
@@ -319,6 +320,7 @@ export interface PaymentTransaction {
   gateway: 'Squad' | 'Squad Payment Gateway' | 'KoraPay' | 'KoraPay Gateway' | 'Paystack' | 'Flutterwave' | 'Bank Transfer' | 'Free Access' | string;
   amount: number;
   planName: string;
+  planId?: string;
   date: string;
   paymentDate?: string;
   expiryDate?: string;
@@ -1857,7 +1859,4 @@ export interface HomepageSection {
   createdAt?: string;
   updatedAt?: string;
 }
-
-
-
 

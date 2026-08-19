@@ -155,7 +155,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   };
 
   // University Handlers
-  const handleSaveUniversity = () => {
+  const handleSaveUniversity = async () => {
     if (!uniName.trim() || !uniAbbr.trim()) {
       triggerToast('Please provide University Name and Abbreviation.');
       return;
@@ -170,7 +170,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
         logoUrl: uniLogoUrl.trim() || undefined,
       };
       const list = universitiesList.map((u) => (u.id === editUni.id ? updated : u));
-      StorageService.saveUniversities(list);
+      const result = await StorageService.saveUniversities(list);
+      if (!result.success) triggerToast(`Local copy saved, but the database write failed: ${result.error}`);
       setUniversitiesList(list);
       triggerToast(`Updated University "${updated.abbreviation}".`);
     } else {
@@ -182,7 +183,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
         logoUrl: uniLogoUrl.trim() || undefined,
       };
       const list = [created, ...universitiesList];
-      StorageService.saveUniversities(list);
+      const result = await StorageService.saveUniversities(list);
+      if (!result.success) triggerToast(`Local copy saved, but the database write failed: ${result.error}`);
       setUniversitiesList(list);
       triggerToast(`Added new University "${created.abbreviation}".`);
     }
@@ -195,15 +197,16 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
     setUniLogoUrl('');
   };
 
-  const handleDeleteUniversity = (id: string) => {
+  const handleDeleteUniversity = async (id: string) => {
     const list = universitiesList.filter((u) => u.id !== id);
-    StorageService.saveUniversities(list);
+    const result = await StorageService.saveUniversities(list);
+    if (!result.success) triggerToast(`Local copy saved, but the database write failed: ${result.error}`);
     setUniversitiesList(list);
     triggerToast('University removed.');
   };
 
   // Course Handlers
-  const handleSaveCourse = () => {
+  const handleSaveCourse = async () => {
     if (!courseCode.trim() || !courseTitle.trim()) {
       triggerToast('Please fill Course Code and Title.');
       return;
@@ -219,7 +222,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
         session: courseSession,
       };
       const list = coursesList.map((c) => (c.id === editCourse.id ? updated : c));
-      StorageService.saveCourses(list);
+      const result = await StorageService.saveCourses(list);
+      if (!result.success) triggerToast(`Local copy saved, but the database write failed: ${result.error}`);
       setCoursesList(list);
       triggerToast(`Updated Course "${updated.code}".`);
     } else {
@@ -232,7 +236,8 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
         session: courseSession,
       };
       const list = [created, ...coursesList];
-      StorageService.saveCourses(list);
+      const result = await StorageService.saveCourses(list);
+      if (!result.success) triggerToast(`Local copy saved, but the database write failed: ${result.error}`);
       setCoursesList(list);
       triggerToast(`Added new Course "${created.code}".`);
     }
@@ -243,9 +248,10 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
     setCourseTitle('');
   };
 
-  const handleDeleteCourse = (id: string) => {
+  const handleDeleteCourse = async (id: string) => {
     const list = coursesList.filter((c) => c.id !== id);
-    StorageService.saveCourses(list);
+    const result = await StorageService.saveCourses(list);
+    if (!result.success) triggerToast(`Local copy saved, but the database write failed: ${result.error}`);
     setCoursesList(list);
     triggerToast('Course removed.');
   };

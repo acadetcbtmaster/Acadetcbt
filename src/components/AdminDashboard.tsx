@@ -551,7 +551,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Add University Handler
-  const handleAddUniversitySubmit = (e: React.FormEvent) => {
+  const handleAddUniversitySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUniName.trim() || !newUniAbbr.trim()) return;
 
@@ -564,13 +564,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const updated = [newUni, ...universities];
     onUpdateUniversities(updated);
+    const result = await StorageService.saveUniversities(updated);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     setNewUniName('');
     setNewUniAbbr('');
     setNewUniLocation('');
   };
 
   // Add Course Handler
-  const handleAddCourseSubmit = (e: React.FormEvent) => {
+  const handleAddCourseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCourseCode.trim() || !newCourseTitle.trim()) return;
 
@@ -595,14 +597,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const updated = [newC, ...courses];
     onUpdateCourses(updated);
-    StorageService.saveCourses(updated);
+    const result = await StorageService.saveCourses(updated);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     setNewCourseCode('');
     setNewCourseTitle('');
     setNewCourseModalOpen(false);
   };
 
   // Re-assign or assign university to course handler
-  const handleAssignUniversityToCourse = (courseId: string, targetUniversityId: string) => {
+  const handleAssignUniversityToCourse = async (courseId: string, targetUniversityId: string) => {
     const selectedUniObj = universities.find((u) => u.id === targetUniversityId);
     if (!selectedUniObj) return;
 
@@ -618,7 +621,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
 
     onUpdateCourses(updated);
-    StorageService.saveCourses(updated);
+    const result = await StorageService.saveCourses(updated);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     if (selectedCourseDetail && selectedCourseDetail.id === courseId) {
       setSelectedCourseDetail({
         ...selectedCourseDetail,
@@ -3080,11 +3084,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               View
                             </button>
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 const updated = universities.map((u: any) =>
                                   u.id === uni.id ? { ...u, isDisabled: !u.isDisabled } : u
                                 );
                                 onUpdateUniversities(updated);
+                                const result = await StorageService.saveUniversities(updated);
+                                if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
                               }}
                               className={`px-2.5 py-1 border font-bold rounded-lg cursor-pointer ${
                                 uni.isDisabled
@@ -3095,12 +3101,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               {uni.isDisabled ? 'Enable' : 'Disable'}
                             </button>
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 const confirmMsg = `Are you sure you want to PERMANENTLY delete university "${uni.name}"?\n\nThis will remove it from Firebase Cloud Firestore and Local Storage.`;
                                 if (!window.confirm(confirmMsg)) return;
                                 const updated = universities.filter((u: any) => u.id !== uni.id);
                                 onUpdateUniversities(updated);
-                                StorageService.deleteUniversity(uni.id);
+                                const result = await StorageService.deleteUniversity(uni.id);
+                                if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
                                 setUniDependencyError(null);
                               }}
                               className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg cursor-pointer"
@@ -3180,11 +3187,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div className="flex justify-between items-center pt-2 border-t border-slate-800">
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (window.confirm(`Are you sure you want to PERMANENTLY delete university "${selectedUniversityDetail.name}"?`)) {
                         const updated = universities.filter((u: any) => u.id !== selectedUniversityDetail.id);
                         onUpdateUniversities(updated);
-                        StorageService.deleteUniversity(selectedUniversityDetail.id);
+                        const result = await StorageService.deleteUniversity(selectedUniversityDetail.id);
+                        if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
                         setSelectedUniversityDetail(null);
                       }
                     }}
@@ -3424,11 +3432,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               View Details
                             </button>
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 const updated = courses.map((c: any) =>
                                   c.id === course.id ? { ...c, isDisabled: !c.isDisabled } : c
                                 );
                                 onUpdateCourses(updated);
+                                const result = await StorageService.saveCourses(updated);
+                                if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
                               }}
                               className={`px-2.5 py-1 border font-bold rounded-lg cursor-pointer ${
                                 course.isDisabled
@@ -3439,12 +3449,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               {course.isDisabled ? 'Enable' : 'Disable'}
                             </button>
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 const confirmMsg = `Are you sure you want to PERMANENTLY delete course "${course.title}" (${course.code})?\n\nThis will remove it from Firebase Cloud Firestore and Local Storage.`;
                                 if (!window.confirm(confirmMsg)) return;
                                 const updated = courses.filter((c: any) => c.id !== course.id);
                                 onUpdateCourses(updated);
-                                StorageService.deleteCourse(course.id);
+                                const result = await StorageService.deleteCourse(course.id);
+                                if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
                                 setCourseDependencyError(null);
                               }}
                               className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg cursor-pointer"
@@ -3531,11 +3542,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div className="flex justify-between items-center pt-2 border-t border-slate-800">
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (window.confirm(`Are you sure you want to PERMANENTLY delete course "${selectedCourseDetail.title}" (${selectedCourseDetail.code})?`)) {
                         const updated = courses.filter((c: any) => c.id !== selectedCourseDetail.id);
                         onUpdateCourses(updated);
-                        StorageService.deleteCourse(selectedCourseDetail.id);
+                        const result = await StorageService.deleteCourse(selectedCourseDetail.id);
+                        if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
                         setSelectedCourseDetail(null);
                       }
                     }}
@@ -3659,9 +3671,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           materials={materialsList}
           universities={universities}
           courses={courses}
-          onUpdateMaterials={(updated) => {
+          onUpdateMaterials={async (updated) => {
             setMaterialsList(updated);
-            StorageService.saveMaterials(updated);
+            const result = await StorageService.saveMaterials(updated);
+            if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
           }}
         />
       )}
