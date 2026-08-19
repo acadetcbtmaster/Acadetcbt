@@ -68,7 +68,6 @@ import {
   syncUserToSupabase,
   syncPaymentToSupabase,
   syncQuestionsToSupabase,
-  syncQuestionToSupabase,
   deleteQuestionFromSupabase,
   syncUniversitiesToSupabase,
   deleteUniversityFromSupabase,
@@ -76,12 +75,43 @@ import {
   deleteCourseFromSupabase,
   syncMaterialsToSupabase,
   deleteMaterialFromSupabase,
+  deleteUserFromSupabase,
   syncPlansToSupabase,
   deletePlanFromSupabase,
-  toUuid,
 } from '../lib/supabase';
+import { fromRow } from '../lib/dbMappers';
 
 // Custom safe serializer handled by safeStringify and safeClone without altering global JSON.stringify
+export interface StorageWriteResult {
+  success: boolean;
+  error?: string;
+}
+
+const successfulWrite = (): StorageWriteResult => ({ success: true });
+const failedWrite = (error: unknown): StorageWriteResult => ({
+  success: false,
+  error: error instanceof Error ? error.message : String(error || 'Remote write failed'),
+});
+
+async function checkedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<StorageWriteResult> {
+  try {
+    const response = await fetch(input, init);
+    if (response.ok) return successfulWrite();
+    try {
+      const body = await response.json();
+      return failedWrite(body?.error || body?.message || `Request failed with HTTP ${response.status}`);
+    } catch {
+      return failedWrite(`Request failed with HTTP ${response.status}`);
+    }
+  } catch (error) {
+    return failedWrite(error);
+  }
+}
+
+function firstWriteError(results: StorageWriteResult[]): StorageWriteResult {
+  const error = results.find((result) => !result.success);
+  return error || successfulWrite();
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -840,8 +870,9 @@ export class StorageService {
           if (catalog.success) {
             if (Array.isArray(catalog.universities)) {
               if (catalog.universities.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, catalog.universities);
-                localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(catalog.universities));
+                const mapped = catalog.universities.map(fromRow.university);
+                this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, mapped);
+                localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(mapped));
               } else {
                 const local = this.getUniversities();
                 if (local.length > 0) syncUniversitiesToSupabase(local).catch(() => {});
@@ -849,25 +880,29 @@ export class StorageService {
             }
             if (Array.isArray(catalog.courses)) {
               if (catalog.courses.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.COURSES, catalog.courses);
-                localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(catalog.courses));
+                const mapped = catalog.courses.map(fromRow.course);
+                this.memoryCache.set(STORAGE_KEYS.COURSES, mapped);
+                localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(mapped));
               } else {
                 const local = this.getCourses();
                 if (local.length > 0) syncCoursesToSupabase(local).catch(() => {});
               }
             }
             if (Array.isArray(catalog.departments) && catalog.departments.length > 0) {
-              this.memoryCache.set(STORAGE_KEYS.DEPARTMENTS, catalog.departments);
-              localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, safeStringify(catalog.departments));
+              const mapped = catalog.departments.map(fromRow.department);
+              this.memoryCache.set(STORAGE_KEYS.DEPARTMENTS, mapped);
+              localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, safeStringify(mapped));
             }
             if (Array.isArray(catalog.faculties) && catalog.faculties.length > 0) {
-              this.memoryCache.set(STORAGE_KEYS.FACULTIES, catalog.faculties);
-              localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(catalog.faculties));
+              const mapped = catalog.faculties.map(fromRow.faculty);
+              this.memoryCache.set(STORAGE_KEYS.FACULTIES, mapped);
+              localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(mapped));
             }
             if (Array.isArray(catalog.questions)) {
               if (catalog.questions.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.QUESTIONS, catalog.questions);
-                localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(catalog.questions));
+                const mapped = catalog.questions.map(fromRow.question);
+                this.memoryCache.set(STORAGE_KEYS.QUESTIONS, mapped);
+                localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(mapped));
               } else {
                 const local = this.getQuestions();
                 if (local.length > 0) {
@@ -877,24 +912,28 @@ export class StorageService {
             }
             if (Array.isArray(catalog.materials)) {
               if (catalog.materials.length > 0) {
-                this.memoryCache.set(STORAGE_KEYS.MATERIALS, catalog.materials);
-                localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(catalog.materials));
+                const mapped = catalog.materials.map(fromRow.material);
+                this.memoryCache.set(STORAGE_KEYS.MATERIALS, mapped);
+                localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(mapped));
               } else {
                 const local = this.getMaterials();
                 if (local.length > 0) syncMaterialsToSupabase(local).catch(() => {});
               }
             }
             if (Array.isArray(catalog.plans) && catalog.plans.length > 0) {
-              this.memoryCache.set(STORAGE_KEYS.PLANS, catalog.plans);
-              localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(catalog.plans));
+              const mapped = catalog.plans.map(fromRow.plan);
+              this.memoryCache.set(STORAGE_KEYS.PLANS, mapped);
+              localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(mapped));
             }
             if (Array.isArray(catalog.users) && catalog.users.length > 0) {
-              this.memoryCache.set(STORAGE_KEYS.USERS, catalog.users);
-              localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(catalog.users));
+              const mapped = catalog.users.map(fromRow.user);
+              this.memoryCache.set(STORAGE_KEYS.USERS, mapped);
+              localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(mapped));
             }
             if (Array.isArray(catalog.payments) && catalog.payments.length > 0) {
-              this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, catalog.payments);
-              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(catalog.payments));
+              const mapped = catalog.payments.map(fromRow.payment);
+              this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, mapped);
+              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(mapped));
             }
             if (catalog.signupFaculties && Array.isArray(catalog.signupFaculties)) {
               this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, catalog.signupFaculties);
@@ -925,58 +964,30 @@ export class StorageService {
             ]);
 
             if (sbUnis && sbUnis.length > 0) {
-              const mappedUnis = sbUnis.map((u: any) => ({
-                id: u.id,
-                name: u.name,
-                shortName: u.code || u.short_name || u.shortName || '',
-                logoUrl: u.logo_url || u.logoUrl || '',
-                website: u.website || '',
-              }));
+              const mappedUnis = sbUnis.map(fromRow.university);
               this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, mappedUnis);
               localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(mappedUnis));
               syncedSuccessfully = true;
             }
 
             if (sbCourses && sbCourses.length > 0) {
-              const mappedCourses = sbCourses.map((c: any) => ({
-                id: c.id,
-                code: c.code,
-                title: c.title,
-                universityId: c.university_id || c.universityId || '',
-                departmentId: c.department_id || c.departmentId || '',
-                level: c.level || '100',
-                description: c.description || '',
-                isActive: c.is_active ?? true,
-              }));
+              const mappedCourses = sbCourses.map(fromRow.course);
               this.memoryCache.set(STORAGE_KEYS.COURSES, mappedCourses);
               localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(mappedCourses));
               syncedSuccessfully = true;
             }
 
             if (sbQuestions && sbQuestions.length > 0) {
-              const mappedQuestions = sbQuestions.map((q: any) => ({
-                id: q.id,
-                courseId: q.course_id || q.courseId || '',
-                universityId: q.university_id || q.universityId || '',
-                departmentId: q.department_id || q.departmentId || '',
-                question: q.question_text || q.question || '',
-                optionA: q.option_a || q.optionA || '',
-                optionB: q.option_b || q.optionB || '',
-                optionC: q.option_c || q.optionC || '',
-                optionD: q.option_d || q.optionD || '',
-                correctAnswer: q.correct_answer || q.correctAnswer || '',
-                explanation: q.explanation || '',
-                topic: q.topic || '',
-                difficulty: q.difficulty || 'Medium',
-              }));
+              const mappedQuestions = sbQuestions.map(fromRow.question);
               this.memoryCache.set(STORAGE_KEYS.QUESTIONS, mappedQuestions);
               localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(mappedQuestions));
               syncedSuccessfully = true;
             }
 
             if (sbPlans && sbPlans.length > 0) {
-              this.memoryCache.set(STORAGE_KEYS.PLANS, sbPlans);
-              localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(sbPlans));
+              const mappedPlans = sbPlans.map(fromRow.plan);
+              this.memoryCache.set(STORAGE_KEYS.PLANS, mappedPlans);
+              localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(mappedPlans));
               syncedSuccessfully = true;
             }
           }
@@ -1177,7 +1188,7 @@ export class StorageService {
     });
   }
 
-  static async clearAllUsers(): Promise<boolean> {
+  static async clearAllUsers(): Promise<StorageWriteResult> {
     this.memoryCache.set(STORAGE_KEYS.USERS, []);
     this.memoryCache.delete(STORAGE_KEYS.USER);
     try {
@@ -1185,67 +1196,62 @@ export class StorageService {
       localStorage.removeItem(STORAGE_KEYS.USER);
     } catch {}
 
-    try {
-      await fetch('/api/users/clear-all', {
-        method: 'POST',
-        headers: this.getAdminAuthHeaders(),
-      }).catch(() => {});
-    } catch {}
+    const result = await checkedFetch('/api/users/clear-all', {
+      method: 'POST',
+      headers: this.getAdminAuthHeaders(),
+    });
 
     try {
       window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.USERS, timestamp: Date.now() } }));
     } catch {}
 
-    return true;
+    return result;
   }
 
-  static saveUsers(users: UserProfile[], syncToBackend: boolean = true): void {
+  static async saveUsers(users: UserProfile[], syncToBackend: boolean = true): Promise<StorageWriteResult> {
     const previous = this.getUsers();
     this.setItem(STORAGE_KEYS.USERS, users);
 
-    if (!syncToBackend) return;
+    if (!syncToBackend) return successfulWrite();
 
+    const results: Promise<StorageWriteResult>[] = [];
     users.forEach((u) => {
-      syncUserToSupabase(u).catch(() => {});
+      results.push(syncUserToSupabase(u));
     });
 
     // Sync deletions to Backend API & Supabase
     const newIds = new Set(users.map((u) => u.id));
     previous.forEach((pu) => {
       if (!newIds.has(pu.id)) {
-        fetch(`/api/users/${encodeURIComponent(pu.id)}`, {
+        results.push(checkedFetch(`/api/users/${encodeURIComponent(pu.id)}`, {
           method: 'DELETE',
           headers: this.getAdminAuthHeaders(),
-        }).catch(() => {});
+        }));
       }
     });
+    return firstWriteError(await Promise.all(results));
   }
 
   static saveLocalUsersOnly(users: UserProfile[]): void {
     this.saveUsers(users, false);
   }
 
-  static async deleteUser(userId: string): Promise<boolean> {
+  static async deleteUser(userId: string): Promise<StorageWriteResult> {
     const users = this.getUsers().filter((u) => u.id !== userId);
-    this.saveUsers(users);
+    this.setItem(STORAGE_KEYS.USERS, users);
 
     const activeUser = this.getItem<UserProfile | null>(STORAGE_KEYS.USER, null);
     if (activeUser && activeUser.id === userId) {
       this.clearUserSession();
     }
 
-    await Promise.allSettled([
-      fetch(`/api/users/${encodeURIComponent(userId)}`, {
-        method: 'DELETE',
-        headers: this.getAdminAuthHeaders(),
-      }).catch(() => {}),
-    ]);
+    const result = await deleteUserFromSupabase(userId);
 
     try {
       window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.USERS, timestamp: Date.now() } }));
     } catch {}
 
-    return true;
+    return result;
   }
 
   static getUser(): UserProfile | null {
@@ -1324,81 +1330,50 @@ export class StorageService {
     return list;
   }
 
-  static async clearAllQuestions(): Promise<boolean> {
+  static async clearAllQuestions(): Promise<StorageWriteResult> {
     this.memoryCache.set(STORAGE_KEYS.QUESTIONS, []);
     try {
       localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify([]));
     } catch {}
 
-    try {
-      await fetch('/api/catalog/questions/clear-all', {
-        method: 'POST',
-        headers: this.getAdminAuthHeaders(),
-      }).catch(() => {});
-    } catch {}
+    const result = await checkedFetch('/api/catalog/questions/clear-all', {
+      method: 'POST',
+      headers: this.getAdminAuthHeaders(),
+    });
 
     try {
       window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.QUESTIONS, timestamp: Date.now() } }));
     } catch {}
 
-    return true;
+    return result;
   }
 
-  static async saveQuestions(questions: Question[]): Promise<boolean> {
+  static async saveQuestions(questions: Question[]): Promise<StorageWriteResult> {
     const previous = this.getQuestions();
     this.setItem(STORAGE_KEYS.QUESTIONS, questions);
 
-    const promises: Promise<any>[] = [];
-
-    // 1. Direct Supabase Client Sync
-    promises.push(syncQuestionsToSupabase(questions).catch(() => {}));
-
-    // 2. Delete removed questions from Supabase & Backend API
+    const results: Promise<StorageWriteResult>[] = [syncQuestionsToSupabase(questions)];
     const newIds = new Set(questions.map((q) => q.id));
     previous.forEach((pq) => {
       if (!newIds.has(pq.id)) {
-        promises.push(deleteQuestionFromSupabase(pq.id).catch(() => {}));
-        promises.push(
-          fetch(`/api/catalog/questions/${encodeURIComponent(pq.id)}`, {
-            method: 'DELETE',
-            headers: this.getAdminAuthHeaders(),
-          }).catch(() => {})
-        );
+        results.push(deleteQuestionFromSupabase(pq.id));
       }
     });
 
-    // 3. Also sync to Backend API
-    promises.push(
-      fetch('/api/catalog/questions', {
-        method: 'POST',
-        headers: this.getAdminAuthHeaders(),
-        body: safeStringify({ questions }),
-      }).catch(() => {})
-    );
-
-    await Promise.allSettled(promises);
-    return true;
+    return firstWriteError(await Promise.all(results));
   }
 
-  static async deleteQuestion(id: string): Promise<boolean> {
+  static async deleteQuestion(id: string): Promise<StorageWriteResult> {
     const remaining = this.getQuestions().filter((q) => q.id !== id);
     this.setItem(STORAGE_KEYS.QUESTIONS, remaining);
 
-    await Promise.allSettled([
-      deleteQuestionFromSupabase(id).catch(() => {}),
-      fetch(`/api/catalog/questions/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: this.getAdminAuthHeaders(),
-      }).catch(() => {}),
-    ]);
-    return true;
+    return deleteQuestionFromSupabase(id);
   }
 
-  static addQuestion(q: Question): void {
+  static async addQuestion(q: Question): Promise<StorageWriteResult> {
     const list = this.getQuestions();
     list.unshift(q);
-    this.saveQuestions(list);
-    syncQuestionToSupabase(q).catch(() => {});
+    return this.saveQuestions(list);
   }
 
   // Universities, Faculties, Depts, Courses, Topics
@@ -1407,168 +1382,106 @@ export class StorageService {
     return Array.isArray(list) ? list : SEED_UNIVERSITIES;
   }
 
-  static async saveUniversities(data: University[]): Promise<boolean> {
+  static async saveUniversities(data: University[]): Promise<StorageWriteResult> {
     const previous = this.getUniversities();
     this.setItem(STORAGE_KEYS.UNIVERSITIES, data);
 
-    const promises: Promise<any>[] = [];
-
-    // Direct Supabase sync
-    promises.push(syncUniversitiesToSupabase(data).catch(() => {}));
-
-    data.forEach((u) => {
-      promises.push(
-        fetch('/api/catalog/universities', {
-          method: 'POST',
-          headers: this.getAdminAuthHeaders(),
-          body: safeStringify(u),
-        }).catch(() => {})
-      );
-    });
+    const results: Promise<StorageWriteResult>[] = [syncUniversitiesToSupabase(data)];
 
     const newIds = new Set(data.map((u) => u.id));
     previous.forEach((pu) => {
       if (!newIds.has(pu.id)) {
-        promises.push(deleteUniversityFromSupabase(pu.id).catch(() => {}));
-        promises.push(
-          fetch(`/api/catalog/universities/${encodeURIComponent(pu.id)}`, {
-            method: 'DELETE',
-            headers: this.getAdminAuthHeaders(),
-          }).catch(() => {})
-        );
+        results.push(deleteUniversityFromSupabase(pu.id));
       }
     });
 
-    await Promise.allSettled(promises);
-    return true;
+    return firstWriteError(await Promise.all(results));
   }
 
-  static async deleteUniversity(id: string): Promise<boolean> {
+  static async deleteUniversity(id: string): Promise<StorageWriteResult> {
     const remaining = this.getUniversities().filter((u) => u.id !== id);
     this.setItem(STORAGE_KEYS.UNIVERSITIES, remaining);
 
-    await Promise.allSettled([
-      deleteUniversityFromSupabase(id).catch(() => {}),
-      fetch(`/api/catalog/universities/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: this.getAdminAuthHeaders(),
-      }).catch(() => {}),
-    ]);
-    return true;
+    return deleteUniversityFromSupabase(id);
   }
 
   static getFaculties(): Faculty[] {
     return this.getItem<Faculty[]>(STORAGE_KEYS.FACULTIES, SEED_FACULTIES);
   }
 
-  static async saveFaculties(data: Faculty[]): Promise<boolean> {
+  static async saveFaculties(data: Faculty[]): Promise<StorageWriteResult> {
     this.setItem(STORAGE_KEYS.FACULTIES, data);
-    const promises: Promise<any>[] = [];
+    const results: Promise<StorageWriteResult>[] = [];
     data.forEach((f) => {
-      promises.push(
-        fetch('/api/catalog/faculties', {
+      results.push(checkedFetch('/api/catalog/faculties', {
           method: 'POST',
           headers: this.getAdminAuthHeaders(),
           body: safeStringify(f),
-        }).catch(() => {})
-      );
+        }));
     });
-    await Promise.allSettled(promises);
-    return true;
+    return firstWriteError(await Promise.all(results));
   }
 
-  static async deleteFaculty(id: string): Promise<boolean> {
+  static async deleteFaculty(id: string): Promise<StorageWriteResult> {
     const remaining = this.getFaculties().filter((f) => f.id !== id);
     this.setItem(STORAGE_KEYS.FACULTIES, remaining);
-    await fetch(`/api/catalog/faculties/${encodeURIComponent(id)}`, {
+    return checkedFetch(`/api/catalog/faculties/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: this.getAdminAuthHeaders(),
-    }).catch(() => {});
-    return true;
+    });
   }
 
   static getDepartments(): Department[] {
     return this.getItem<Department[]>(STORAGE_KEYS.DEPARTMENTS, SEED_DEPARTMENTS);
   }
 
-  static async saveDepartments(data: Department[]): Promise<boolean> {
+  static async saveDepartments(data: Department[]): Promise<StorageWriteResult> {
     this.setItem(STORAGE_KEYS.DEPARTMENTS, data);
-    const promises: Promise<any>[] = [];
+    const results: Promise<StorageWriteResult>[] = [];
     data.forEach((d) => {
-      promises.push(
-        fetch('/api/catalog/departments', {
+      results.push(checkedFetch('/api/catalog/departments', {
           method: 'POST',
           headers: this.getAdminAuthHeaders(),
           body: safeStringify(d),
-        }).catch(() => {})
-      );
+        }));
     });
-    await Promise.allSettled(promises);
-    return true;
+    return firstWriteError(await Promise.all(results));
   }
 
-  static async deleteDepartment(id: string): Promise<boolean> {
+  static async deleteDepartment(id: string): Promise<StorageWriteResult> {
     const remaining = this.getDepartments().filter((d) => d.id !== id);
     this.setItem(STORAGE_KEYS.DEPARTMENTS, remaining);
-    await fetch(`/api/catalog/departments/${encodeURIComponent(id)}`, {
+    return checkedFetch(`/api/catalog/departments/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: this.getAdminAuthHeaders(),
-    }).catch(() => {});
-    return true;
+    });
   }
 
   static getCourses(): Course[] {
     return this.getItem<Course[]>(STORAGE_KEYS.COURSES, SEED_COURSES);
   }
 
-  static async saveCourses(data: Course[]): Promise<boolean> {
+  static async saveCourses(data: Course[]): Promise<StorageWriteResult> {
     const previous = this.getCourses();
     this.setItem(STORAGE_KEYS.COURSES, data);
 
-    const promises: Promise<any>[] = [];
-
-    // Direct Supabase sync
-    promises.push(syncCoursesToSupabase(data).catch(() => {}));
-
-    data.forEach((c) => {
-      promises.push(
-        fetch('/api/catalog/courses', {
-          method: 'POST',
-          headers: this.getAdminAuthHeaders(),
-          body: safeStringify(c),
-        }).catch(() => {})
-      );
-    });
+    const results: Promise<StorageWriteResult>[] = [syncCoursesToSupabase(data)];
 
     const newIds = new Set(data.map((c) => c.id));
     previous.forEach((pc) => {
       if (!newIds.has(pc.id)) {
-        promises.push(deleteCourseFromSupabase(pc.id).catch(() => {}));
-        promises.push(
-          fetch(`/api/catalog/courses/${encodeURIComponent(pc.id)}`, {
-            method: 'DELETE',
-            headers: this.getAdminAuthHeaders(),
-          }).catch(() => {})
-        );
+        results.push(deleteCourseFromSupabase(pc.id));
       }
     });
 
-    await Promise.allSettled(promises);
-    return true;
+    return firstWriteError(await Promise.all(results));
   }
 
-  static async deleteCourse(id: string): Promise<boolean> {
+  static async deleteCourse(id: string): Promise<StorageWriteResult> {
     const remaining = this.getCourses().filter((c) => c.id !== id);
     this.setItem(STORAGE_KEYS.COURSES, remaining);
 
-    await Promise.allSettled([
-      deleteCourseFromSupabase(id).catch(() => {}),
-      fetch(`/api/catalog/courses/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: this.getAdminAuthHeaders(),
-      }).catch(() => {}),
-    ]);
-    return true;
+    return deleteCourseFromSupabase(id);
   }
 
   static getTopics(): Topic[] {
@@ -1589,21 +1502,19 @@ export class StorageService {
     return this.getResults();
   }
 
-  static saveResults(results: TestSessionResult[]): void {
+  static async saveResults(results: TestSessionResult[]): Promise<StorageWriteResult> {
     this.setItem(STORAGE_KEYS.RESULTS, results);
-    results.forEach((res) => {
-      syncResultToSupabase(res).catch(() => {});
-    });
+    return firstWriteError(await Promise.all(results.map((res) => syncResultToSupabase(res))));
   }
 
-  static saveTestResults(results: TestSessionResult[]): void {
-    this.saveResults(results);
+  static async saveTestResults(results: TestSessionResult[]): Promise<StorageWriteResult> {
+    return this.saveResults(results);
   }
 
-  static saveResult(res: TestSessionResult): void {
+  static async saveResult(res: TestSessionResult): Promise<StorageWriteResult> {
     const list = this.getResults();
     list.unshift(res);
-    this.saveResults(list);
+    return this.saveResults(list);
   }
 
   // Plans & Transactions
@@ -1615,10 +1526,10 @@ export class StorageService {
     return this.getPlans();
   }
 
-  static savePlans(plans: SubscriptionPlan[], syncToBackend: boolean = true): void {
+  static async savePlans(plans: SubscriptionPlan[], syncToBackend: boolean = true): Promise<StorageWriteResult> {
     this.setItem(STORAGE_KEYS.PLANS, plans);
-    if (!syncToBackend) return;
-    syncPlansToSupabase(plans).catch(() => {});
+    if (!syncToBackend) return successfulWrite();
+    return syncPlansToSupabase(plans);
   }
 
   static saveLocalPlansOnly(plans: SubscriptionPlan[]): void {
@@ -1628,14 +1539,14 @@ export class StorageService {
     } catch {}
   }
 
-  static saveSubscriptionPlans(plans: SubscriptionPlan[]): void {
-    this.savePlans(plans);
+  static async saveSubscriptionPlans(plans: SubscriptionPlan[]): Promise<StorageWriteResult> {
+    return this.savePlans(plans);
   }
 
-  static deleteSubscriptionPlan(planId: string): void {
+  static async deleteSubscriptionPlan(planId: string): Promise<StorageWriteResult> {
     const plans = this.getPlans().filter((p) => p.id !== planId);
     this.setItem(STORAGE_KEYS.PLANS, plans);
-    deletePlanFromSupabase(planId).catch(() => {});
+    return deletePlanFromSupabase(planId);
   }
 
   static getTransactions(): PaymentTransaction[] {
@@ -1744,14 +1655,12 @@ export class StorageService {
     return this.getItem<PaymentTransaction[]>(STORAGE_KEYS.TRANSACTIONS, seedTransactions);
   }
 
-  static saveTransactions(transactions: PaymentTransaction[]): void {
+  static async saveTransactions(transactions: PaymentTransaction[]): Promise<StorageWriteResult> {
     this.setItem(STORAGE_KEYS.TRANSACTIONS, transactions);
-    transactions.forEach((tx) => {
-      syncPaymentToSupabase(tx).catch(() => {});
-    });
+    return firstWriteError(await Promise.all(transactions.map((tx) => syncPaymentToSupabase(tx))));
   }
 
-  static saveTransaction(tx: PaymentTransaction): void {
+  static async saveTransaction(tx: PaymentTransaction): Promise<StorageWriteResult> {
     const list = this.getTransactions();
     const idx = list.findIndex((t) => t.id === tx.id || (t.reference && t.reference === tx.reference));
     if (idx >= 0) {
@@ -1759,8 +1668,7 @@ export class StorageService {
     } else {
       list.unshift(tx);
     }
-    this.saveTransactions(list);
-    syncPaymentToSupabase(tx).catch(() => {});
+    return this.saveTransactions(list);
   }
 
   static deleteTransaction(id: string): void {
@@ -1938,22 +1846,20 @@ export class StorageService {
     return this.getItem<StudyMaterial[]>(STORAGE_KEYS.MATERIALS, SEED_STUDY_MATERIALS);
   }
 
-  static async saveMaterials(materials: StudyMaterial[]): Promise<boolean> {
+  static async saveMaterials(materials: StudyMaterial[]): Promise<StorageWriteResult> {
     const previous = this.getMaterials();
     this.setItem(STORAGE_KEYS.MATERIALS, materials);
 
-    const promises: Promise<any>[] = [];
-    promises.push(syncMaterialsToSupabase(materials).catch(() => {}));
+    const results: Promise<StorageWriteResult>[] = [syncMaterialsToSupabase(materials)];
 
     const newIds = new Set(materials.map((m) => m.id));
     previous.forEach((pm) => {
       if (!newIds.has(pm.id)) {
-        promises.push(deleteMaterialFromSupabase(pm.id).catch(() => {}));
+        results.push(deleteMaterialFromSupabase(pm.id));
       }
     });
 
-    await Promise.allSettled(promises);
-    return true;
+    return firstWriteError(await Promise.all(results));
   }
 
   // Face Arena Weekly Quiz Challenge Methods
@@ -2071,15 +1977,15 @@ export class StorageService {
     return newSettings;
   }
 
-  static addMaterial(material: StudyMaterial): void {
+  static async addMaterial(material: StudyMaterial): Promise<StorageWriteResult> {
     const list = this.getMaterials();
     list.unshift(material);
-    this.saveMaterials(list);
+    return this.saveMaterials(list);
   }
 
-  static deleteMaterial(id: string): void {
+  static async deleteMaterial(id: string): Promise<StorageWriteResult> {
     const list = this.getMaterials().filter((m) => m.id !== id);
-    this.saveMaterials(list);
+    return this.saveMaterials(list);
   }
 
   // Admin Broadcast Notifications
@@ -3538,14 +3444,13 @@ export class StorageService {
     return this.getItem<FacultyGroup[]>(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, DEFAULT_FACULTY_DEPARTMENTS);
   }
 
-  static async saveSignupFacultyGroups(groups: FacultyGroup[]): Promise<boolean> {
+  static async saveSignupFacultyGroups(groups: FacultyGroup[]): Promise<StorageWriteResult> {
     this.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, groups);
-    await fetch('/api/catalog/signup-faculties', {
+    return checkedFetch('/api/catalog/signup-faculties', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: safeStringify({ groups }),
-    }).catch(() => {});
-    return true;
+    });
   }
 
   static resetSignupFacultyGroups(): FacultyGroup[] {
@@ -3903,5 +3808,3 @@ export class StorageService {
     this.saveFullActivityLogs(logs);
   }
 }
-
-

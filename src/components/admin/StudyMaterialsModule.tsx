@@ -243,7 +243,8 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
         };
         const newList = materials.map((item) => (item.id === updated.id ? updated : item));
         onUpdateMaterials(newList);
-        StorageService.saveMaterials(newList);
+        const result = await StorageService.saveMaterials(newList);
+        if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
       } else {
         const newMat: StudyMaterial = {
           id: `mat-${Date.now()}`,
@@ -270,7 +271,8 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
         };
         const newList = [newMat, ...materials];
         onUpdateMaterials(newList);
-        StorageService.saveMaterials(newList);
+        const result = await StorageService.saveMaterials(newList);
+        if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
       }
 
       setIsProcessingFile(false);
@@ -281,20 +283,22 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
     }
   };
 
-  const handleDeleteMaterial = (id: string) => {
+  const handleDeleteMaterial = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this study material? This will update Database immediately.')) return;
     const newList = materials.filter((m) => m.id !== id);
     onUpdateMaterials(newList);
-    StorageService.saveMaterials(newList);
+    const result = await StorageService.saveMaterials(newList);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     if (viewingMaterial?.id === id) setViewingMaterial(null);
   };
 
   // --- Bulk Tier Action ---
-  const handleApplyBulkTier = () => {
+  const handleApplyBulkTier = async () => {
     if (selectedIds.length === 0 || !bulkTier) return;
     const newList = materials.map((m) => (selectedIds.includes(m.id) ? { ...m, accessLevel: bulkTier } : m));
     onUpdateMaterials(newList);
-    StorageService.saveMaterials(newList);
+    const result = await StorageService.saveMaterials(newList);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     setSelectedIds([]);
     setBulkTier('');
     alert(`Updated subscription access tier for ${selectedIds.length} materials.`);
