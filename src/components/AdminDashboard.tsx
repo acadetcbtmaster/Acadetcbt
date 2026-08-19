@@ -16,6 +16,7 @@ import {
   UserProfile
 } from '../types';
 import { StorageService, safeStringify, safeClone } from '../services/storage';
+import { downloadCsvFromRecords, downloadJson } from '../utils/fileExport';
 import { ApiClient } from '../services/apiClient';
 import { ACADEMIC_LEVELS, ACADEMIC_SEMESTERS } from '../utils/academicStructure';
 import { QuestionManagementModule } from './admin/QuestionManagementModule';
@@ -1113,19 +1114,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Export CSV Helper
-  const handleExportCSV = (filename: string, rows: any[]) => {
-    if (!rows || !rows.length) return;
-    const keys = Object.keys(rows[0]);
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [keys.join(','), ...rows.map((row) => keys.map((k) => `"${row[k] || ''}"`).join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${filename}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleExportCSV = <T extends object>(filename: string, rows: readonly T[]) => {
+    downloadCsvFromRecords(`${filename}.csv`, rows);
   };
 
   // Download Backup JSON
@@ -1139,13 +1129,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       settings,
       exportedAt: new Date().toISOString()
     };
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(safeStringify(backupData, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `cbt_master_backup_${Date.now()}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+    downloadJson(`cbt_master_backup_${Date.now()}.json`, backupData);
   };
 
   return (

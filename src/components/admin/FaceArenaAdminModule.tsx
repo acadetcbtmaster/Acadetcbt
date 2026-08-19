@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   FaceArenaSettings,
   FaceArenaQuestion,
   FaceArenaParticipant,
   FaceArenaArchive
 } from '../../types';
-import { StorageService, safeStringify } from '../../services/storage';
+import { StorageService } from '../../services/storage';
+import { downloadCsv, downloadJson } from '../../utils/fileExport';
+import { useToast } from '../../hooks/useToast';
+import { useStorageSync } from '../../hooks/useStorageSync';
 import {
   Trophy,
   Play,
@@ -67,7 +70,7 @@ export const FaceArenaAdminModule: React.FC = () => {
 
   // Weekly Challenge Control Form State
   const [newChallengeTitle, setNewChallengeTitle] = useState<string>('');
-  const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
+  const { toast, showToast: showNotice } = useToast(4000);
 
   // Smart AI Upload State
   const [isSmartUploadOpen, setIsSmartUploadOpen] = useState<boolean>(false);
@@ -80,11 +83,6 @@ export const FaceArenaAdminModule: React.FC = () => {
   const [previewSmartQuestions, setPreviewSmartQuestions] = useState<FaceArenaQuestion[]>([]);
   const [isSmartPreviewStep, setIsSmartPreviewStep] = useState<boolean>(false);
 
-  const showNotice = (msg: string) => {
-    setNotificationMsg(msg);
-    setTimeout(() => setNotificationMsg(null), 4000);
-  };
-
   // Sync state changes from storage
   const syncFromStorage = () => {
     setSettings(StorageService.getFaceArenaSettings());
@@ -93,11 +91,7 @@ export const FaceArenaAdminModule: React.FC = () => {
     setArchives(StorageService.getFaceArenaArchives());
   };
 
-  useEffect(() => {
-    syncFromStorage();
-    window.addEventListener('cbt_storage_change', syncFromStorage);
-    return () => window.removeEventListener('cbt_storage_change', syncFromStorage);
-  }, []);
+  useStorageSync(syncFromStorage, { immediate: true });
 
   // Save Settings Handler
   const handleSaveSettings = (updated: FaceArenaSettings) => {
@@ -202,13 +196,7 @@ export const FaceArenaAdminModule: React.FC = () => {
 
   // Export Questions JSON
   const handleExportQuestions = () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(safeStringify(questions, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `face_arena_questions_${Date.now()}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+    downloadJson(`face_arena_questions_${Date.now()}.json`, questions);
   };
 
   // Import Questions JSON
@@ -311,17 +299,31 @@ export const FaceArenaAdminModule: React.FC = () => {
 
   // Export Participant Records CSV
   const handleExportParticipantsCSV = () => {
-    let csv = 'Full Name,WhatsApp Number,Date,Time Started,Time Submitted,Time Used (s),Score,Total Questions,Percentage (%),Passed\n';
-    participants.forEach((p) => {
-      csv += `"${p.fullName}","${p.whatsAppNumber}","${p.date}","${p.timeStarted}","${p.timeSubmitted || ''}",${p.timeUsedSeconds},${p.score},${p.totalQuestions},${p.percentage}%,${p.passed}\n`;
-    });
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `face_arena_participants_${Date.now()}.csv`;
-    a.click();
+    const headers = [
+      'Full Name',
+      'WhatsApp Number',
+      'Date',
+      'Time Started',
+      'Time Submitted',
+      'Time Used (s)',
+      'Score',
+      'Total Questions',
+      'Percentage (%)',
+      'Passed',
+    ];
+    const rows = participants.map((p) => [
+      p.fullName,
+      p.whatsAppNumber,
+      p.date,
+      p.timeStarted,
+      p.timeSubmitted || '',
+      p.timeUsedSeconds,
+      p.score,
+      p.totalQuestions,
+      `${p.percentage}%`,
+      p.passed,
+    ]);
+    downloadCsv(`face_arena_participants_${Date.now()}.csv`, headers, rows);
   };
 
   // Start New Weekly Challenge (Archive current & start fresh)
@@ -376,11 +378,11 @@ export const FaceArenaAdminModule: React.FC = () => {
     <div className="space-y-6" id="face-arena-admin-module">
       
       {/* Top Banner Notice */}
-      {notificationMsg && (
+      {toast && (
         <div className="p-4 bg-emerald-500/20 border border-emerald-500/40 rounded-2xl text-emerald-300 text-xs font-bold flex items-center justify-between shadow-lg animate-fade-in">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-            <span>{notificationMsg}</span>
+            <span>{toast.text}</span>
           </div>
         </div>
       )}

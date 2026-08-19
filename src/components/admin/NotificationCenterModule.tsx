@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   AdminNotification,
   NotificationType,
@@ -11,6 +11,8 @@ import {
   UserProfile,
 } from '../../types';
 import { StorageService } from '../../services/storage';
+import { downloadCsv } from '../../utils/fileExport';
+import { useStorageSync } from '../../hooks/useStorageSync';
 import {
   Bell,
   Send,
@@ -87,14 +89,10 @@ export const NotificationCenterModule: React.FC<NotificationCenterModuleProps> =
   );
 
   // Sync state with storage changes
-  useEffect(() => {
-    const handleStorageChange = () => {
-      setNotifications(StorageService.getAdminNotifications());
-      setStudents(StorageService.getUsers());
-    };
-    window.addEventListener('cbt_storage_change', handleStorageChange);
-    return () => window.removeEventListener('cbt_storage_change', handleStorageChange);
-  }, []);
+  useStorageSync(() => {
+    setNotifications(StorageService.getAdminNotifications());
+    setStudents(StorageService.getUsers());
+  });
 
   // Filter & Search states
   const [searchTerm, setSearchTerm] = useState('');
@@ -400,7 +398,7 @@ export const NotificationCenterModule: React.FC<NotificationCenterModuleProps> =
     ];
     const rows = filteredNotifications.map((n) => [
       n.id,
-      `"${n.title.replace(/"/g, '""')}"`,
+      n.title,
       n.type,
       n.recipientGroup,
       n.priority,
@@ -413,14 +411,7 @@ export const NotificationCenterModule: React.FC<NotificationCenterModuleProps> =
       n.sentBy,
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `CBT_Notifications_Export_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCsv(`CBT_Notifications_Export_${Date.now()}.csv`, headers, rows);
   };
 
   return (

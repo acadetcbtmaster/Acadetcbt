@@ -46,6 +46,10 @@ import {
   RankingHistoryRecord,
 } from '../../types';
 import { StorageService } from '../../services/storage';
+import { useToast } from '../../hooks/useToast';
+import { useStorageSync } from '../../hooks/useStorageSync';
+import { SimpleToast } from '../ui/Toast';
+import { dateStamp, downloadCsv } from '../../utils/fileExport';
 
 interface LeaderboardManagementModuleProps {
   universities: University[];
@@ -86,7 +90,7 @@ export const LeaderboardManagementModule: React.FC<LeaderboardManagementModulePr
   // Confirmation Modals
   const [confirmResetType, setConfirmResetType] = useState<'weekly' | 'monthly' | 'all' | null>(null);
   const [isProcessingAction, setIsProcessingAction] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const { toast, showToast } = useToast();
 
   // Live Data Loading State
   const [isLoading, setIsLoading] = useState(false);
@@ -97,20 +101,11 @@ export const LeaderboardManagementModule: React.FC<LeaderboardManagementModulePr
   const [rankingHistory, setRankingHistory] = useState<RankingHistoryRecord[]>(() => StorageService.getRankingHistory());
 
   // Listen for storage changes
-  useEffect(() => {
-    const handleStorageChange = () => {
-      setRawUsers(StorageService.getUsers());
-      setRawResults(StorageService.getResults());
-      setRankingHistory(StorageService.getRankingHistory());
-    };
-    window.addEventListener('cbt_storage_change', handleStorageChange);
-    return () => window.removeEventListener('cbt_storage_change', handleStorageChange);
-  }, []);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
+  useStorageSync(() => {
+    setRawUsers(StorageService.getUsers());
+    setRawResults(StorageService.getResults());
+    setRankingHistory(StorageService.getRankingHistory());
+  });
 
   // --- AUTOMATIC RANKING ENGINE ---
   const calculatedLeaderboard = useMemo<LeaderboardStudentEntry[]>(() => {
@@ -417,41 +412,27 @@ export const LeaderboardManagementModule: React.FC<LeaderboardManagementModulePr
 
     const rows = sortedLeaderboard.map((item) => [
       item.rank,
-      `"${item.studentName}"`,
-      `"${item.studentIdCode}"`,
-      `"${item.universityName}"`,
-      `"${item.departmentName}"`,
-      `"${item.courseCode}"`,
+      item.studentName,
+      item.studentIdCode,
+      item.universityName,
+      item.departmentName,
+      item.courseCode,
       item.averageScore,
       item.highestScore,
       item.totalAttempts,
       `${item.completionRate}%`,
-      `"${item.badge}"`,
-      `"${item.subscriptionStatus}"`,
-      `"${new Date(item.lastCbtDate).toLocaleDateString()}"`,
+      item.badge,
+      item.subscriptionStatus,
+      new Date(item.lastCbtDate).toLocaleDateString(),
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `CBT_Master_Leaderboard_${selectedCategory}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCsv(`CBT_Master_Leaderboard_${selectedCategory}_${dateStamp()}.csv`, headers, rows);
     showToast('📥 Leaderboard dataset exported to CSV successfully!');
   };
 
   return (
     <div className="space-y-6" id="leaderboard-admin-module">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 bg-slate-900 border border-emerald-500/50 text-emerald-300 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          <span className="text-xs font-bold">{toastMessage}</span>
-        </div>
-      )}
+      <SimpleToast message={toast?.text ?? null} variant="highlight" />
 
       {/* --- Top Header & Action Controls --- */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">

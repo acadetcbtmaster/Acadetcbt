@@ -37,6 +37,7 @@ import {
 } from '../../types';
 import { MenCoreService, DEFAULT_MENCORE_SETTINGS, DEFAULT_MENCORE_KNOWLEDGE_BASE } from '../../services/mencoreService';
 import { MenCoreAvatar } from '../MenCoreLogo';
+import { downloadCsv } from '../../utils/fileExport';
 
 export const MenCoreManagementModule: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
@@ -211,29 +212,21 @@ export const MenCoreManagementModule: React.FC = () => {
       alert('No conversation logs available to export.');
       return;
     }
-    const headers = ['id,userId,userName,userEmail,userRole,question,answer,questionType,wasHelpful,starRating,createdAt'];
-    const rows = logs.map((l) =>
-      [
-        l.id,
-        l.userId,
-        `"${l.userName}"`,
-        l.userEmail,
-        l.userRole,
-        `"${l.question.replace(/"/g, '""')}"`,
-        `"${l.answer.replace(/"/g, '""')}"`,
-        l.questionType,
-        l.wasHelpful ?? '',
-        l.starRating ?? '',
-        l.createdAt,
-      ].join(',')
-    );
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].join('\n');
-    const link = document.createElement('a');
-    link.setAttribute('href', encodeURI(csvContent));
-    link.setAttribute('download', `mencore_conversation_logs_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const headers = ['id', 'userId', 'userName', 'userEmail', 'userRole', 'question', 'answer', 'questionType', 'wasHelpful', 'starRating', 'createdAt'];
+    const rows = logs.map((l) => [
+      l.id,
+      l.userId,
+      l.userName,
+      l.userEmail,
+      l.userRole,
+      l.question,
+      l.answer,
+      l.questionType,
+      l.wasHelpful ?? '',
+      l.starRating ?? '',
+      l.createdAt,
+    ]);
+    downloadCsv(`mencore_conversation_logs_${Date.now()}.csv`, headers, rows);
   };
 
   const filteredKb = knowledgeBase.filter(

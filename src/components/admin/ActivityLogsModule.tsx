@@ -8,6 +8,9 @@ import {
   UserProfile
 } from '../../types';
 import { StorageService, safeStringify } from '../../services/storage';
+import { useToast } from '../../hooks/useToast';
+import { SimpleToast } from '../ui/Toast';
+import { dateStamp, downloadCsv } from '../../utils/fileExport';
 import {
   Activity,
   ShieldAlert,
@@ -61,7 +64,7 @@ export const ActivityLogsModule: React.FC<ActivityLogsModuleProps> = ({
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [retentionDays, setRetentionDays] = useState<number>(30);
   const [terminateSessionId, setTerminateSessionId] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const { toast, showToast: triggerToast } = useToast();
 
   // Load Data
   const loadData = () => {
@@ -74,11 +77,6 @@ export const ActivityLogsModule: React.FC<ActivityLogsModuleProps> = ({
   useEffect(() => {
     loadData();
   }, []);
-
-  const triggerToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
 
   // Filtered Logs Calculation
   const filteredLogs = logs.filter((log) => {
@@ -149,25 +147,18 @@ export const ActivityLogsModule: React.FC<ActivityLogsModuleProps> = ({
     const rows = filteredLogs.map((l) => [
       l.id,
       new Date(l.timestamp).toLocaleString(),
-      `"${l.userName}"`,
+      l.userName,
       l.userRole,
       l.userEmail || '',
-      `"${l.category}"`,
-      `"${l.action}"`,
-      `"${l.module}"`,
+      l.category,
+      l.action,
+      l.module,
       l.ipAddress,
-      `"${l.device || ''}"`,
+      l.device || '',
       l.status
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `activity_logs_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCsv(`activity_logs_${dateStamp()}.csv`, headers, rows);
     triggerToast(`Exported ${filteredLogs.length} activity logs to CSV.`);
   };
 
@@ -209,13 +200,7 @@ export const ActivityLogsModule: React.FC<ActivityLogsModuleProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-20 right-8 z-50 bg-slate-800 border border-indigo-500/30 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-          <span className="text-xs font-semibold">{toastMessage}</span>
-        </div>
-      )}
+      <SimpleToast message={toast?.text ?? null} />
 
       {/* Header & Main Control Bar */}
       <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 p-6 rounded-3xl shadow-xl flex flex-wrap items-center justify-between gap-4">

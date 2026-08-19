@@ -47,6 +47,10 @@ import {
 } from '../../types';
 import { StorageService } from '../../services/storage';
 import { hasPermission } from '../../utils/rbac';
+import { useToast } from '../../hooks/useToast';
+import { useStorageSync } from '../../hooks/useStorageSync';
+import { SimpleToast } from '../ui/Toast';
+import { dateStamp, downloadCsv } from '../../utils/fileExport';
 
 interface PaymentSubscriptionModuleProps {
   students: UserProfile[];
@@ -139,27 +143,11 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
   const itemsPerPage = 10;
 
   // Toast Notice
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const { toast, showToast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Sync state with storage events
-  useEffect(() => {
-    const handleStorageChange = () => {
-      setTransactions(StorageService.getTransactions());
-    };
-    window.addEventListener('cbt_storage_change', handleStorageChange);
-    window.addEventListener('storage', handleStorageChange);
-
-    return () => {
-      window.removeEventListener('cbt_storage_change', handleStorageChange);
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, []);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
+  useStorageSync(() => setTransactions(StorageService.getTransactions()), { includeNativeStorage: true });
 
   // --- REVENUE & METRICS COMPUTATIONS ---
   const metrics = useMemo(() => {
@@ -692,26 +680,18 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
 
     const rows = filteredTransactions.map((t) => [
       t.paymentId || t.id,
-      `"${t.reference}"`,
-      `"${t.userName}"`,
-      `"${t.userEmail}"`,
-      `"${t.universityName || 'FUL'}"`,
-      `"${t.planName}"`,
+      t.reference,
+      t.userName,
+      t.userEmail,
+      t.universityName || 'FUL',
+      t.planName,
       t.amount,
-      `"${t.gateway}"`,
-      `"${t.status}"`,
-      `"${new Date(t.date).toLocaleDateString()}"`,
+      t.gateway,
+      t.status,
+      new Date(t.date).toLocaleDateString(),
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `CBT_Payment_Transactions_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCsv(`CBT_Payment_Transactions_${dateStamp()}.csv`, headers, rows);
     showToast('📥 Payment transactions exported to CSV!');
   };
 
@@ -740,13 +720,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
 
   return (
     <div className="space-y-6" id="payment-subscription-admin-module">
-      {/* Toast Notice */}
-      {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 bg-slate-900 border border-emerald-500/50 text-emerald-300 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          <span className="text-xs font-bold">{toastMessage}</span>
-        </div>
-      )}
+      <SimpleToast message={toast?.text ?? null} variant="highlight" />
 
       {/* --- Top Header & Revenue Metrics --- */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">

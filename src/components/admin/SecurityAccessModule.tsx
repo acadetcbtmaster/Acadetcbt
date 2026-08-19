@@ -39,6 +39,9 @@ import {
   Clock
 } from 'lucide-react';
 import { StorageService, safeStringify } from '../../services/storage';
+import { useToast } from '../../hooks/useToast';
+import { StatusToast } from '../ui/Toast';
+import { downloadJson } from '../../utils/fileExport';
 
 export interface SecuritySessionItem {
   id: string;
@@ -100,12 +103,7 @@ export const SecurityAccessModule: React.FC = () => {
   const [newIpToBlock, setNewIpToBlock] = useState('');
 
   // Toast Notification
-  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
-
-  const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
-    setToastMessage({ text, type });
-    setTimeout(() => setToastMessage(null), 4000);
-  };
+  const { toast, showToast } = useToast(4000);
 
   // ---------------------------------------------------------------------------
   // SEED DATA & STATE
@@ -299,20 +297,13 @@ export const SecurityAccessModule: React.FC = () => {
   };
 
   const handleExportSecurityReport = (format: 'PDF' | 'EXCEL' | 'CSV') => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(safeStringify({
+    downloadJson(`security_audit_report_${Date.now()}.${format.toLowerCase()}`, {
       reportTitle: 'CBT Master Security & Access Audit Export',
       activeSessionsCount: activeSessions.length,
       blockedIpsCount: blockedIps.length,
       registeredDevicesCount: devicesList.length,
       exportedAt: new Date().toISOString()
-    }, 2));
-
-    const dl = document.createElement('a');
-    dl.setAttribute('href', dataStr);
-    dl.setAttribute('download', `security_audit_report_${Date.now()}.${format.toLowerCase()}`);
-    document.body.appendChild(dl);
-    dl.click();
-    document.body.removeChild(dl);
+    });
 
     showToast(`Security Report exported as ${format}.`, 'success');
   };
@@ -320,19 +311,7 @@ export const SecurityAccessModule: React.FC = () => {
   return (
     <div className="space-y-6" id="security-access-module-root">
       
-      {/* Toast Alert */}
-      {toastMessage && (
-        <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border text-xs font-bold transition-all animate-in fade-in slide-in-from-top-3 ${
-          toastMessage.type === 'error'
-            ? 'bg-rose-950/90 text-rose-200 border-rose-500/50'
-            : toastMessage.type === 'info'
-            ? 'bg-sky-950/90 text-sky-200 border-sky-500/50'
-            : 'bg-emerald-950/90 text-emerald-200 border-emerald-500/50'
-        }`}>
-          {toastMessage.type === 'error' ? <AlertOctagon className="w-5 h-5 text-rose-400" /> : <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-          <span>{toastMessage.text}</span>
-        </div>
-      )}
+      <StatusToast toast={toast} />
 
       {/* Top Header Banner */}
       <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
