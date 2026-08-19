@@ -10,6 +10,7 @@ import {
   QuestionVersion,
 } from '../../types';
 import { StorageService, safeStringify } from '../../services/storage';
+import type { StorageWriteResult } from '../../services/storage';
 import { ApiClient } from '../../services/apiClient';
 import { ACADEMIC_LEVELS, ACADEMIC_SEMESTERS, normalizeLevel, normalizeSemester } from '../../utils/academicStructure';
 import {
@@ -60,6 +61,18 @@ interface QuestionManagementModuleProps {
   onUpdateQuestions: (updatedQuestions: Question[]) => void;
   activeSubTab?: 'list' | 'upload' | 'workflow' | 'analytics' | 'history';
 }
+
+const reportQuestionWriteResult = (result: StorageWriteResult, questionId: string): void => {
+  if (!result.success) {
+    alert(`Local copy saved, but the database write failed: ${result.error}`);
+    return;
+  }
+
+  const skipped = result.skipped?.find((item) => item.id === questionId);
+  if (skipped) {
+    alert(`Local copy saved, but question ${questionId} was skipped by the database sync: ${skipped.reason}`);
+  }
+};
 
 export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> = ({
   questions,
@@ -363,7 +376,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
       const newList = questions.map((item) => (item.id === updated.id ? updated : item));
       onUpdateQuestions(newList);
       const result = await StorageService.saveQuestions(newList);
-      if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
+      reportQuestionWriteResult(result, updated.id);
     } else {
       const newQuestion: Question = {
         id: `q-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -394,7 +407,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
       const newList = [newQuestion, ...questions];
       onUpdateQuestions(newList);
       const result = await StorageService.saveQuestions(newList);
-      if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
+      reportQuestionWriteResult(result, newQuestion.id);
     }
 
     setIsAddModalOpen(false);
@@ -423,7 +436,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
     const newList = [dup, ...questions];
     onUpdateQuestions(newList);
     const result = await StorageService.saveQuestions(newList);
-    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
+    reportQuestionWriteResult(result, dup.id);
   };
 
   const handleStatusChange = async (q: Question, newStatus: QuestionStatus) => {
@@ -436,7 +449,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
     const newList = questions.map((item) => (item.id === q.id ? updated : item));
     onUpdateQuestions(newList);
     const result = await StorageService.saveQuestions(newList);
-    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
+    reportQuestionWriteResult(result, q.id);
   };
 
   // --- Bulk Operations ---

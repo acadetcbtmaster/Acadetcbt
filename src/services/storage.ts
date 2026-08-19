@@ -79,15 +79,19 @@ import {
   syncPlansToSupabase,
   deletePlanFromSupabase,
 } from '../lib/supabase';
+import type { SkippedSyncItem } from '../lib/supabase';
 import { fromRow } from '../lib/dbMappers';
 
 // Custom safe serializer handled by safeStringify and safeClone without altering global JSON.stringify
 export interface StorageWriteResult {
   success: boolean;
   error?: string;
+  skipped?: SkippedSyncItem[];
 }
 
-const successfulWrite = (): StorageWriteResult => ({ success: true });
+const successfulWrite = (skipped?: SkippedSyncItem[]): StorageWriteResult => (
+  skipped && skipped.length > 0 ? { success: true, skipped } : { success: true }
+);
 const failedWrite = (error: unknown): StorageWriteResult => ({
   success: false,
   error: error instanceof Error ? error.message : String(error || 'Remote write failed'),
@@ -110,7 +114,11 @@ async function checkedFetch(input: RequestInfo | URL, init?: RequestInit): Promi
 
 function firstWriteError(results: StorageWriteResult[]): StorageWriteResult {
   const error = results.find((result) => !result.success);
-  return error || successfulWrite();
+  const skipped = results.flatMap((result) => result.skipped || []);
+  if (error) {
+    return skipped.length > 0 ? { ...error, skipped } : error;
+  }
+  return successfulWrite(skipped);
 }
 
 export enum OperationType {
