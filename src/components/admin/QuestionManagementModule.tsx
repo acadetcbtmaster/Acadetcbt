@@ -318,7 +318,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
     setIsAddModalOpen(true);
   };
 
-  const handleSaveQuestionForm = (e: React.FormEvent) => {
+  const handleSaveQuestionForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!qText.trim()) return;
 
@@ -362,7 +362,8 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
 
       const newList = questions.map((item) => (item.id === updated.id ? updated : item));
       onUpdateQuestions(newList);
-      StorageService.saveQuestions(newList);
+      const result = await StorageService.saveQuestions(newList);
+      if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     } else {
       const newQuestion: Question = {
         id: `q-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -392,21 +393,23 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
 
       const newList = [newQuestion, ...questions];
       onUpdateQuestions(newList);
-      StorageService.saveQuestions(newList);
+      const result = await StorageService.saveQuestions(newList);
+      if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     }
 
     setIsAddModalOpen(false);
   };
 
-  const handleDeleteQuestion = (id: string) => {
+  const handleDeleteQuestion = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this question? This action will sync immediately to Supabase Database.')) return;
     const newList = questions.filter((q) => q.id !== id);
     onUpdateQuestions(newList);
-    StorageService.saveQuestions(newList);
+    const result = await StorageService.saveQuestions(newList);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     if (viewingQuestion?.id === id) setViewingQuestion(null);
   };
 
-  const handleDuplicateQuestion = (q: Question) => {
+  const handleDuplicateQuestion = async (q: Question) => {
     const dup: Question = {
       ...q,
       id: `q-dup-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -419,10 +422,11 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
     };
     const newList = [dup, ...questions];
     onUpdateQuestions(newList);
-    StorageService.saveQuestions(newList);
+    const result = await StorageService.saveQuestions(newList);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
   };
 
-  const handleStatusChange = (q: Question, newStatus: QuestionStatus) => {
+  const handleStatusChange = async (q: Question, newStatus: QuestionStatus) => {
     const updated: Question = {
       ...q,
       status: newStatus,
@@ -431,7 +435,8 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
     };
     const newList = questions.map((item) => (item.id === q.id ? updated : item));
     onUpdateQuestions(newList);
-    StorageService.saveQuestions(newList);
+    const result = await StorageService.saveQuestions(newList);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
   };
 
   // --- Bulk Operations ---
@@ -453,7 +458,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
     if (!bulkAction) return;
 
     setIsProcessingBulk(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       let newList = [...questions];
 
       if (bulkAction === 'publish') {
@@ -477,7 +482,8 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
       }
 
       onUpdateQuestions(newList);
-      StorageService.saveQuestions(newList);
+      const result = await StorageService.saveQuestions(newList);
+      if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
       setSelectedQuestionIds([]);
       setBulkAction('');
       setIsProcessingBulk(false);
@@ -623,7 +629,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
     }
   };
 
-  const handleSaveExtractedQuestions = () => {
+  const handleSaveExtractedQuestions = async () => {
     if (extractedQuestions.length === 0) return;
     const selectedCourseObj = courses.find((c) => c.id === qCourseId);
     const selectedUniObj = universities.find((u) => u.id === qUniversityId);
@@ -655,7 +661,8 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
 
     const newList = [...newItems, ...questions];
     onUpdateQuestions(newList);
-    StorageService.saveQuestions(newList);
+    const result = await StorageService.saveQuestions(newList);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     setExtractedQuestions([]);
     alert(`Successfully imported ${newItems.length} questions assigned to ${selectedUniObj?.abbreviation || 'University'} - ${selectedCourseObj?.code || 'Course'} (${qLevel || '100 Level'}) into the Smart Question Review Workflow (Pending State).`);
     setCurrentSubTab('workflow');

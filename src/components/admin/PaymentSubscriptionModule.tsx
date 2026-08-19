@@ -602,7 +602,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
   };
 
   // --- PLAN FORM HANDLERS ---
-  const handleSavePlan = (e: React.FormEvent) => {
+  const handleSavePlan = async (e: React.FormEvent) => {
     e.preventDefault();
     let updatedPlans: SubscriptionPlan[];
 
@@ -647,21 +647,23 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
     }
 
     onUpdatePlans(updatedPlans);
-    StorageService.saveSubscriptionPlans(updatedPlans);
+    const result = await StorageService.saveSubscriptionPlans(updatedPlans);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     setIsPlanModalOpen(false);
     setEditingPlan(null);
   };
 
-  const handleDeletePlan = (planId: string, planName: string) => {
+  const handleDeletePlan = async (planId: string, planName: string) => {
     if (confirm(`Are you sure you want to permanently delete the plan "${planName}"?`)) {
-      StorageService.deleteSubscriptionPlan(planId);
+      const result = await StorageService.deleteSubscriptionPlan(planId);
+      if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
       const updated = plans.filter((p) => p.id !== planId);
       onUpdatePlans(updated);
       showToast(`Plan "${planName}" permanently deleted from Database.`);
     }
   };
 
-  const handleTogglePlanActive = (plan: SubscriptionPlan) => {
+  const handleTogglePlanActive = async (plan: SubscriptionPlan) => {
     const newActive = plan.active === false;
     const updatedPlan: SubscriptionPlan = {
       ...plan,
@@ -671,7 +673,8 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
     };
     const updatedPlans = plans.map((p) => (p.id === plan.id ? updatedPlan : p));
     onUpdatePlans(updatedPlans);
-    StorageService.saveSubscriptionPlans(updatedPlans);
+    const result = await StorageService.saveSubscriptionPlans(updatedPlans);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     showToast(`Plan "${plan.name}" is now ${newActive ? 'Enabled' : 'Disabled'}.`);
   };
 
