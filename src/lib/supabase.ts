@@ -172,20 +172,34 @@ function getAuthHeaders(): Record<string, string> {
 export interface SyncResult {
   success: boolean;
   error?: string;
+  skipped?: SkippedSyncItem[];
 }
 
-const ok = (): SyncResult => ({ success: true });
-const fail = (error: unknown): SyncResult => ({
+export interface SkippedSyncItem {
+  id: string;
+  reason: string;
+}
+
+const ok = (skipped?: SkippedSyncItem[]): SyncResult => (
+  skipped && skipped.length > 0 ? { success: true, skipped } : { success: true }
+);
+const fail = (error: unknown, skipped?: SkippedSyncItem[]): SyncResult => ({
   success: false,
   error: error instanceof Error ? error.message : String(error || 'Unknown Supabase error'),
+  ...(skipped && skipped.length > 0 ? { skipped } : {}),
 });
 
 async function responseResult(response: Response): Promise<SyncResult> {
-  if (response.ok) return ok();
   try {
-    const body = await response.json();
-    return fail(body?.error || body?.message || `Request failed with HTTP ${response.status}`);
+    const body = await response.json() as Record<string, unknown>;
+    if (response.ok) {
+      const skipped = Array.isArray(body.skipped) ? body.skipped as SkippedSyncItem[] : undefined;
+      return ok(skipped);
+    }
+    const skipped = Array.isArray(body.skipped) ? body.skipped as SkippedSyncItem[] : undefined;
+    return fail(body.error || body.message || `Request failed with HTTP ${response.status}`, skipped);
   } catch {
+    if (response.ok) return ok();
     return fail(`Request failed with HTTP ${response.status}`);
   }
 }

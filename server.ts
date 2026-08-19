@@ -33,6 +33,7 @@ import {
   userFromRow,
   userToRow,
 } from "./src/lib/dbMappers";
+import type { Question } from "./src/types";
 
 dotenv.config();
 
@@ -1977,6 +1978,57 @@ function requireAdminPermission(permission: string) {
   };
 }
 
+type QuestionPayload = Partial<Question> & Record<string, unknown>;
+
+interface SkippedQuestion {
+  id: string;
+  reason: string;
+}
+
+function questionPayloadValue(item: QuestionPayload, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = item[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function validateQuestionBatch(items: unknown[]): {
+  valid: QuestionPayload[];
+  skipped: SkippedQuestion[];
+} {
+  const valid: QuestionPayload[] = [];
+  const skipped: SkippedQuestion[] = [];
+
+  items.forEach((rawItem, index) => {
+    const item: QuestionPayload = rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem)
+      ? rawItem as QuestionPayload
+      : {};
+    const id = questionPayloadValue(item, 'id') || `<missing-id-${index + 1}>`;
+    const missing: string[] = [];
+    if (!questionPayloadValue(item, 'id')) missing.push('id');
+    if (!questionPayloadValue(item, 'question', 'question_text')) missing.push('question text');
+
+    const questionType = questionPayloadValue(item, 'questionType', 'question_type');
+    const requiresMcqFields = !questionType || questionType === 'MCQ';
+    if (requiresMcqFields) {
+      if (!questionPayloadValue(item, 'optionA', 'option_a')) missing.push('option A');
+      if (!questionPayloadValue(item, 'optionB', 'option_b')) missing.push('option B');
+      if (!questionPayloadValue(item, 'optionC', 'option_c')) missing.push('option C');
+      if (!questionPayloadValue(item, 'optionD', 'option_d')) missing.push('option D');
+      if (!questionPayloadValue(item, 'correctAnswer', 'correct_answer')) missing.push('correct answer');
+    }
+
+    if (missing.length > 0) {
+      skipped.push({ id, reason: `Missing ${missing.join(', ')}` });
+    } else {
+      valid.push(item);
+    }
+  });
+
+  return { valid, skipped };
+}
+
 // Unified Admin Login Endpoint for ALL 9 Roles
 app.post('/api/admin/login', async (req, res) => {
   const clientIp = req.ip || req.socket.remoteAddress || 'global_client';
@@ -2563,13 +2615,19 @@ app.post("/api/supabase/migrate-seed", requireAdminPermission('manage_settings')
       summary.courses = records.length;
     }
 
+    const skippedQuestions: SkippedQuestion[] = [];
     if (Array.isArray(questions) && questions.length > 0) {
-      const invalid = questions.find((q: any) => !q.question && !q.question_text || !q.optionA && !q.option_a || !q.optionB && !q.option_b || !q.optionC && !q.option_c || !q.optionD && !q.option_d || !q.correctAnswer && !q.correct_answer);
-      if (invalid) return res.status(400).json({ success: false, error: "Each question requires question text, options A-D, and a correct answer." });
-      const records = questions.map((q: any) => questionToRow(q));
-      const { error } = await supabase.from("questions").upsert(records);
-      if (error) throw new Error(error.message);
-      summary.questions = records.length;
+      const { valid, skipped } = validateQuestionBatch(questions as QuestionPayload[]);
+      skippedQuestions.push(...skipped);
+      if (skipped.length > 0) {
+        console.warn('[Supabase] Skipped invalid seed questions:', skipped);
+      }
+      if (valid.length > 0) {
+        const records = valid.map((q) => questionToRow(q as Partial<Question> & { id: string }));
+        const { error } = await supabase.from("questions").upsert(records);
+        if (error) throw new Error(error.message);
+        summary.questions = records.length;
+      }
     }
 
     if (Array.isArray(materials) && materials.length > 0) {
@@ -2590,6 +2648,7 @@ app.post("/api/supabase/migrate-seed", requireAdminPermission('manage_settings')
       success: true,
       message: "Data seeded to Supabase successfully.",
       migrated: summary,
+      skipped: skippedQuestions,
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || "Migration failed." });
@@ -2757,27 +2816,21 @@ app.delete("/api/catalog/courses/:id", requireAdminPermission('manage_courses'),
 app.post("/api/catalog/questions", requireAdminPermission('manage_questions'), async (req, res) => {
   try {
     const { questions, question } = req.body;
-    const items = questions || (question ? [question] : []);
-    if (items.length === 0) {
+    const rawItems = questions || (question ? [question] : []);
+    if (!Array.isArray(rawItems) || rawItems.length === 0) {
       return res.status(400).json({ success: false, error: "No question data provided." });
     }
-    const invalid = items.find((q: any) =>
-      !q.question && !q.question_text ||
-      !q.optionA && !q.option_a ||
-      !q.optionB && !q.option_b ||
-      !q.optionC && !q.option_c ||
-      !q.optionD && !q.option_d ||
-      !q.correctAnswer && !q.correct_answer
-    );
-    if (invalid) {
-      return res.status(400).json({ success: false, error: "Each question requires question text, options A-D, and a correct answer." });
+    const { valid, skipped } = validateQuestionBatch(rawItems as QuestionPayload[]);
+    if (skipped.length > 0) {
+      console.warn('[Supabase] Skipped invalid catalog questions:', skipped);
     }
     const supabase = getSupabaseAdminClient();
-    if (supabase) {
-      const { error } = await supabase.from("questions").upsert(items.map((q: any) => questionToRow(q)));
-      if (error) return res.status(500).json({ success: false, error: error.message });
+    if (supabase && valid.length > 0) {
+      const records = valid.map((q) => questionToRow(q as Partial<Question> & { id: string }));
+      const { error } = await supabase.from("questions").upsert(records);
+      if (error) return res.status(500).json({ success: false, error: error.message, skipped });
     }
-    return res.json({ success: true, count: items.length });
+    return res.json({ success: true, count: valid.length, skipped });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || "Failed to save question(s)." });
   }
