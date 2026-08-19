@@ -1,4 +1,4 @@
-import { Question } from '../types';
+import { Question, SEED_QUESTIONS } from '../types';
 
 /**
  * Fisher-Yates (Knuth) Shuffle algorithm for unbiased random shuffling
@@ -25,11 +25,16 @@ export function selectRandomQuestions(
   count: number | 'unlimited' = 5,
   seenQuestionIds: string[] = []
 ): { selected: Question[]; newlySeenIds: string[] } {
-  // 1. Filter by status (Published)
-  let pool = allQuestions.filter((q) => q.status === 'Published');
+  const sourceQuestions = (allQuestions && allQuestions.length > 0) ? allQuestions : SEED_QUESTIONS;
 
-  // 2. Filter by course
-  if (courseId) {
+  // 1. Filter by status (allow Published, Active, or undefined)
+  let pool = sourceQuestions.filter((q) => !q.status || q.status.toLowerCase() === 'published' || q.status.toLowerCase() === 'active');
+  if (pool.length === 0) {
+    pool = [...sourceQuestions];
+  }
+
+  // 2. Filter by course if specified
+  if (courseId && courseId !== 'all') {
     const cleanTarget = courseId.trim().toLowerCase().replace(/\s+/g, '');
     const courseFiltered = pool.filter((q) => {
       if (q.courseId === courseId) return true;
@@ -44,17 +49,23 @@ export function selectRandomQuestions(
 
   // 3. Filter by topic if specified
   if (topicId && topicId !== 'all') {
-    pool = pool.filter((q) => q.topicId === topicId);
+    const topicFiltered = pool.filter((q) => q.topicId === topicId);
+    if (topicFiltered.length > 0) {
+      pool = topicFiltered;
+    }
   }
 
   // 4. Filter by difficulty if specified
   if (difficulty && difficulty !== 'all') {
-    pool = pool.filter((q) => q.difficulty === difficulty);
+    const diffFiltered = pool.filter((q) => q.difficulty?.toLowerCase() === difficulty.toLowerCase());
+    if (diffFiltered.length > 0) {
+      pool = diffFiltered;
+    }
   }
 
-  // Fallback to general published pool if filter yields empty
+  // Fallback to general pool if filter yields empty
   if (pool.length === 0) {
-    pool = allQuestions.filter((q) => q.status === 'Published');
+    pool = [...sourceQuestions];
   }
 
   // 5. Strict Deduplication by ID and normalized question text

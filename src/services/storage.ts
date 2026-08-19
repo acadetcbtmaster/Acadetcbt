@@ -1317,7 +1317,11 @@ export class StorageService {
 
   // Questions
   static getQuestions(): Question[] {
-    return this.getItem<Question[]>(STORAGE_KEYS.QUESTIONS, []);
+    const list = this.getItem<Question[]>(STORAGE_KEYS.QUESTIONS, SEED_QUESTIONS);
+    if (!list || !Array.isArray(list) || list.length === 0) {
+      return SEED_QUESTIONS;
+    }
+    return list;
   }
 
   static async clearAllQuestions(): Promise<boolean> {

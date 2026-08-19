@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
-import { UserProfile, Question, University, Course, Topic, TestSessionResult } from '../types';
+import { UserProfile, Question, University, Course, Topic, TestSessionResult, SEED_QUESTIONS } from '../types';
 import { selectRandomQuestions } from '../utils/questionRandomizer';
 import { safeStringify } from '../services/storage';
 import { ApiClient } from '../services/apiClient';
@@ -174,14 +174,20 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
 
     const { selected } = selectRandomQuestions(
       questions,
-      selectedCourseId,
+      selectedCourseId || 'all',
       selectedTopicId,
       selectedDifficulty,
       targetCount,
       user?.seenQuestionIds || []
     );
 
-    setActiveQuestions(selected);
+    let finalQuestions = selected;
+    if (!finalQuestions || finalQuestions.length === 0) {
+      const fallback = selectRandomQuestions(questions, 'all', 'all', 'all', targetCount, []);
+      finalQuestions = fallback.selected.length > 0 ? fallback.selected : SEED_QUESTIONS.slice(0, typeof targetCount === 'number' ? targetCount : 10);
+    }
+
+    setActiveQuestions(finalQuestions);
     setCurrentIndex(0);
     setUserAnswers({});
     setMarkedForReview([]);
@@ -1135,6 +1141,25 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
             </div>
 
           </div>
+        </div>
+      )}
+
+      {/* Empty Questions Fallback Guard */}
+      {step === 'active' && (!currentQ || activeQuestions.length === 0) && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center max-w-lg mx-auto space-y-4 shadow-xl">
+          <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-8 h-8" />
+          </div>
+          <h3 className="text-xl font-bold text-white">No Questions Available</h3>
+          <p className="text-slate-400 text-sm leading-relaxed">
+            There are currently no active questions matching this course selection. Please choose a different course or adjust your filter.
+          </p>
+          <button
+            onClick={() => setStep('config')}
+            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer"
+          >
+            Back to Setup
+          </button>
         </div>
       )}
 
