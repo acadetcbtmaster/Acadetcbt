@@ -46,6 +46,50 @@ const getSupabaseServiceKey = (): string => {
 let cachedClient: SupabaseClient | null = null;
 let cachedAdminClient: SupabaseClient | null = null;
 
+class NoopWebSocket {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+
+  readonly CONNECTING = NoopWebSocket.CONNECTING;
+  readonly OPEN = NoopWebSocket.OPEN;
+  readonly CLOSING = NoopWebSocket.CLOSING;
+  readonly CLOSED = NoopWebSocket.CLOSED;
+  readonly readyState = this.CLOSED;
+  readonly url: string;
+  readonly protocol = '';
+  onopen: ((this: NoopWebSocket, event: Event) => void) | null = null;
+  onmessage: ((this: NoopWebSocket, event: MessageEvent) => void) | null = null;
+  onerror: ((this: NoopWebSocket, event: Event) => void) | null = null;
+  onclose: ((this: NoopWebSocket, event: CloseEvent) => void) | null = null;
+  binaryType = 'blob';
+  bufferedAmount = 0;
+  extensions = '';
+
+  constructor(url: string | URL, _subprotocols?: string | string[]) {
+    this.url = String(url);
+  }
+
+  addEventListener(_type: string, _listener: EventListener): void {}
+  removeEventListener(_type: string, _listener: EventListener): void {}
+  send(_data: string | ArrayBufferLike | Blob | ArrayBufferView): void {}
+  close(_code?: number, _reason?: string): void {}
+}
+
+type RealtimeOptions = NonNullable<NonNullable<Parameters<typeof createClient>[2]>['realtime']>;
+
+function getRealtimeOptions(): RealtimeOptions | undefined {
+  const isNode = typeof window === 'undefined' && typeof process !== 'undefined' && Boolean(process.versions?.node);
+  const hasWebSocket = typeof (globalThis as { WebSocket?: unknown }).WebSocket !== 'undefined';
+  return isNode && !hasWebSocket ? { transport: NoopWebSocket } : undefined;
+}
+
+function logInitializationFailure(kind: 'client' | 'admin client', error: unknown): void {
+  const reason = error instanceof Error ? error.message : String(error);
+  console.error(`[Supabase] Supabase persistence is disabled: ${kind} initialization failed. Cause: ${reason}`);
+}
+
 /**
  * Checks if Supabase URL and Anon Key are set in the environment
  */
@@ -73,9 +117,10 @@ export function getSupabaseClient(): SupabaseClient | null {
           persistSession: true,
           autoRefreshToken: true,
         },
+        realtime: getRealtimeOptions(),
       });
     } catch (err) {
-      console.warn('[Supabase] Client initialization notice:', err);
+      logInitializationFailure('client', err);
       return null;
     }
   }
@@ -101,9 +146,10 @@ export function getSupabaseAdminClient(): SupabaseClient | null {
           persistSession: false,
           autoRefreshToken: false,
         },
+        realtime: getRealtimeOptions(),
       });
     } catch (err) {
-      console.warn('[Supabase] Admin client initialization notice:', err);
+      logInitializationFailure('admin client', err);
       return null;
     }
   }
