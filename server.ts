@@ -49,6 +49,8 @@ try {
           credential: firebaseAdminCert({ projectId, clientEmail, privateKey }),
         });
     firebaseAdminAuth = getFirebaseAdminAuth(adminApp);
+  } else {
+    console.warn("[Security] Firebase Admin credentials are missing; unauthenticated profile sync is enabled. Configure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in production.");
   }
 } catch (e) {
   console.warn("Server-side Firebase Admin Auth initialization notice:", e);
@@ -2365,7 +2367,19 @@ app.get(['/api/payments', '/api/admin/payments'], requireAdminPermission('manage
     if (supabase) {
       const { data: payments } = await supabase.from('payments').select('*').order('created_at', { ascending: false }).limit(200);
       if (payments) {
-        return res.json({ success: true, transactions: payments });
+        const transactions = payments.map((p: any) => ({
+          id: p.id,
+          reference: p.reference,
+          userId: p.user_id || p.userId,
+          userEmail: p.user_email || p.userEmail,
+          amount: Number(p.amount || 0),
+          gateway: p.gateway || 'squad',
+          status: p.status || 'success',
+          planId: p.plan_id || p.planId,
+          metadata: p.metadata || {},
+          createdAt: p.created_at || new Date().toISOString(),
+        }));
+        return res.json({ success: true, transactions });
       }
     }
   } catch (err: any) {
@@ -2381,7 +2395,21 @@ app.get('/api/admin/students', requireAdminPermission('manage_students'), async 
     if (supabase) {
       const { data: users } = await supabase.from('users').select('*').order('created_at', { ascending: false }).limit(500);
       if (users) {
-        return res.json({ success: true, students: users });
+        const students = users.map((u: any) => ({
+          id: u.id,
+          name: u.full_name || u.name || 'Student',
+          fullName: u.full_name || u.name || 'Student',
+          username: u.username || '',
+          email: u.email,
+          phone: u.phone || '',
+          role: u.role || 'student',
+          universityName: u.university_name || '',
+          departmentName: u.department_name || '',
+          subscription: u.subscription || { isPremium: false, plan: 'Free Tier' },
+          bookmarks: u.bookmarks || [],
+          streakCount: u.streak_count || 0,
+        }));
+        return res.json({ success: true, students });
       }
     }
   } catch (err: any) {

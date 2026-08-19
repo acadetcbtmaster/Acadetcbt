@@ -887,14 +887,6 @@ export class StorageService {
               this.memoryCache.set(STORAGE_KEYS.PLANS, catalog.plans);
               localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(catalog.plans));
             }
-            if (Array.isArray(catalog.users) && catalog.users.length > 0) {
-              this.memoryCache.set(STORAGE_KEYS.USERS, catalog.users);
-              localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(catalog.users));
-            }
-            if (Array.isArray(catalog.payments) && catalog.payments.length > 0) {
-              this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, catalog.payments);
-              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(catalog.payments));
-            }
             if (catalog.signupFaculties && Array.isArray(catalog.signupFaculties)) {
               this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, catalog.signupFaculties);
               localStorage.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, safeStringify(catalog.signupFaculties));
@@ -904,6 +896,36 @@ export class StorageService {
         }
       } catch (apiErr) {
         console.info('[StorageService] Backend API catalog sync notice; checking client Supabase');
+      }
+
+      // Admin-only data sync: students must never request or receive these collections.
+      const adminToken = typeof window !== 'undefined' ? localStorage.getItem('cbt_admin_token') : null;
+      if (adminToken) {
+        try {
+          const adminHeaders = { Authorization: `Bearer ${adminToken}` };
+          const [studentsResponse, paymentsResponse] = await Promise.all([
+            fetch('/api/admin/students', { headers: adminHeaders }),
+            fetch('/api/admin/payments', { headers: adminHeaders }),
+          ]);
+
+          if (studentsResponse.ok) {
+            const studentsPayload = await studentsResponse.json();
+            if (studentsPayload.success && Array.isArray(studentsPayload.students)) {
+              this.memoryCache.set(STORAGE_KEYS.USERS, studentsPayload.students);
+              localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(studentsPayload.students));
+            }
+          }
+
+          if (paymentsResponse.ok) {
+            const paymentsPayload = await paymentsResponse.json();
+            if (paymentsPayload.success && Array.isArray(paymentsPayload.transactions)) {
+              this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, paymentsPayload.transactions);
+              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(paymentsPayload.transactions));
+            }
+          }
+        } catch (adminSyncErr) {
+          console.info('[StorageService] Admin data sync notice:', adminSyncErr);
+        }
       }
 
       // 2. Direct Supabase Client Fallback
@@ -3847,4 +3869,3 @@ export class StorageService {
     this.saveFullActivityLogs(logs);
   }
 }
-
