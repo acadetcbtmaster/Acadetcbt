@@ -19,6 +19,7 @@ import {
 import { StorageService } from './services/storage';
 import { ApiClient } from './services/apiClient';
 import { recordPracticeActivity } from './utils/streak';
+import { logError } from './lib/errors';
 
 // Components
 import { Navbar } from './components/Navbar';
@@ -303,20 +304,28 @@ export default function App() {
     // Universal Initial Cloud Fetch for all users (old, new, student, visitor, admin)
     StorageService.syncWithCloud(true).then(() => {
       syncAllData();
-    }).catch(() => {});
+    }).catch((error) => {
+      logError('App', error, { operation: 'initial cloud sync' });
+    });
 
     // Periodic Background Sync every 15s to keep all accounts in sync with Firebase
     const cloudSyncInterval = setInterval(() => {
-      StorageService.syncWithCloud().catch(() => {});
+      StorageService.syncWithCloud().catch((error) => {
+        logError('App', error, { operation: 'periodic cloud sync' });
+      });
     }, 15000);
 
     // Tab-focus / screen unlock sync
     const handleWindowFocus = () => {
-      StorageService.syncWithCloud().catch(() => {});
+      StorageService.syncWithCloud().catch((error) => {
+        logError('App', error, { operation: 'focus cloud sync' });
+      });
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        StorageService.syncWithCloud().catch(() => {});
+        StorageService.syncWithCloud().catch((error) => {
+          logError('App', error, { operation: 'visibility cloud sync' });
+        });
       }
     };
     window.addEventListener('focus', handleWindowFocus);
@@ -436,7 +445,9 @@ export default function App() {
 
     setActiveTab(tab);
     // Background pull from cloud to ensure latest courses/questions/materials
-    StorageService.syncWithCloud().catch(() => {});
+    StorageService.syncWithCloud().catch((error) => {
+      logError('App', error, { operation: 'navigation cloud sync' });
+    });
     try {
       window.history.pushState({ tab }, '', tab === 'founder' ? '/founder' : tab === 'landing' ? '/' : `/#${tab}`);
     } catch (e) {}

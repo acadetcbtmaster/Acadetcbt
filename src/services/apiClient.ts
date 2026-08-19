@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { StorageService, safeStringify } from './storage';
+import { logError, logWarning } from '../lib/errors';
 
 function getClientGeminiApiKey(): string {
   const meta = import.meta as any;
@@ -20,22 +21,35 @@ function getGeminiClient() {
   return new GoogleGenAI({ apiKey: key });
 }
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const res = await fetch(endpoint, options);
   const contentType = res.headers.get('content-type') || '';
-  if (res.ok && contentType.includes('application/json')) {
-    return (await res.json()) as T;
-  }
-  let serverErrMsg = '';
+  const body = await res.text();
+  let parsedBody: any = null;
+  let parsedJson = false;
   try {
     if (contentType.includes('application/json')) {
-      const jsonErr = await res.json();
-      if (jsonErr && (jsonErr.error || jsonErr.message)) {
-        serverErrMsg = jsonErr.error || jsonErr.message;
-      }
+      parsedBody = JSON.parse(body);
+      parsedJson = true;
     }
-  } catch {}
-  throw new Error(serverErrMsg || `Server endpoint ${endpoint} unavailable (status ${res.status})`);
+  } catch (err) {
+    logWarning('ApiClient', err, { endpoint, status: res.status, operation: 'parse response body' });
+  }
+  if (res.ok && parsedJson) {
+    return parsedBody as T;
+  }
+  const serverErrMsg = parsedBody?.error || parsedBody?.message || body.slice(0, 300).trim();
+  throw new ApiError(serverErrMsg || `Server endpoint ${endpoint} unavailable`, res.status);
 }
 
 export const ApiClient = {
@@ -156,7 +170,7 @@ Requirements for each question:
   },
 
   // 2. AI Question Explanation
-  async explainQuestion(payload: any): Promise<{ success: boolean; explanation: string }> {
+  async explainQuestion(payload: any): Promise<{ success: boolean; explanation: string; degraded?: boolean }> {
     try {
       return await fetchApi<{ success: boolean; explanation: string }>('/api/ai/explain-question', {
         method: 'POST',
@@ -186,16 +200,18 @@ Explain step-by-step why Option ${correctAnswer} is correct and why the student'
 
         return { success: true, explanation: response.text || 'Detailed explanation generated.' };
       } catch (fallbackErr: any) {
+        logWarning('ApiClient', fallbackErr, { operation: 'explain question fallback' });
         return {
           success: true,
           explanation: `Option ${payload.correctAnswer} is the correct answer based on standard academic curriculum principles.`,
+          degraded: true,
         };
       }
     }
   },
 
   // 3. AI Performance Analysis
-  async analyzePerformance(payload: any): Promise<{ success: boolean; analysis: any }> {
+  async analyzePerformance(payload: any): Promise<{ success: boolean; analysis: any; degraded?: boolean }> {
     try {
       return await fetchApi<{ success: boolean; analysis: any }>('/api/ai/analyze-performance', {
         method: 'POST',
@@ -239,6 +255,7 @@ Return JSON format with:
         const analysis = JSON.parse(response.text || '{}');
         return { success: true, analysis };
       } catch (fallbackErr) {
+        logWarning('ApiClient', fallbackErr, { operation: 'analyze performance fallback' });
         const pct = Math.round((payload.score / payload.totalQuestions) * 100);
         return {
           success: true,
@@ -251,6 +268,7 @@ Return JSON format with:
               'Take timed 30-question CBT mock tests regularly.',
             ],
           },
+          degraded: true,
         };
       }
     }
@@ -265,6 +283,7 @@ Return JSON format with:
         body: safeStringify(payload),
       });
     } catch (err) {
+      logError('ApiClient', err, { operation: 'validate practice session fallback' });
       const { requestedLimit, isPremium, userRole } = payload;
       const isUnlimited = requestedLimit === 'unlimited' || requestedLimit === 'Unlimited' || Number(requestedLimit) > 30;
 
@@ -287,7 +306,8 @@ Return JSON format with:
   async getSquadConfig(): Promise<any> {
     try {
       return await fetchApi<any>('/api/payments/config');
-    } catch {
+    } catch (err) {
+      logWarning('ApiClient', err, { operation: 'get squad config fallback' });
       const meta = import.meta as any;
       const pubKey = (meta?.env?.VITE_SQUAD_PUBLIC_KEY || '').trim();
       const isConfigured = pubKey !== '' && !pubKey.includes('placeholder') && !pubKey.includes('MY_');
@@ -458,7 +478,11 @@ Return JSON format with:
         StorageService.saveAdminAccount(res.admin);
       }
       return res;
-    } catch {
+    } catch (err: any) {
+      logError('ApiClient', err, { operation: 'create admin', adminId: account?.id });
+      if (err?.status === 401 || err?.status === 403 || err?.message?.includes('Access Denied') || err?.message?.includes('Unauthorized')) {
+        return { success: false, error: err.message };
+      }
       StorageService.saveAdminAccount(account);
       StorageService.logAdminAction({
         action: 'Created Administrator',
@@ -486,7 +510,11 @@ Return JSON format with:
         StorageService.saveAdminAccount(res.admin);
       }
       return res;
-    } catch {
+    } catch (err: any) {
+      logError('ApiClient', err, { operation: 'update admin', adminId: id });
+      if (err?.status === 401 || err?.status === 403 || err?.message?.includes('Access Denied') || err?.message?.includes('Unauthorized')) {
+        return { success: false, error: err.message };
+      }
       const accounts = StorageService.getAdminAccounts();
       const idx = accounts.findIndex((a) => a.id === id);
       if (idx >= 0) {
@@ -518,7 +546,11 @@ Return JSON format with:
         StorageService.deleteAdminAccount(id);
       }
       return res;
-    } catch {
+    } catch (err: any) {
+      logError('ApiClient', err, { operation: 'delete admin', adminId: id });
+      if (err?.status === 401 || err?.status === 403 || err?.message?.includes('Access Denied') || err?.message?.includes('Unauthorized')) {
+        return { success: false, error: err.message };
+      }
       const ok = StorageService.deleteAdminAccount(id);
       if (ok) {
         StorageService.logAdminAction({
