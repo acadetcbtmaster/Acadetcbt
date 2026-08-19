@@ -80,6 +80,7 @@ import {
   deletePlanFromSupabase,
 } from '../lib/supabase';
 import { fromRow } from '../lib/dbMappers';
+import { logError, logWarning } from '../lib/errors';
 
 // Custom safe serializer handled by safeStringify and safeClone without altering global JSON.stringify
 export interface StorageWriteResult {
@@ -100,10 +101,18 @@ async function checkedFetch(input: RequestInfo | URL, init?: RequestInit): Promi
     try {
       const body = await response.json();
       return failedWrite(body?.error || body?.message || `Request failed with HTTP ${response.status}`);
-    } catch {
+    } catch (error) {
+      logWarning('StorageService.checkedFetch', error, {
+        operation: 'parse error response',
+        input: String(input),
+      });
       return failedWrite(`Request failed with HTTP ${response.status}`);
     }
   } catch (error) {
+    logError('StorageService.checkedFetch', error, {
+      operation: 'network request',
+      input: String(input),
+    });
     return failedWrite(error);
   }
 }
@@ -111,6 +120,18 @@ async function checkedFetch(input: RequestInfo | URL, init?: RequestInit): Promi
 function firstWriteError(results: StorageWriteResult[]): StorageWriteResult {
   const error = results.find((result) => !result.success);
   return error || successfulWrite();
+}
+
+function observeWrite(
+  scope: string,
+  promise: Promise<StorageWriteResult>,
+  context?: Record<string, unknown>,
+): void {
+  promise.then((result) => {
+    if (!result.success) {
+      logError(scope, result.error || 'Remote write failed', context);
+    }
+  }).catch((error) => logError(scope, error, context));
 }
 
 export enum OperationType {
@@ -813,15 +834,21 @@ export class StorageService {
   static initRealtimeListeners(): void {
     if (this.isInitialized) return;
     this.isInitialized = true;
-    this.syncWithCloud().catch(() => {});
+    this.syncWithCloud().catch((error) => {
+      logError('StorageService.initRealtimeListeners', error, { operation: 'initial cloud sync' });
+    });
 
     // Periodic cloud sync every 30 seconds for real-time consistency across all users and admin updates
     if (typeof window !== 'undefined') {
       try {
         setInterval(() => {
-          this.syncWithCloud().catch(() => {});
+          this.syncWithCloud().catch((error) => {
+            logError('StorageService.initRealtimeListeners', error, { operation: 'interval cloud sync' });
+          });
         }, 30000);
-      } catch {}
+      } catch (error) {
+        logWarning('StorageService.initRealtimeListeners', error, { operation: 'schedule interval sync' });
+      }
     }
   }
 
@@ -875,7 +902,12 @@ export class StorageService {
                 localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(mapped));
               } else {
                 const local = this.getUniversities();
-                if (local.length > 0) syncUniversitiesToSupabase(local).catch(() => {});
+                if (local.length > 0) {
+                  observeWrite('StorageService.syncWithCloud', syncUniversitiesToSupabase(local), {
+                    table: 'universities',
+                    count: local.length,
+                  });
+                }
               }
             }
             if (Array.isArray(catalog.courses)) {
@@ -885,7 +917,12 @@ export class StorageService {
                 localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(mapped));
               } else {
                 const local = this.getCourses();
-                if (local.length > 0) syncCoursesToSupabase(local).catch(() => {});
+                if (local.length > 0) {
+                  observeWrite('StorageService.syncWithCloud', syncCoursesToSupabase(local), {
+                    table: 'courses',
+                    count: local.length,
+                  });
+                }
               }
             }
             if (Array.isArray(catalog.departments) && catalog.departments.length > 0) {
@@ -906,7 +943,10 @@ export class StorageService {
               } else {
                 const local = this.getQuestions();
                 if (local.length > 0) {
-                  syncQuestionsToSupabase(local).catch(() => {});
+                  observeWrite('StorageService.syncWithCloud', syncQuestionsToSupabase(local), {
+                    table: 'questions',
+                    count: local.length,
+                  });
                 }
               }
             }
@@ -917,7 +957,12 @@ export class StorageService {
                 localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(mapped));
               } else {
                 const local = this.getMaterials();
-                if (local.length > 0) syncMaterialsToSupabase(local).catch(() => {});
+                if (local.length > 0) {
+                  observeWrite('StorageService.syncWithCloud', syncMaterialsToSupabase(local), {
+                    table: 'materials',
+                    count: local.length,
+                  });
+                }
               }
             }
             if (Array.isArray(catalog.plans) && catalog.plans.length > 0) {
@@ -943,7 +988,9 @@ export class StorageService {
           }
         }
       } catch (apiErr) {
-        console.info('[StorageService] Backend API catalog sync notice; checking client Supabase');
+        logError('StorageService.syncWithCloud', apiErr, {
+          operation: 'backend API catalog sync',
+        });
       }
 
       // 2. Direct Supabase Client Fallback
@@ -992,7 +1039,9 @@ export class StorageService {
             }
           }
         } catch (sbErr) {
-          console.info('[StorageService] Client Supabase direct query notice');
+          logError('StorageService.syncWithCloud', sbErr, {
+            operation: 'direct Supabase catalog sync',
+          });
         }
       }
 
@@ -1026,12 +1075,13 @@ export class StorageService {
             },
           })
         );
-      } catch {
+      } catch (error) {
+        logWarning('StorageService.syncWithCloud', error, { operation: 'dispatch storage change event' });
         window.dispatchEvent(new Event('cbt_storage_change'));
       }
       return true;
     } catch (e) {
-      console.warn('[StorageService] Exception in syncWithCloud:', e);
+      logError('StorageService.syncWithCloud', e);
       return false;
     } finally {
       this.isSyncing = false;
@@ -1045,7 +1095,9 @@ export class StorageService {
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-    } catch {}
+    } catch (error) {
+      logWarning('StorageService.getAdminAuthHeaders', error, { key: 'cbt_admin_token' });
+    }
     return headers;
   }
 
@@ -1060,8 +1112,8 @@ export class StorageService {
         this.memoryCache.set(key, parsed);
         return parsed as T;
       }
-    } catch {
-      // fallback
+    } catch (error) {
+      logWarning('StorageService.getItem', error, { key });
     }
     this.memoryCache.set(key, defaultValue);
     return defaultValue;
@@ -1086,13 +1138,14 @@ export class StorageService {
             localStorage.setItem(k, safeStringify(val));
           }
         } catch (e) {
-          console.warn('Storage write notice for key ' + k, e);
+          logWarning('StorageService.setItem', e, { key: k });
         }
       }
 
       try {
         window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: keysToWrite[0] || key, keys: keysToWrite, timestamp: Date.now() } }));
-      } catch {
+      } catch (error) {
+        logWarning('StorageService.setItem', error, { operation: 'dispatch storage change event' });
         window.dispatchEvent(new Event('cbt_storage_change'));
       }
     }, 150);
@@ -1194,7 +1247,11 @@ export class StorageService {
     try {
       localStorage.setItem(STORAGE_KEYS.USERS, safeStringify([]));
       localStorage.removeItem(STORAGE_KEYS.USER);
-    } catch {}
+    } catch (error) {
+      logWarning('StorageService.clearAllUsers', error, {
+        keys: [STORAGE_KEYS.USERS, STORAGE_KEYS.USER],
+      });
+    }
 
     const result = await checkedFetch('/api/users/clear-all', {
       method: 'POST',
@@ -1203,7 +1260,9 @@ export class StorageService {
 
     try {
       window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.USERS, timestamp: Date.now() } }));
-    } catch {}
+    } catch (error) {
+      logWarning('StorageService.clearAllUsers', error, { operation: 'dispatch storage change event' });
+    }
 
     return result;
   }
@@ -1249,7 +1308,9 @@ export class StorageService {
 
     try {
       window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.USERS, timestamp: Date.now() } }));
-    } catch {}
+    } catch (error) {
+      logWarning('StorageService.deleteUser', error, { operation: 'dispatch storage change event', userId });
+    }
 
     return result;
   }
@@ -1274,7 +1335,7 @@ export class StorageService {
       this.memoryCache.delete(STORAGE_KEYS.USER);
       localStorage.removeItem(STORAGE_KEYS.USER);
     } catch (e) {
-      console.error('Storage error:', e);
+      logWarning('StorageService.clearUserSession', e, { key: STORAGE_KEYS.USER });
     }
   }
 
@@ -1298,10 +1359,13 @@ export class StorageService {
 
     try {
       if (user && user.id) {
-        syncUserToSupabase(user).catch(() => {});
+        observeWrite('StorageService.saveUser', syncUserToSupabase(user), {
+          userId: user.id,
+          table: 'users',
+        });
       }
     } catch (e) {
-      console.warn('Supabase write user notice:', e);
+      logError('StorageService.saveUser', e, { userId: user?.id, table: 'users' });
     }
   }
 
@@ -1318,7 +1382,11 @@ export class StorageService {
     try {
       localStorage.setItem(STORAGE_KEYS.USER, safeStringify(user));
       localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(users));
-    } catch {}
+    } catch (error) {
+      logWarning('StorageService.saveLocalUserOnly', error, {
+        keys: [STORAGE_KEYS.USER, STORAGE_KEYS.USERS],
+      });
+    }
   }
 
   // Questions
@@ -1334,7 +1402,9 @@ export class StorageService {
     this.memoryCache.set(STORAGE_KEYS.QUESTIONS, []);
     try {
       localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify([]));
-    } catch {}
+    } catch (error) {
+      logWarning('StorageService.clearAllQuestions', error, { key: STORAGE_KEYS.QUESTIONS });
+    }
 
     const result = await checkedFetch('/api/catalog/questions/clear-all', {
       method: 'POST',
@@ -1343,7 +1413,9 @@ export class StorageService {
 
     try {
       window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.QUESTIONS, timestamp: Date.now() } }));
-    } catch {}
+    } catch (error) {
+      logWarning('StorageService.clearAllQuestions', error, { operation: 'dispatch storage change event' });
+    }
 
     return result;
   }
@@ -1536,7 +1608,9 @@ export class StorageService {
     this.memoryCache.set(STORAGE_KEYS.PLANS, plans);
     try {
       localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(plans));
-    } catch {}
+    } catch (error) {
+      logWarning('StorageService.saveLocalPlansOnly', error, { key: STORAGE_KEYS.PLANS });
+    }
   }
 
   static async saveSubscriptionPlans(plans: SubscriptionPlan[]): Promise<StorageWriteResult> {

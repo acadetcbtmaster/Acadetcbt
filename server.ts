@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 import { initializeApp as initFirebaseApp, getApps as getFirebaseApps, getApp as getFirebaseApp } from "firebase/app";
 import { getAuth as getFirebaseAuth } from "firebase/auth";
 import { getSupabaseAdminClient, isSupabaseConfigured } from "./src/lib/supabase";
+import { describeError, logError, logWarning } from "./src/lib/errors";
 import {
   adminFromRow,
   adminToRow,
@@ -257,6 +258,8 @@ const activateSubscriptionInFirestore = async (params: {
     paymentReference: params.reference,
   };
 
+  let persisted = true;
+  let persistError: string | undefined;
   const supabase = getSupabaseAdminClient();
   if (supabase) {
     try {
@@ -270,9 +273,17 @@ const activateSubscriptionInFirestore = async (params: {
         updated_at: paidAt,
       });
 
-      // 2. Update Payment Record in Supabase
-      if (userWriteError) throw new Error(userWriteError.message);
+      if (userWriteError) {
+        persisted = false;
+        persistError = describeError(userWriteError);
+        logError("Database Server", userWriteError, {
+          operation: "activate subscription user",
+          reference: params.reference,
+          userId: params.userId,
+        });
+      }
 
+      // 2. Update Payment Record in Supabase
       const { error: paymentWriteError } = await supabase.from("payments").upsert({
         id: params.reference,
         user_id: params.userId,
@@ -289,17 +300,39 @@ const activateSubscriptionInFirestore = async (params: {
         created_at: paidAt,
       });
 
-      if (paymentWriteError) throw new Error(paymentWriteError.message);
+      if (paymentWriteError) {
+        persisted = false;
+        persistError = persistError || describeError(paymentWriteError);
+        logError("Database Server", paymentWriteError, {
+          operation: "activate subscription payment",
+          reference: params.reference,
+          userId: params.userId,
+        });
+      }
 
       // 3. Referral processing
       await processReferralReward(params.userId);
       console.log(`[Database Server] Verified & Activated ${gatewayDisplayName} Subscription for User ${params.userId} (${params.reference}) in Supabase`);
     } catch (err) {
-      console.error("[Database Server] Failed to write subscription/payment records in Supabase:", err);
+      persisted = false;
+      persistError = describeError(err);
+      logError("Database Server", err, {
+        operation: "activate subscription",
+        reference: params.reference,
+        userId: params.userId,
+      });
     }
+  } else {
+    persisted = false;
+    persistError = "Supabase client unavailable";
+    logError("Database Server", persistError, {
+      operation: "activate subscription",
+      reference: params.reference,
+      userId: params.userId,
+    });
   }
 
-  return { userPayload, paymentRecord, subscriptionRecord };
+  return { userPayload, paymentRecord, subscriptionRecord, persisted, persistError };
 };
 
 // Helper: Cancel all user subscriptions across Database until a new payment is made
@@ -1163,7 +1196,10 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
           }
         }
       } catch (e) {
-        // fallback
+        logWarning("Payment Verify", e, {
+          operation: "lookup payment provider",
+          reference,
+        });
       }
     }
 
@@ -1275,6 +1311,10 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
         user: syncResult?.userPayload,
         subscription: syncResult?.subscriptionRecord,
         payment: syncResult?.paymentRecord,
+        persisted: syncResult?.persisted ?? false,
+        ...((syncResult?.persisted ?? false) ? {} : {
+          warning: "Payment verified, but subscription persistence needs attention. Please contact support.",
+        }),
       });
     }
 
@@ -1350,7 +1390,10 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
         }
       }
     } catch (e) {
-      console.warn("[Squad Verify] Could not fetch stored pending doc:", e);
+      logWarning("Payment Verify", e, {
+        operation: "lookup payment provider",
+        reference,
+      });
     }
 
     const returnedAmt = verifyData.data.transaction_amount || verifyData.data.amount;
@@ -1389,6 +1432,10 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       user: syncResult?.userPayload,
       subscription: syncResult?.subscriptionRecord,
       payment: syncResult?.paymentRecord,
+      persisted: syncResult?.persisted ?? false,
+      ...((syncResult?.persisted ?? false) ? {} : {
+        warning: "Payment verified, but subscription persistence needs attention. Please contact support.",
+      }),
     });
   } catch (err: any) {
     console.error("[Payment Verify Exception]", err);
@@ -1486,7 +1533,7 @@ const handleSquadWebhook = async (req: express.Request, res: express.Response) =
       const planTitle = metadata.planName || metadata["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
 
       if (userId) {
-        await activateSubscriptionInFirestore({
+        const syncResult = await activateSubscriptionInFirestore({
           userId,
           userName,
           userEmail,
@@ -1498,6 +1545,13 @@ const handleSquadWebhook = async (req: express.Request, res: express.Response) =
           paymentMethod: bodyData.payment_type || "Squad Webhook",
           squadResponse: payload,
         });
+        if (!syncResult.persisted) {
+          logError("Database Server", syncResult.persistError || "Subscription persistence failed", {
+            operation: "squad webhook subscription persistence",
+            reference,
+            userId,
+          });
+        }
         console.log(`[Squad Webhook] Successfully activated subscription for User ${userId}`);
       }
     }
@@ -1604,7 +1658,7 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
       const planTitle = meta.planName || meta["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
 
       if (userId) {
-        await activateSubscriptionInFirestore({
+        const syncResult = await activateSubscriptionInFirestore({
           userId,
           userName,
           userEmail,
@@ -1618,6 +1672,13 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
           provider: "korapay",
           squadResponse: payload,
         });
+        if (!syncResult.persisted) {
+          logError("Database Server", syncResult.persistError || "Subscription persistence failed", {
+            operation: "korapay webhook subscription persistence",
+            reference,
+            userId,
+          });
+        }
         console.log(`[KoraPay Webhook] Successfully activated subscription for User ${userId}`);
       }
     }
@@ -2063,7 +2124,12 @@ app.post('/api/admin/login', async (req, res) => {
       const { error } = await supabase.from('admins').upsert(adminToRow(targetAdmin));
       if (error) throw new Error(error.message);
     }
-  } catch {}
+  } catch (err) {
+    logError("RBAC Server", err, {
+      operation: "sync admin login",
+      adminId: targetAdmin.id,
+    });
+  }
 
   const normRole = normalizeServerRole(targetAdmin.role);
   const permissions = ROLE_PERMISSIONS_SERVER[normRole] || ROLE_PERMISSIONS_SERVER[targetAdmin.role] || [];
@@ -2312,7 +2378,17 @@ app.delete('/api/admin/admins/:id', requireAdminPermission('manage_other_adminis
       const { error } = await supabase.from('admins').delete().eq('id', id);
       if (error) throw new Error(error.message);
     }
-  } catch {}
+  } catch (err) {
+    inMemoryAdmins.set(id, target);
+    logError("RBAC Server", err, {
+      operation: "delete admin",
+      adminId: id,
+    });
+    return res.status(500).json({
+      success: false,
+      error: describeError(err),
+    });
+  }
 
   return res.json({ success: true, message: 'Administrator account deleted successfully.' });
 });
