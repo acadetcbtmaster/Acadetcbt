@@ -264,6 +264,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_reference ON public.payments(reference);
 -- ------------------------------------------------------------------------------
 -- Row Level Security (RLS) Configuration
 -- ------------------------------------------------------------------------------
+-- Re-run these policy changes against the live Supabase project after deployment.
 ALTER TABLE public.universities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faculties ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
@@ -297,23 +298,40 @@ CREATE POLICY "Public Read Configs" ON public.system_configs FOR SELECT USING (t
 
 -- Authenticated / Service-Role Full Access Policies
 DROP POLICY IF EXISTS "Full Access Universities" ON public.universities;
-CREATE POLICY "Full Access Universities" ON public.universities FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Universities" ON public.universities FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Full Access Faculties" ON public.faculties;
+CREATE POLICY "Full Access Faculties" ON public.faculties FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Full Access Departments" ON public.departments;
-CREATE POLICY "Full Access Departments" ON public.departments FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Departments" ON public.departments FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Full Access Courses" ON public.courses;
-CREATE POLICY "Full Access Courses" ON public.courses FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Courses" ON public.courses FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Full Access Questions" ON public.questions;
-CREATE POLICY "Full Access Questions" ON public.questions FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Questions" ON public.questions FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Full Access Materials" ON public.materials;
-CREATE POLICY "Full Access Materials" ON public.materials FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Materials" ON public.materials FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Full Access Plans" ON public.subscription_plans;
-CREATE POLICY "Full Access Plans" ON public.subscription_plans FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Plans" ON public.subscription_plans FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Full Access Users" ON public.users;
-CREATE POLICY "Full Access Users" ON public.users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Users" ON public.users FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Full Access Results" ON public.results;
-CREATE POLICY "Full Access Results" ON public.results FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Results" ON public.results FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Full Access Payments" ON public.payments;
-CREATE POLICY "Full Access Payments" ON public.payments FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Payments" ON public.payments FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Full Access Configs" ON public.system_configs;
-CREATE POLICY "Full Access Configs" ON public.system_configs FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Full Access Configs" ON public.system_configs FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Users select own profile" ON public.users;
+CREATE POLICY "Users select own profile" ON public.users FOR SELECT TO authenticated
+  USING ((auth.uid())::text = id);
+DROP POLICY IF EXISTS "Users update own profile" ON public.users;
+CREATE POLICY "Users update own profile" ON public.users FOR UPDATE TO authenticated
+  USING ((auth.uid())::text = id) WITH CHECK ((auth.uid())::text = id);
+DROP POLICY IF EXISTS "Results select own" ON public.results;
+CREATE POLICY "Results select own" ON public.results FOR SELECT TO authenticated
+  USING ((auth.uid())::text = user_id);
+DROP POLICY IF EXISTS "Results insert own" ON public.results;
+CREATE POLICY "Results insert own" ON public.results FOR INSERT TO authenticated
+  WITH CHECK ((auth.uid())::text = user_id);
+DROP POLICY IF EXISTS "Payments select own" ON public.payments;
+CREATE POLICY "Payments select own" ON public.payments FOR SELECT TO authenticated
+  USING ((auth.uid())::text = user_id);

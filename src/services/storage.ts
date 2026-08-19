@@ -53,7 +53,6 @@ import {
   AdminPermission,
   DEFAULT_ADMIN_ACCOUNTS,
   hashPasswordSync,
-  verifyPassword,
   hasPermission,
   getRoleDisplayName,
   normalizeAdminRole,
@@ -925,16 +924,6 @@ export class StorageService {
               this.memoryCache.set(STORAGE_KEYS.PLANS, mapped);
               localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(mapped));
             }
-            if (Array.isArray(catalog.users) && catalog.users.length > 0) {
-              const mapped = catalog.users.map(fromRow.user);
-              this.memoryCache.set(STORAGE_KEYS.USERS, mapped);
-              localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(mapped));
-            }
-            if (Array.isArray(catalog.payments) && catalog.payments.length > 0) {
-              const mapped = catalog.payments.map(fromRow.payment);
-              this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, mapped);
-              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(mapped));
-            }
             if (catalog.signupFaculties && Array.isArray(catalog.signupFaculties)) {
               this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, catalog.signupFaculties);
               localStorage.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, safeStringify(catalog.signupFaculties));
@@ -944,6 +933,36 @@ export class StorageService {
         }
       } catch (apiErr) {
         console.info('[StorageService] Backend API catalog sync notice; checking client Supabase');
+      }
+
+      // Admin-only data sync: students must never request or receive these collections.
+      const adminToken = typeof window !== 'undefined' ? localStorage.getItem('cbt_admin_token') : null;
+      if (adminToken) {
+        try {
+          const adminHeaders = { Authorization: `Bearer ${adminToken}` };
+          const [studentsResponse, paymentsResponse] = await Promise.all([
+            fetch('/api/admin/students', { headers: adminHeaders }),
+            fetch('/api/admin/payments', { headers: adminHeaders }),
+          ]);
+
+          if (studentsResponse.ok) {
+            const studentsPayload = await studentsResponse.json();
+            if (studentsPayload.success && Array.isArray(studentsPayload.students)) {
+              this.memoryCache.set(STORAGE_KEYS.USERS, studentsPayload.students);
+              localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(studentsPayload.students));
+            }
+          }
+
+          if (paymentsResponse.ok) {
+            const paymentsPayload = await paymentsResponse.json();
+            if (paymentsPayload.success && Array.isArray(paymentsPayload.transactions)) {
+              this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, paymentsPayload.transactions);
+              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(paymentsPayload.transactions));
+            }
+          }
+        } catch (adminSyncErr) {
+          console.info('[StorageService] Admin data sync notice:', adminSyncErr);
+        }
       }
 
       // 2. Direct Supabase Client Fallback
@@ -3701,61 +3720,6 @@ export class StorageService {
    */
   static setCurrentAdmin(admin: AdminAccount | null): void {
     this.setItem(STORAGE_KEYS.CURRENT_ADMIN, admin);
-  }
-
-  /**
-   * Authenticates an administrator against local seeds/cache fallback
-   */
-  static authenticateAdminLocally(username: string, password: string): { success: boolean; admin?: AdminAccount; error?: string } {
-    const accounts = this.getAdminAccounts();
-    const trimmedUser = username.trim().toLowerCase();
-
-    // Check for match
-    const found = accounts.find(
-      (a) => a.username.trim().toLowerCase() === trimmedUser || a.email.trim().toLowerCase() === trimmedUser
-    );
-
-    // Fallback support for default admin credentials
-    if (!found) {
-      if (
-        (trimmedUser === 'superadmin' || trimmedUser === 'menmex') &&
-        (password === 'Admin@1234' || password === 'joyce@menmex')
-      ) {
-        const rootAdmin = DEFAULT_ADMIN_ACCOUNTS[0];
-        return { success: true, admin: rootAdmin };
-      }
-      return { success: false, error: 'Invalid administrator username or password.' };
-    }
-
-    if (found.status === 'Suspended' || found.status === 'Inactive') {
-      return {
-        success: false,
-        error: 'Your administrator account has been deactivated or suspended. Please contact the Super Administrator.',
-      };
-    }
-
-    const isMatch = verifyPassword(password, found.passwordHash) ||
-      (found.username === 'superadmin' && (password === 'Admin@1234' || password === 'Admin@2025!' || password === 'joyce@menmex')) ||
-      (found.username === 'studentadmin' && (password === 'Student@1234' || password === 'Student@2025!')) ||
-      (found.username === 'questionadmin' && (password === 'Question@1234' || password === 'Question@2025!')) ||
-      (found.username === 'courseadmin' && (password === 'Course@1234' || password === 'Course@2025!')) ||
-      (found.username === 'paymentadmin' && (password === 'Payment@1234' || password === 'Payment@2025!')) ||
-      (found.username === 'supportadmin' && (password === 'Support@1234' || password === 'Support@2025!')) ||
-      (found.username === 'reportadmin' && (password === 'Report@1234' || password === 'Report@2025!')) ||
-      (found.username === 'contentadmin' && (password === 'Content@1234' || password === 'Content@2025!')) ||
-      (found.username === 'systemadmin' && (password === 'System@1234' || password === 'System@2025!')) ||
-      (found.username.toLowerCase() === 'menmex' && (password === 'joyce@menmex' || password === 'Admin@1234' || password === 'Admin@2025!'));
-
-    if (!isMatch) {
-      return { success: false, error: 'Invalid administrator username or password.' };
-    }
-
-    // Update last login
-    found.lastLogin = new Date().toISOString();
-    found.loginCount = (found.loginCount || 0) + 1;
-    this.saveAdminAccount(found);
-
-    return { success: true, admin: found };
   }
 
   /**

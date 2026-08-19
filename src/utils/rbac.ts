@@ -252,8 +252,6 @@ export function hashPasswordSync(password: string, salt = 'acadet_cbt_master_sec
 
 export function verifyPassword(password: string, storedHash?: string): boolean {
   if (!storedHash) return false;
-  // Support plain text match for migration or hashed match
-  if (storedHash === password) return true;
   const computed = hashPasswordSync(password);
   return computed === storedHash;
 }
@@ -268,7 +266,7 @@ export const DEFAULT_ADMIN_ACCOUNTS: AdminAccount[] = [
     username: 'superadmin',
     email: 'clement.adebayo@cbtmaster.ng',
     phone: '+234 803 123 4567',
-    passwordHash: hashPasswordSync('Admin@1234'),
+    passwordHash: undefined,
     role: 'super_admin',
     status: 'Active',
     dateCreated: '2025-01-10T08:00:00.000Z',
@@ -284,7 +282,7 @@ export const DEFAULT_ADMIN_ACCOUNTS: AdminAccount[] = [
     username: 'studentadmin',
     email: 'emeka.eze@cbtmaster.ng',
     phone: '+234 814 555 1212',
-    passwordHash: hashPasswordSync('Student@1234'),
+    passwordHash: undefined,
     role: 'student_manager',
     status: 'Active',
     dateCreated: '2025-02-15T09:30:00.000Z',
@@ -300,7 +298,7 @@ export const DEFAULT_ADMIN_ACCOUNTS: AdminAccount[] = [
     username: 'questionadmin',
     email: 'aisha.bello@cbtmaster.ng',
     phone: '+234 802 987 6543',
-    passwordHash: hashPasswordSync('Question@1234'),
+    passwordHash: undefined,
     role: 'question_manager',
     status: 'Active',
     dateCreated: '2025-02-01T11:00:00.000Z',
@@ -316,7 +314,7 @@ export const DEFAULT_ADMIN_ACCOUNTS: AdminAccount[] = [
     username: 'courseadmin',
     email: 'tunde.oladipo@cbtmaster.ng',
     phone: '+234 818 777 8899',
-    passwordHash: hashPasswordSync('Course@1234'),
+    passwordHash: undefined,
     role: 'course_manager',
     status: 'Active',
     dateCreated: '2025-03-10T14:15:00.000Z',
@@ -332,7 +330,7 @@ export const DEFAULT_ADMIN_ACCOUNTS: AdminAccount[] = [
     username: 'paymentadmin',
     email: 'fatima.yusuf@cbtmaster.ng',
     phone: '+234 805 444 3322',
-    passwordHash: hashPasswordSync('Payment@1234'),
+    passwordHash: undefined,
     role: 'payment_manager',
     status: 'Active',
     dateCreated: '2025-03-01T10:00:00.000Z',
@@ -348,7 +346,7 @@ export const DEFAULT_ADMIN_ACCOUNTS: AdminAccount[] = [
     username: 'supportadmin',
     email: 'amina.danjuma@cbtmaster.ng',
     phone: '+234 809 111 2233',
-    passwordHash: hashPasswordSync('Support@1234'),
+    passwordHash: undefined,
     role: 'support_manager',
     status: 'Active',
     dateCreated: '2025-03-15T16:00:00.000Z',
@@ -364,7 +362,7 @@ export const DEFAULT_ADMIN_ACCOUNTS: AdminAccount[] = [
     username: 'reportadmin',
     email: 'kabiru.sani@cbtmaster.ng',
     phone: '+234 807 222 3344',
-    passwordHash: hashPasswordSync('Report@1234'),
+    passwordHash: undefined,
     role: 'report_manager',
     status: 'Active',
     dateCreated: '2025-03-20T09:00:00.000Z',
@@ -380,7 +378,7 @@ export const DEFAULT_ADMIN_ACCOUNTS: AdminAccount[] = [
     username: 'contentadmin',
     email: 'grace.nwosu@cbtmaster.ng',
     phone: '+234 812 333 4455',
-    passwordHash: hashPasswordSync('Content@1234'),
+    passwordHash: undefined,
     role: 'content_manager',
     status: 'Active',
     dateCreated: '2025-03-25T13:45:00.000Z',
@@ -396,7 +394,7 @@ export const DEFAULT_ADMIN_ACCOUNTS: AdminAccount[] = [
     username: 'systemadmin',
     email: 'ibrahim.garba@cbtmaster.ng',
     phone: '+234 816 444 5566',
-    passwordHash: hashPasswordSync('System@1234'),
+    passwordHash: undefined,
     role: 'system_manager',
     status: 'Active',
     dateCreated: '2025-04-01T15:30:00.000Z',

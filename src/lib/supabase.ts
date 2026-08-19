@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { auth } from './firebase';
 import {
   courseToRow,
   type DbRow,
@@ -116,8 +117,10 @@ function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   try {
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('cbt_admin_token') || 'adm_sess_master_admin_session';
-      headers['Authorization'] = `Bearer ${token}`;
+      const token = localStorage.getItem('cbt_admin_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
     }
   } catch {}
   return headers;
@@ -173,9 +176,13 @@ export async function syncUserToSupabase(user: any): Promise<SyncResult> {
     if (!user) return fail('User is required');
     if (getSupabaseAdminClient()) return upsertRows('users', [userToRow(user)]);
     if (typeof window !== 'undefined') {
+      const headers = getAuthHeaders();
+      if (auth.currentUser) {
+        headers['Authorization'] = `Bearer ${await auth.currentUser.getIdToken()}`;
+      }
       return responseResult(await fetch('/api/users/sync', {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers,
         body: JSON.stringify(user),
       }));
     }

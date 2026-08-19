@@ -7,6 +7,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { initializeApp as initFirebaseApp, getApps as getFirebaseApps, getApp as getFirebaseApp } from "firebase/app";
 import { getAuth as getFirebaseAuth } from "firebase/auth";
+import { cert as firebaseAdminCert, getApps as getFirebaseAdminApps, getApp as getFirebaseAdminApp, initializeApp as initFirebaseAdminApp } from "firebase-admin/app";
+import { getAuth as getFirebaseAdminAuth } from "firebase-admin/auth";
 import { getSupabaseAdminClient, isSupabaseConfigured } from "./src/lib/supabase";
 import {
   adminFromRow,
@@ -40,7 +42,12 @@ const app = express();
 app.set("trust proxy", true);
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({
+  limit: "10mb",
+  verify: (req, _res, buffer) => {
+    (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+  },
+}));
 
 // Firebase Auth server handle (for Auth verify if needed)
 let authServer: any = null;
@@ -53,6 +60,25 @@ try {
   }
 } catch (e) {
   console.warn("Server-side Firebase Auth initialization notice:", e);
+}
+
+let firebaseAdminAuth: any = null;
+try {
+  const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  if (projectId && clientEmail && privateKey) {
+    const adminApp = getFirebaseAdminApps().length > 0
+      ? getFirebaseAdminApp()
+      : initFirebaseAdminApp({
+          credential: firebaseAdminCert({ projectId, clientEmail, privateKey }),
+        });
+    firebaseAdminAuth = getFirebaseAdminAuth(adminApp);
+  } else {
+    console.warn("[Security] Firebase Admin credentials are missing; unauthenticated profile sync is enabled. Configure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in production.");
+  }
+} catch (e) {
+  console.warn("Server-side Firebase Admin Auth initialization notice:", e);
 }
 
 
@@ -102,8 +128,22 @@ const isKorapayConfigured = (): boolean => {
 
 const processedKorapayReferences = new Set<string>();
 
+const secureCompare = (left: string, right: string): boolean => {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+};
+
 // Official Subscription Plans Configuration
-const SUBSCRIPTION_PLANS: Record<string, { id: string; name: string; price: number; durationDays: number }> = {
+interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: number;
+  durationDays: number;
+  active?: boolean;
+}
+
+const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
   "plan-1d": { id: "plan-1d", name: "1-Day Starter Pass", price: 150, durationDays: 1 },
   "premium-150": { id: "premium-150", name: "1-Day Starter Pass", price: 150, durationDays: 1 },
   "plan-150": { id: "plan-150", name: "1-Day Starter Pass", price: 150, durationDays: 1 },
@@ -354,6 +394,38 @@ const getGeminiAi = () => {
     },
   });
 };
+
+const AI_RATE_WINDOW_MS = 5 * 60 * 1000;
+const AI_RATE_LIMIT = 20;
+const aiRateLimits = new Map<string, { count: number; windowStart: number }>();
+const AI_TEXT_LIMIT = 50_000;
+const AI_FILE_LIMIT = 8_000_000;
+
+function requireAiRequestLimits(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  const now = Date.now();
+  const current = aiRateLimits.get(ip);
+  if (!current || now - current.windowStart >= AI_RATE_WINDOW_MS) {
+    aiRateLimits.set(ip, { count: 1, windowStart: now });
+  } else {
+    current.count += 1;
+    if (current.count > AI_RATE_LIMIT) {
+      return res.status(429).json({ error: "Too many AI requests. Please try again later." });
+    }
+  }
+
+  const body = req.body || {};
+  for (const [key, value] of Object.entries(body)) {
+    if (typeof value !== "string") continue;
+    const limit = key.toLowerCase().includes("file") ? AI_FILE_LIMIT : key === "questionText" ? 10_000 : AI_TEXT_LIMIT;
+    if (value.length > limit) {
+      return res.status(413).json({ error: `${key} exceeds the maximum allowed size.` });
+    }
+  }
+  next();
+}
+
+app.use("/api/ai", requireAiRequestLimits);
 
 // API Route: Health Check
 app.get(["/health", "/api/health"], (_req, res) => {
@@ -767,6 +839,29 @@ const getLivePlanFromFirestore = async (planId: string) => {
   return SUBSCRIPTION_PLANS[planId] || null;
 };
 
+const getStoredPendingPayment = async (reference: string): Promise<any | null> => {
+  try {
+    const supabase = getSupabaseAdminClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase.from("payments").select("*").eq("reference", reference).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    const metadata = data.metadata || {};
+    return {
+      ...data,
+      userId: data.user_id || data.userId,
+      email: data.user_email || data.email,
+      fullName: metadata.fullName || metadata.userName,
+      planId: data.plan_id || metadata.planId,
+      plan: metadata.plan || metadata.planName,
+      durationDays: metadata.durationDays,
+    };
+  } catch (err) {
+    console.warn("[Payment Verify] Could not fetch stored pending payment:", err);
+    return null;
+  }
+};
+
 // 2. Initiate Payment (POST /api/payments/initiate & aliases)
 const handlePaymentInitiation = async (req: express.Request, res: express.Response) => {
   const backendStartTime = Date.now();
@@ -775,8 +870,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
   try {
     console.log(`[Payment Init] Validation Started (Elapsed: 0ms)`);
     const { planId, email, userEmail, userId, uid, userName, userUsername } = req.body;
-    const reqAmount = Number(req.body.amount);
     const provider = String(req.body.provider || req.body.gateway || "").toLowerCase();
+    const requestedPlanId = typeof planId === "string" ? planId.trim() : "";
 
     const effUserId = userId || uid || email || userEmail || "usr-student";
     const effEmail = email || userEmail || (userUsername ? `${userUsername}@acadet.cbt` : "student@acadet.cbt");
@@ -788,12 +883,15 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       });
     }
 
-    // Determine Plan and Amount (Fast resolution without blocking on Firestore if price is provided)
-    let livePlan = null;
-    if ((!reqAmount || reqAmount <= 0) && planId) {
-      livePlan = await getLivePlanFromFirestore(planId);
+    if (!requestedPlanId) {
+      return res.status(400).json({
+        success: false,
+        error: "A valid subscription plan is required to initiate payment.",
+      });
     }
-    const knownPlan = livePlan || SUBSCRIPTION_PLANS[planId];
+
+    const livePlan = await getLivePlanFromFirestore(requestedPlanId);
+    const knownPlan = livePlan || SUBSCRIPTION_PLANS[requestedPlanId];
 
     if (livePlan && !livePlan.active) {
       return res.status(400).json({
@@ -802,10 +900,17 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       });
     }
 
-    // Amount in Naira is always stored and treated in Naira (e.g. 150, 800, 1500)
-    const amountInNaira = knownPlan ? knownPlan.price : (reqAmount && reqAmount > 0 ? reqAmount : 800);
-    const planTitle = req.body.planName || (knownPlan ? knownPlan.name : (planId === "premium-plus" || planId === "plan-30d" ? "Premium Plus" : "Premium Membership"));
-    const durationDays = Number(req.body.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
+    if (!knownPlan || !Number.isFinite(knownPlan.price) || knownPlan.price <= 0 || !Number.isFinite(knownPlan.durationDays) || knownPlan.durationDays <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Subscription plan "${requestedPlanId}" is unknown or invalid.`,
+      });
+    }
+
+    // Amount, display name, and duration are always resolved from the server plan.
+    const amountInNaira = knownPlan.price;
+    const planTitle = knownPlan.name;
+    const durationDays = knownPlan.durationDays;
     const amountInKobo = Math.round(amountInNaira * 100);
 
     const gatewayName = provider === "korapay" ? "KoraPay" : "Squad";
@@ -816,7 +921,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     console.log(`- Plan Duration Days: ${durationDays} days`);
     console.log(`- Gateway Name: ${gatewayName}`);
     console.log(`- Amount Sent To Gateway: ${amountSentToGateway} (${provider === 'korapay' ? 'Naira' : 'Kobo'})`);
-    console.log(`- Plan ID: ${planId || 'default'} | Plan Name: ${planTitle}`);
+    console.log(`- Plan ID: ${requestedPlanId} | Plan Name: ${planTitle}`);
 
     const timestamp = Date.now();
     const cleanUid = String(effUserId).replace(/[^a-zA-Z0-9_]/g, '');
@@ -882,7 +987,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         reference: cleanRef,
         amount: amountInNaira,
         plan: planTitle,
-        planId: planId || "premium",
+        planId: requestedPlanId,
         durationDays,
         provider: "korapay",
       }).catch((e) => console.warn("[Firestore Server] Non-blocking Korapay pending record creation error:", e));
@@ -922,7 +1027,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         metadata: {
           userId: String(effUserId).substring(0, 50),
           userEmail: userEmailStr.substring(0, 50),
-          planId: String(planId || "premium").substring(0, 20),
+          planId: requestedPlanId.substring(0, 20),
           planName: String(planTitle).substring(0, 50),
           durationDays: String(durationDays),
         },
@@ -985,7 +1090,6 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
           return res.status(400).json({
             success: false,
             error: "KoraPay API did not return a valid checkout URL.",
-            korapayResponse: korapayData,
           });
         }
 
@@ -1002,9 +1106,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
           checkoutUrl,
           paymentLink: checkoutUrl,
           amount: amountInNaira,
-          planId: planId || "premium",
+          planId: requestedPlanId,
           planName: planTitle,
-          korapayData: korapayData.data,
           gatewayTimeMs: gatewayDuration,
           backendTimeMs: totalBackendTimeMs,
         });
@@ -1013,8 +1116,6 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         return res.status(400).json({
           success: false,
           error: korapayData.message || korapayData.error || "Failed to initialize payment with KoraPay Gateway.",
-          details: korapayData.data || korapayData.errors || korapayData,
-          korapayResponse: korapayData,
         });
       }
     }
@@ -1039,7 +1140,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       reference,
       amount: amountInNaira,
       plan: planTitle,
-      planId: planId || "premium",
+      planId: requestedPlanId,
       durationDays,
       provider: "squad",
     }).catch((e) => console.warn("[Firestore Server] Non-blocking Squad pending record creation error:", e));
@@ -1057,10 +1158,10 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         userId: effUserId,
         userEmail: effEmail,
         userName: userName || "Acadet Student",
-        planId: planId || "premium",
+        planId: requestedPlanId,
         planName: planTitle,
         amount: amountInNaira,
-        durationDays: Number(req.body?.durationDays) || (knownPlan ? knownPlan.durationDays : 30),
+        durationDays,
       },
     };
 
@@ -1089,7 +1190,6 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         return res.status(400).json({
           success: false,
           error: "Squad API did not return a valid checkout URL.",
-          squadResponse: squadData,
         });
       }
 
@@ -1106,9 +1206,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         checkoutUrl,
         paymentLink: checkoutUrl,
         amount: amountInNaira,
-        planId: planId || "premium",
+        planId: requestedPlanId,
         planName: planTitle,
-        squadData: squadData.data,
         gatewayTimeMs: gatewayDuration,
         backendTimeMs: totalBackendTimeMs,
       });
@@ -1117,7 +1216,6 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       return res.status(400).json({
         success: false,
         error: squadData.message || squadData.error || "Failed to initialize payment with Squad Gateway.",
-        squadResponse: squadData,
       });
     }
   } catch (err: any) {
@@ -1138,9 +1236,6 @@ app.post("/api/korapay/initialize", handlePaymentInitiation);
 const handlePaymentVerification = async (req: express.Request, res: express.Response) => {
   try {
     const reference = req.params.reference || req.query.reference || req.body.reference || req.query.transaction_ref || req.query.trxref;
-    const userId = req.body?.userId || req.body?.uid || req.query?.userId;
-    const email = req.body?.email || req.body?.userEmail || req.query?.email;
-    const planId = req.body?.planId || req.query?.planId || "premium";
 
     if (!reference) {
       return res.status(400).json({
@@ -1150,7 +1245,11 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       });
     }
 
+    const storedPayment = await getStoredPendingPayment(String(reference));
     let isKorapay = String(reference).startsWith("ACADE_KORA_") || String(req.body?.provider || req.query?.provider || "").toLowerCase() === "korapay";
+    if (storedPayment?.gateway === "korapay" || storedPayment?.payment_gateway === "korapay") {
+      isKorapay = true;
+    }
 
     if (!isKorapay) {
       try {
@@ -1194,8 +1293,6 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       );
 
       const meta = verifyData.data?.metadata || {};
-      const effUserId = userId || meta.userId || verifyData.data?.customer?.userId || email || "usr-student";
-      const effEmail = email || meta.userEmail || verifyData.data?.customer?.email || "student@acadet.cbt";
 
       if (!isSuccess) {
         try {
@@ -1215,43 +1312,35 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
           success: false,
           status: statusStr || "failed",
           error: verifyData.message || "KoraPay payment verification failed: Payment was not confirmed on KoraPay Gateway.",
-          korapayResponse: verifyData,
         });
       }
 
       processedKorapayReferences.add(reference);
 
-      let storedPending: any = null;
-      try {
-        const supabase = getSupabaseAdminClient();
-        if (supabase) {
-          const { data: pDoc, error: paymentLookupError } = await supabase.from("payments").select("*").eq("reference", reference).maybeSingle();
-          if (paymentLookupError) throw new Error(paymentLookupError.message);
-          if (pDoc) {
-            storedPending = {
-              ...pDoc,
-              amount: pDoc.amount,
-              planId: (pDoc.metadata as any)?.planId,
-              plan: (pDoc.metadata as any)?.planName,
-              durationDays: (pDoc.metadata as any)?.durationDays,
-            };
-          }
-        }
-      } catch (e) {
-        console.warn("[KoraPay Verify] Could not fetch stored pending doc:", e);
-      }
+      const storedPending = storedPayment;
 
-      const rawAmount = verifyData.data?.amount || meta.amount || storedPending?.amount || 800;
-      const actualAmount = storedPending?.amount || (rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount);
-      const reqPlanId = planId || meta.planId || meta["plan-id"] || storedPending?.planId || "premium";
+      const rawAmount = verifyData.data?.amount || verifyData.data?.amount_paid || meta.amount;
+      const actualAmount = rawAmount > 5000 ? Math.round(rawAmount / 100) : Number(rawAmount);
+      const reqPlanId = storedPayment ? storedPending?.planId : req.body?.planId || req.query?.planId || "premium";
       const livePlan = await getLivePlanFromFirestore(reqPlanId);
       const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
-      const durationDays = Number(req.body?.durationDays) || Number(meta.durationDays) || Number(meta["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
-      const planTitle = req.body?.planName || meta.planName || meta["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
+      if (!knownPlan || !Number.isFinite(actualAmount) || actualAmount < knownPlan.price) {
+        return res.status(400).json({ success: false, status: "failed", error: "Verified payment amount does not satisfy the selected subscription plan." });
+      }
+      const durationDays = knownPlan.durationDays;
+      const planTitle = knownPlan.name;
+      const effUserId = storedPayment
+        ? storedPending?.userId || meta.userId || verifyData.data?.customer?.userId || "usr-student"
+        : meta.userId || verifyData.data?.customer?.userId || req.body?.userId || req.body?.uid || "usr-student";
+      const effEmail = storedPayment
+        ? storedPending?.email || meta.userEmail || verifyData.data?.customer?.email || "student@acadet.cbt"
+        : meta.userEmail || verifyData.data?.customer?.email || req.body?.email || req.body?.userEmail || "student@acadet.cbt";
 
       const syncResult = await activateSubscriptionInFirestore({
         userId: effUserId,
-        userName: req.body?.userName || meta.fullName || meta.userName || "Acadet Student",
+        userName: storedPayment
+          ? storedPending?.fullName || meta.fullName || meta.userName || "Acadet Student"
+          : meta.fullName || meta.userName || req.body?.userName || "Acadet Student",
         userEmail: effEmail,
         reference,
         gatewayRef: verifyData.data?.reference || reference,
@@ -1306,8 +1395,7 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       (statusStr === "success" || statusStr === "successful")
     );
 
-    const effUserId = userId || verifyData.data?.meta?.userId || verifyData.data?.metadata?.userId || email || "usr-student";
-    const effEmail = email || verifyData.data?.email || verifyData.data?.customer?.email || "student@acadet.cbt";
+    const gatewayMeta = verifyData.data?.meta || verifyData.data?.metadata || {};
 
     if (!isSuccess) {
       try {
@@ -1327,46 +1415,37 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
         success: false,
         status: statusStr || "failed",
         error: verifyData.message || "Squad payment verification failed: Payment was not confirmed on Squad Gateway.",
-        squadResponse: verifyData,
       });
     }
 
     processedSquadReferences.add(reference);
 
-    let storedPending: any = null;
-    try {
-      const supabase = getSupabaseAdminClient();
-      if (supabase) {
-        const { data: pDoc, error: paymentLookupError } = await supabase.from("payments").select("*").eq("reference", reference).maybeSingle();
-        if (paymentLookupError) throw new Error(paymentLookupError.message);
-        if (pDoc) {
-          storedPending = {
-            ...pDoc,
-            amount: pDoc.amount,
-            planId: (pDoc.metadata as any)?.planId,
-            plan: (pDoc.metadata as any)?.planName,
-            durationDays: (pDoc.metadata as any)?.durationDays,
-          };
-        }
-      }
-    } catch (e) {
-      console.warn("[Squad Verify] Could not fetch stored pending doc:", e);
-    }
+    const storedPending = storedPayment;
 
-    const returnedAmt = verifyData.data.transaction_amount || verifyData.data.amount;
-    const actualAmount = storedPending?.amount || (returnedAmt ? (returnedAmt > 10000 ? Math.round(returnedAmt / 100) : returnedAmt) : 800);
+    const returnedAmt = verifyData.data.transaction_amount || verifyData.data.amount || gatewayMeta.amount;
+    const actualAmount = returnedAmt ? (returnedAmt > 10000 ? Math.round(returnedAmt / 100) : Number(returnedAmt)) : 0;
     const gatewayRef = verifyData.data?.gateway_ref || verifyData.data?.transaction_ref || reference;
 
-    const meta = verifyData.data?.meta || verifyData.data?.metadata || {};
-    const reqPlanId = planId || meta.planId || meta["plan-id"] || storedPending?.planId || "premium";
+    const reqPlanId = storedPayment ? storedPending?.planId : req.body?.planId || req.query?.planId || "premium";
     const livePlan = await getLivePlanFromFirestore(reqPlanId);
     const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
-    const durationDays = Number(req.body?.durationDays) || Number(meta.durationDays) || Number(meta["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
-    const planTitle = req.body?.planName || meta.planName || meta["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
+    if (!knownPlan || !Number.isFinite(actualAmount) || actualAmount < knownPlan.price) {
+      return res.status(400).json({ success: false, status: "failed", error: "Verified payment amount does not satisfy the selected subscription plan." });
+    }
+    const durationDays = knownPlan.durationDays;
+    const planTitle = knownPlan.name;
+    const effUserId = storedPayment
+      ? storedPending?.userId || gatewayMeta.userId || verifyData.data?.customer?.userId || "usr-student"
+      : gatewayMeta.userId || verifyData.data?.customer?.userId || req.body?.userId || req.body?.uid || "usr-student";
+    const effEmail = storedPayment
+      ? storedPending?.email || gatewayMeta.userEmail || verifyData.data?.email || verifyData.data?.customer?.email || "student@acadet.cbt"
+      : gatewayMeta.userEmail || verifyData.data?.email || verifyData.data?.customer?.email || req.body?.email || req.body?.userEmail || "student@acadet.cbt";
 
     const syncResult = await activateSubscriptionInFirestore({
       userId: effUserId,
-      userName: req.body?.userName || meta.userName || "Acadet Student",
+      userName: storedPayment
+        ? storedPending?.fullName || gatewayMeta.userName || "Acadet Student"
+        : gatewayMeta.userName || req.body?.userName || "Acadet Student",
       userEmail: effEmail,
       reference,
       gatewayRef,
@@ -1375,7 +1454,6 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       durationDays,
       paymentMethod: verifyData.data?.payment_method || "Squad Checkout",
       provider: "squad",
-      squadResponse: verifyData,
     });
 
     return res.json({
@@ -1411,20 +1489,22 @@ app.post("/api/korapay/verify", handlePaymentVerification);
 // 4. Squad Webhook (POST /api/webhooks/squad & POST /api/payments/webhook & POST /api/squad/webhook)
 const handleSquadWebhook = async (req: express.Request, res: express.Response) => {
   try {
-    const signature = (req.headers["x-squad-signature"] as string) || (req.headers["x-squad-encrypted-body"] as string);
+    const signatureHeader = req.headers["x-squad-signature"] || req.headers["x-squad-encrypted-body"];
+    const signature = typeof signatureHeader === "string" ? signatureHeader : "";
     const webhookSecret = getSquadWebhookSecret();
 
-    if (signature && webhookSecret && !webhookSecret.includes("placeholder")) {
-      const computedHash = crypto
-        .createHmac("sha512", webhookSecret)
-        .update(JSON.stringify(req.body))
-        .digest("hex")
-        .toUpperCase();
+    if (!signature || !webhookSecret || webhookSecret.includes("placeholder")) {
+      return res.status(401).json({ status: "error", error: "Webhook signature verification is not configured." });
+    }
+    const computedHash = crypto
+      .createHmac("sha512", webhookSecret)
+      .update((req as express.Request & { rawBody?: Buffer }).rawBody || Buffer.alloc(0))
+      .digest("hex")
+      .toUpperCase();
 
-      if (computedHash !== signature.toUpperCase()) {
-        console.warn("[Squad Webhook] Invalid webhook signature. Rejecting request.");
-        return res.status(401).json({ status: "error", error: "Invalid webhook signature" });
-      }
+    if (!secureCompare(computedHash, signature.toUpperCase())) {
+      console.warn("[Squad Webhook] Invalid webhook signature. Rejecting request.");
+      return res.status(401).json({ status: "error", error: "Invalid webhook signature" });
     }
 
     const payload = req.body || {};
@@ -1447,45 +1527,29 @@ const handleSquadWebhook = async (req: express.Request, res: express.Response) =
         return res.status(200).json({ status: "success", message: "Already processed" });
       }
 
-      processedSquadReferences.add(reference);
-
-      let storedPending: any = null;
-      try {
-        const supabase = getSupabaseAdminClient();
-        if (supabase) {
-          const { data: pDoc, error: paymentLookupError } = await supabase.from("payments").select("*").eq("reference", reference).maybeSingle();
-          if (paymentLookupError) throw new Error(paymentLookupError.message);
-          if (pDoc) {
-            storedPending = {
-              ...pDoc,
-              amount: pDoc.amount,
-              userId: pDoc.user_id,
-              email: pDoc.user_email,
-              planId: (pDoc.metadata as any)?.planId,
-              plan: (pDoc.metadata as any)?.planName,
-              durationDays: (pDoc.metadata as any)?.durationDays,
-            };
-          }
-        }
-      } catch (e) {
-        console.warn("[Squad Webhook] Could not fetch stored pending doc:", e);
+      const storedPending = await getStoredPendingPayment(reference);
+      if (!storedPending?.planId || !storedPending.userId) {
+        return res.status(400).json({ status: "error", error: "No stored pending payment was found for this reference." });
       }
 
       const metadata = bodyData.meta || bodyData.metadata || {};
-      const userId = metadata.userId || bodyData.customer?.user_id || storedPending?.userId || "usr-student";
-      const userEmail = bodyData.email || metadata.userEmail || storedPending?.email || "student@acadet.cbt";
-      const userName = metadata.userName || bodyData.customer?.name || storedPending?.fullName || "Acadet Student";
-      const rawAmt = bodyData.amount || bodyData.transaction_amount || metadata.amount || storedPending?.amount || 800;
-      const amount = storedPending?.amount || (rawAmt > 10000 ? Math.round(rawAmt / 100) : rawAmt);
+      const userId = storedPending.userId;
+      const userEmail = storedPending.email || bodyData.email || metadata.userEmail || "student@acadet.cbt";
+      const userName = storedPending.fullName || bodyData.customer?.name || metadata.userName || "Acadet Student";
+      const rawAmt = Number(bodyData.amount ?? bodyData.transaction_amount);
+      const amount = rawAmt > 10000 ? Math.round(rawAmt / 100) : rawAmt;
       const gatewayRef = bodyData.gateway_ref || bodyData.transaction_ref || reference;
 
-      const reqPlanId = metadata.planId || metadata["plan-id"] || storedPending?.planId || "premium";
-      const livePlan = await getLivePlanFromFirestore(reqPlanId);
-      const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
-      const durationDays = Number(metadata.durationDays) || Number(metadata["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
-      const planTitle = metadata.planName || metadata["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
+      const livePlan = await getLivePlanFromFirestore(storedPending.planId);
+      const knownPlan = livePlan || SUBSCRIPTION_PLANS[storedPending.planId];
+      if (!knownPlan || !Number.isFinite(amount) || amount < knownPlan.price) {
+        return res.status(400).json({ status: "error", error: "Verified payment amount does not satisfy the stored subscription plan." });
+      }
+      const durationDays = knownPlan.durationDays;
+      const planTitle = knownPlan.name;
 
       if (userId) {
+        processedSquadReferences.add(reference);
         await activateSubscriptionInFirestore({
           userId,
           userName,
@@ -1516,19 +1580,21 @@ app.post("/api/squad/webhook", handleSquadWebhook);
 // 5. KoraPay Webhook (POST /api/webhooks/korapay & POST /api/korapay/webhook)
 const handleKorapayWebhook = async (req: express.Request, res: express.Response) => {
   try {
-    const signature = (req.headers["x-korapay-signature"] as string) || (req.headers["x-signature"] as string);
+    const signatureHeader = req.headers["x-korapay-signature"] || req.headers["x-signature"];
+    const signature = typeof signatureHeader === "string" ? signatureHeader : "";
     const webhookSecret = getKorapayWebhookSecret();
 
-    if (signature && webhookSecret && !webhookSecret.includes("placeholder")) {
-      const computedHash = crypto
-        .createHmac("sha256", webhookSecret)
-        .update(typeof req.body === "string" ? req.body : JSON.stringify(req.body))
-        .digest("hex");
+    if (!signature || !webhookSecret || webhookSecret.includes("placeholder")) {
+      return res.status(401).json({ status: "error", error: "Webhook signature verification is not configured." });
+    }
+    const computedHash = crypto
+      .createHmac("sha256", webhookSecret)
+      .update((req as express.Request & { rawBody?: Buffer }).rawBody || Buffer.alloc(0))
+      .digest("hex");
 
-      if (computedHash.toLowerCase() !== signature.toLowerCase()) {
-        console.warn("[KoraPay Webhook] Invalid signature. Rejecting request.");
-        return res.status(401).json({ status: "error", error: "Invalid KoraPay webhook signature" });
-      }
+    if (!secureCompare(computedHash.toLowerCase(), signature.toLowerCase())) {
+      console.warn("[KoraPay Webhook] Invalid signature. Rejecting request.");
+      return res.status(401).json({ status: "error", error: "Invalid KoraPay webhook signature" });
     }
 
     const payload = req.body || {};
@@ -1546,8 +1612,6 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
         console.log(`[KoraPay Webhook] Reference ${reference} already processed.`);
         return res.status(200).json({ status: "success", message: "Already processed" });
       }
-
-      processedKorapayReferences.add(reference);
 
       // Verify transaction directly with KoraPay API for security
       const secretKey = getKorapaySecretKey();
@@ -1568,42 +1632,28 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
         }
       }
 
-      let storedPending: any = null;
-      try {
-        const supabase = getSupabaseAdminClient();
-        if (supabase) {
-          const { data: pDoc, error: paymentLookupError } = await supabase.from("payments").select("*").eq("reference", reference).maybeSingle();
-          if (paymentLookupError) throw new Error(paymentLookupError.message);
-          if (pDoc) {
-            storedPending = {
-              ...pDoc,
-              amount: pDoc.amount,
-              userId: pDoc.user_id,
-              email: pDoc.user_email,
-              planId: (pDoc.metadata as any)?.planId,
-              plan: (pDoc.metadata as any)?.planName,
-              durationDays: (pDoc.metadata as any)?.durationDays,
-            };
-          }
-        }
-      } catch (e) {
-        console.warn("[KoraPay Webhook] Could not fetch stored pending doc:", e);
+      const storedPending = await getStoredPendingPayment(reference);
+      if (!storedPending?.planId || !storedPending.userId) {
+        return res.status(400).json({ status: "error", error: "No stored pending payment was found for this reference." });
       }
 
       const meta = data.metadata || {};
-      const userId = meta.userId || meta["user-id"] || data.customer?.userId || storedPending?.userId || "usr-student";
-      const userEmail = meta.userEmail || meta["user-email"] || data.customer?.email || storedPending?.email || "student@acadet.cbt";
-      const userName = meta.fullName || meta.userName || data.customer?.name || storedPending?.fullName || "Acadet Student";
-      const rawAmount = data.amount || meta.amount || meta["amount"] || storedPending?.amount || 800;
-      const amount = storedPending?.amount || (rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount);
+      const userId = storedPending.userId;
+      const userEmail = storedPending.email || data.customer?.email || meta.userEmail || "student@acadet.cbt";
+      const userName = storedPending.fullName || data.customer?.name || meta.fullName || meta.userName || "Acadet Student";
+      const rawAmount = Number(data.amount);
+      const amount = rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount;
 
-      const reqPlanId = meta.planId || meta["plan-id"] || storedPending?.planId || "premium";
-      const livePlan = await getLivePlanFromFirestore(reqPlanId);
-      const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
-      const durationDays = Number(meta.durationDays) || Number(meta["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
-      const planTitle = meta.planName || meta["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
+      const livePlan = await getLivePlanFromFirestore(storedPending.planId);
+      const knownPlan = livePlan || SUBSCRIPTION_PLANS[storedPending.planId];
+      if (!knownPlan || !Number.isFinite(amount) || amount < knownPlan.price) {
+        return res.status(400).json({ status: "error", error: "Verified payment amount does not satisfy the stored subscription plan." });
+      }
+      const durationDays = knownPlan.durationDays;
+      const planTitle = knownPlan.name;
 
       if (userId) {
+        processedKorapayReferences.add(reference);
         await activateSubscriptionInFirestore({
           userId,
           userName,
@@ -1717,21 +1767,23 @@ function normalizeServerRole(role?: string): string {
   return 'super_admin';
 }
 
-function hashPasswordServer(password: string, salt = 'acadet_cbt_master_secure_salt_2026'): string {
-  let hash = 0;
-  const combined = `${salt}:${password}:${salt}`;
-  for (let i = 0; i < combined.length; i++) {
-    const char = combined.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-  return `h_${Math.abs(hash).toString(16)}_${combined.length}`;
+function hashPasswordServer(password: string): string {
+  const salt = crypto.randomBytes(16);
+  const derivedKey = crypto.scryptSync(password, salt, 64);
+  return `scrypt$${salt.toString("hex")}$${derivedKey.toString("hex")}`;
 }
 
 function verifyPasswordServer(password: string, storedHash?: string): boolean {
-  if (!storedHash) return false;
-  if (storedHash === password) return true;
-  return hashPasswordServer(password) === storedHash;
+  if (!storedHash?.startsWith("scrypt$")) return false;
+  const [, saltHex, hashHex] = storedHash.split("$");
+  if (!saltHex || !hashHex || !/^[0-9a-f]+$/i.test(saltHex) || !/^[0-9a-f]+$/i.test(hashHex)) return false;
+  try {
+    const expected = Buffer.from(hashHex, "hex");
+    const actual = crypto.scryptSync(password, Buffer.from(saltHex, "hex"), expected.length);
+    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  } catch {
+    return false;
+  }
 }
 
 // In-Memory Admin State with Defaults for All 9 Roles
@@ -1741,10 +1793,10 @@ const SEED_ADMINS_SERVER: AdminAccountServer[] = [
   {
     id: 'ADM-1001',
     fullName: 'Dr. Clement O. Adebayo',
-    username: 'superadmin',
+    username: process.env.ADMIN_USERNAME?.trim() || 'superadmin',
     email: 'clement.adebayo@cbtmaster.ng',
     phone: '+234 803 123 4567',
-    passwordHash: hashPasswordServer('Admin@1234'),
+    passwordHash: process.env.ADMIN_PASSWORD ? hashPasswordServer(process.env.ADMIN_PASSWORD) : undefined,
     role: 'super_admin',
     status: 'Active',
     createdDate: '2025-01-10T08:00:00.000Z',
@@ -1759,7 +1811,6 @@ const SEED_ADMINS_SERVER: AdminAccountServer[] = [
     username: 'studentadmin',
     email: 'emeka.eze@cbtmaster.ng',
     phone: '+234 814 555 1212',
-    passwordHash: hashPasswordServer('Student@1234'),
     role: 'student_manager',
     status: 'Active',
     createdDate: '2025-02-15T09:30:00.000Z',
@@ -1774,7 +1825,6 @@ const SEED_ADMINS_SERVER: AdminAccountServer[] = [
     username: 'questionadmin',
     email: 'aisha.bello@cbtmaster.ng',
     phone: '+234 802 987 6543',
-    passwordHash: hashPasswordServer('Question@1234'),
     role: 'question_manager',
     status: 'Active',
     createdDate: '2025-02-01T11:00:00.000Z',
@@ -1789,7 +1839,6 @@ const SEED_ADMINS_SERVER: AdminAccountServer[] = [
     username: 'courseadmin',
     email: 'tunde.oladipo@cbtmaster.ng',
     phone: '+234 818 777 8899',
-    passwordHash: hashPasswordServer('Course@1234'),
     role: 'course_manager',
     status: 'Active',
     createdDate: '2025-03-10T14:15:00.000Z',
@@ -1804,7 +1853,6 @@ const SEED_ADMINS_SERVER: AdminAccountServer[] = [
     username: 'paymentadmin',
     email: 'fatima.yusuf@cbtmaster.ng',
     phone: '+234 805 444 3322',
-    passwordHash: hashPasswordServer('Payment@1234'),
     role: 'payment_manager',
     status: 'Active',
     createdDate: '2025-03-01T10:00:00.000Z',
@@ -1819,7 +1867,6 @@ const SEED_ADMINS_SERVER: AdminAccountServer[] = [
     username: 'supportadmin',
     email: 'amina.danjuma@cbtmaster.ng',
     phone: '+234 809 111 2233',
-    passwordHash: hashPasswordServer('Support@1234'),
     role: 'support_manager',
     status: 'Active',
     createdDate: '2025-03-15T16:00:00.000Z',
@@ -1834,7 +1881,6 @@ const SEED_ADMINS_SERVER: AdminAccountServer[] = [
     username: 'reportadmin',
     email: 'kabiru.sani@cbtmaster.ng',
     phone: '+234 807 222 3344',
-    passwordHash: hashPasswordServer('Report@1234'),
     role: 'report_manager',
     status: 'Active',
     createdDate: '2025-03-20T09:00:00.000Z',
@@ -1849,7 +1895,6 @@ const SEED_ADMINS_SERVER: AdminAccountServer[] = [
     username: 'contentadmin',
     email: 'grace.nwosu@cbtmaster.ng',
     phone: '+234 812 333 4455',
-    passwordHash: hashPasswordServer('Content@1234'),
     role: 'content_manager',
     status: 'Active',
     createdDate: '2025-03-25T13:45:00.000Z',
@@ -1864,7 +1909,6 @@ const SEED_ADMINS_SERVER: AdminAccountServer[] = [
     username: 'systemadmin',
     email: 'ibrahim.garba@cbtmaster.ng',
     phone: '+234 816 444 5566',
-    passwordHash: hashPasswordServer('System@1234'),
     role: 'system_manager',
     status: 'Active',
     createdDate: '2025-04-01T15:30:00.000Z',
@@ -1887,7 +1931,12 @@ async function loadAdminsFromFirestore() {
       if (error) throw new Error(error.message);
       if (admins && admins.length > 0) {
         admins.forEach((data: any) => {
-          inMemoryAdmins.set(data.id, adminFromRow(data) as AdminAccountServer);
+          if (data.id === 'ADM-1001') return;
+          const admin = adminFromRow(data) as AdminAccountServer;
+          admin.passwordHash = String(admin.passwordHash || "").startsWith("scrypt$")
+            ? admin.passwordHash
+            : undefined;
+          inMemoryAdmins.set(data.id, admin);
         });
       }
     }
@@ -1907,6 +1956,7 @@ interface AdminSession {
   role: string;
   permissions: string[];
   loginTime: number;
+  expiresAt: number;
 }
 const activeAdminSessions = new Map<string, AdminSession>();
 const failedAdminAttempts = new Map<string, { count: number; lockUntil: number }>();
@@ -1918,31 +1968,12 @@ function getAdminSession(req: express.Request): AdminSession | null {
   if (!token || token === 'null' || token === 'undefined') return null;
 
   const existing = activeAdminSessions.get(token);
-  if (existing) return existing;
-
-  // Restart-safe recovery for validly signed/formatted tokens
-  if (token.startsWith('adm_sess_') || token.length > 20) {
-    const recovered: AdminSession = {
-      token,
-      adminId: 'recovered-admin',
-      username: 'admin',
-      fullName: 'Administrator',
-      email: 'idrisanderumohammed2521@gmail.com',
-      role: 'super_admin',
-      permissions: [
-        'manage_questions',
-        'manage_courses',
-        'manage_universities',
-        'manage_materials',
-        'manage_users',
-        'manage_payments',
-        'manage_system',
-        'full_access',
-      ],
-      loginTime: Date.now(),
-    };
-    activeAdminSessions.set(token, recovered);
-    return recovered;
+  if (existing) {
+    if (existing.expiresAt <= Date.now()) {
+      activeAdminSessions.delete(token);
+      return null;
+    }
+    return existing;
   }
 
   return null;
@@ -1994,6 +2025,9 @@ app.post('/api/admin/login', async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required.' });
   }
+  if (!process.env.ADMIN_USERNAME?.trim() || !process.env.ADMIN_PASSWORD) {
+    return res.status(503).json({ error: 'Admin authentication is not configured.' });
+  }
 
   const cleanUser = String(username).trim().toLowerCase();
 
@@ -2004,11 +2038,6 @@ app.post('/api/admin/login', async (req, res) => {
       targetAdmin = admin;
       break;
     }
-  }
-
-  // Fallback legacy superadmin support
-  if (!targetAdmin && (cleanUser === 'menmex' || cleanUser === 'superadmin')) {
-    targetAdmin = inMemoryAdmins.get('ADM-1001') || SEED_ADMINS_SERVER[0];
   }
 
   if (!targetAdmin) {
@@ -2026,18 +2055,7 @@ app.post('/api/admin/login', async (req, res) => {
   }
 
   // Verify password
-  const isValid =
-    verifyPasswordServer(password, targetAdmin.passwordHash) ||
-    (targetAdmin.username === 'superadmin' && (password === 'Admin@1234' || password === 'Admin@2025!' || password === 'joyce@menmex')) ||
-    (targetAdmin.username === 'studentadmin' && (password === 'Student@1234' || password === 'Student@2025!')) ||
-    (targetAdmin.username === 'questionadmin' && (password === 'Question@1234' || password === 'Question@2025!')) ||
-    (targetAdmin.username === 'courseadmin' && (password === 'Course@1234' || password === 'Course@2025!')) ||
-    (targetAdmin.username === 'paymentadmin' && (password === 'Payment@1234' || password === 'Payment@2025!')) ||
-    (targetAdmin.username === 'supportadmin' && (password === 'Support@1234' || password === 'Support@2025!')) ||
-    (targetAdmin.username === 'reportadmin' && (password === 'Report@1234' || password === 'Report@2025!')) ||
-    (targetAdmin.username === 'contentadmin' && (password === 'Content@1234' || password === 'Content@2025!')) ||
-    (targetAdmin.username === 'systemadmin' && (password === 'System@1234' || password === 'System@2025!')) ||
-    (cleanUser === 'menmex' && (password === 'joyce@menmex' || password === 'Admin@1234' || password === 'Admin@2025!'));
+  const isValid = verifyPasswordServer(password, targetAdmin.passwordHash);
 
   if (!isValid) {
     const newCount = attemptInfo.count + 1;
@@ -2078,6 +2096,7 @@ app.post('/api/admin/login', async (req, res) => {
     role: targetAdmin.role,
     permissions,
     loginTime: Date.now(),
+    expiresAt: Date.now() + 12 * 60 * 60 * 1000,
   };
   activeAdminSessions.set(sessionToken, sessionData);
 
@@ -2354,7 +2373,8 @@ app.get(['/api/payments', '/api/admin/payments'], requireAdminPermission('manage
       const { data: payments, error } = await supabase.from('payments').select('*').order('created_at', { ascending: false }).limit(200);
       if (error) return res.status(500).json({ success: false, error: error.message });
       if (payments) {
-        return res.json({ success: true, transactions: payments });
+        const transactions = payments.map(paymentFromRow);
+        return res.json({ success: true, transactions });
       }
     }
   } catch (err: any) {
@@ -2371,7 +2391,8 @@ app.get('/api/admin/students', requireAdminPermission('manage_students'), async 
       const { data: users, error } = await supabase.from('users').select('*').order('created_at', { ascending: false }).limit(500);
       if (error) return res.status(500).json({ success: false, error: error.message });
       if (users) {
-        return res.json({ success: true, students: users });
+        const students = users.map(userFromRow);
+        return res.json({ success: true, students });
       }
     }
   } catch (err: any) {
@@ -2406,11 +2427,19 @@ app.get('/api/admin/settings', requireAdminPermission('manage_settings'), async 
   return res.json({ success: true, configs: [] });
 });
 
+// Helper: Deterministically map string IDs to valid PostgreSQL UUIDs when needed
+const toUuid = (id?: string | null): string => {
+  if (!id) return crypto.randomUUID();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return id;
+  const hash = crypto.createHash("md5").update(id).digest("hex");
+  return `${hash.substring(0, 8)}-${hash.substring(8, 12)}-4${hash.substring(13, 16)}-a${hash.substring(17, 20)}-${hash.substring(20, 32)}`;
+};
+
 // =========================================================================
 // SUPABASE DIAGNOSTICS & STATUS ENDPOINTS
 // =========================================================================
 
-app.get("/api/supabase/status", async (_req, res) => {
+app.get("/api/supabase/status", requireAdminPermission('manage_settings'), async (_req, res) => {
   try {
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
     const rawAnon = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
@@ -2614,13 +2643,11 @@ app.get("/api/catalog/all", async (_req, res) => {
           supabase.from("questions").select("*"),
           supabase.from("materials").select("*"),
           supabase.from("subscription_plans").select("*"),
-          supabase.from("users").select("*"),
-          supabase.from("payments").select("*"),
           supabase.from("system_configs").select("*"),
         ]);
         const firstError = results.find((result) => result.error);
         if (firstError?.error) throw new Error(firstError.error.message);
-        const [unisResult, coursesResult, deptsResult, facsResult, questionsResult, materialsResult, plansResult, usersResult, paymentsResult, configsResult] = results;
+        const [unisResult, coursesResult, deptsResult, facsResult, questionsResult, materialsResult, plansResult, configsResult] = results;
         const sbUnis = unisResult.data;
         const sbCourses = coursesResult.data;
         const sbDepts = deptsResult.data;
@@ -2628,8 +2655,6 @@ app.get("/api/catalog/all", async (_req, res) => {
         const sbQuestions = questionsResult.data;
         const sbMaterials = materialsResult.data;
         const sbPlans = plansResult.data;
-        const sbUsers = usersResult.data;
-        const sbPayments = paymentsResult.data;
         const sbConfigs = configsResult.data;
 
         if (sbUnis || sbCourses || sbQuestions || sbPlans) {
@@ -2640,8 +2665,6 @@ app.get("/api/catalog/all", async (_req, res) => {
           const questions = (sbQuestions || []).map(questionFromRow);
           const materials = (sbMaterials || []).map(materialFromRow);
           const plans = (sbPlans || []).map(planFromRow);
-          const users = (sbUsers || []).map(userFromRow);
-          const payments = (sbPayments || []).map(paymentFromRow);
 
           let signupFaculties: any = null;
           const configEntry = (sbConfigs || []).find((c: any) => c.key === 'signup_faculties' || c.id === 'signup_faculties');
@@ -2659,8 +2682,6 @@ app.get("/api/catalog/all", async (_req, res) => {
             questions,
             materials,
             plans,
-            users,
-            payments,
             signupFaculties,
           });
         }
@@ -2678,8 +2699,6 @@ app.get("/api/catalog/all", async (_req, res) => {
       questions: [],
       materials: [],
       plans: [],
-      users: [],
-      payments: [],
     });
   } catch (err: any) {
     console.warn("[Catalog API] Warning in /api/catalog/all:", err);
@@ -2799,7 +2818,7 @@ app.delete("/api/catalog/questions/:id", requireAdminPermission('manage_question
 });
 
 // Clear all questions
-app.post("/api/catalog/questions/clear-all", async (req, res) => {
+app.post("/api/catalog/questions/clear-all", requireAdminPermission('manage_questions'), async (req, res) => {
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
@@ -2988,9 +3007,46 @@ app.post("/api/users/sync", async (req, res) => {
   try {
     const { user, users } = req.body;
     const items = users || (user ? [user] : []);
+    if (!Array.isArray(items) || items.some((item: any) => !item || typeof item !== "object")) {
+      return res.status(400).json({ success: false, error: "A valid user profile is required." });
+    }
+
+    let verifiedUid: string | null = null;
+    if (firebaseAdminAuth) {
+      const authorization = req.headers.authorization;
+      const token = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+      if (!token) {
+        return res.status(401).json({ success: false, error: "A Firebase ID token is required." });
+      }
+      try {
+        const decodedToken = await firebaseAdminAuth.verifyIdToken(token);
+        verifiedUid = decodedToken.uid;
+      } catch {
+        return res.status(401).json({ success: false, error: "Invalid Firebase ID token." });
+      }
+      if (items.some((u: any) => String(u.id || "") !== verifiedUid)) {
+        return res.status(403).json({ success: false, error: "Users may only sync their own profile." });
+      }
+    }
+
     const supabase = getSupabaseAdminClient();
     if (supabase && items.length > 0) {
-      const { error } = await supabase.from("users").upsert(items.map((u: any) => userToRow(u)));
+      const records = await Promise.all(items.map(async (u: any) => {
+        const id = toUuid(u.id);
+        const { data: existing, error: existingError } = await supabase
+          .from("users")
+          .select("role, subscription")
+          .eq("id", id)
+          .maybeSingle();
+        if (existingError) throw new Error(existingError.message);
+        return userToRow({
+          ...u,
+          id,
+          role: existing?.role || "student",
+          subscription: existing?.subscription || undefined,
+        });
+      }));
+      const { error } = await supabase.from("users").upsert(records);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, count: items.length });
@@ -3015,7 +3071,7 @@ app.delete("/api/users/:id", requireAdminPermission('manage_users'), async (req,
 });
 
 // Clear all users
-app.post("/api/users/clear-all", async (req, res) => {
+app.post("/api/users/clear-all", requireAdminPermission('manage_users'), async (req, res) => {
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {

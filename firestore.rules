@@ -36,8 +36,8 @@ service cloud.firestore {
     // 1. USER PROFILES & ACCOUNTS
     // =========================================================================
     match /users/{userId} {
-      allow read: if true;
-      allow create: if true;
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
       allow update, delete: if isOwner(userId) || isAdmin();
     }
 
@@ -90,7 +90,7 @@ service cloud.firestore {
     }
 
     match /admins/{adminId} {
-      allow read: if true;
+      allow read: if isAdmin();
       allow write: if isAdmin();
     }
 
@@ -309,6 +309,5 @@ service cloud.firestore {
     }
   }
 }
-
 
 
