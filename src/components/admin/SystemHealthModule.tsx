@@ -130,10 +130,10 @@ export const SystemHealthModule: React.FC = () => {
     {
       id: 'ERR-8801',
       type: 'Firebase',
-      description: 'Firestore quota warning threshold (85% reads/sec reached during peak exam session)',
+      description: 'Database quota warning threshold (85% reads/sec reached during peak exam session)',
       severity: 'Medium',
       timestamp: new Date(Date.now() - 1000 * 60 * 18).toLocaleTimeString(),
-      module: 'Firestore Sync',
+      module: 'Database Sync',
       status: 'Active'
     },
     {
@@ -159,7 +159,7 @@ export const SystemHealthModule: React.FC = () => {
 
   // System Logs Stream
   const [systemLogs, setSystemLogs] = useState<SystemLogItem[]>([
-    { id: 'LOG-101', level: 'Info', category: 'Firebase', message: 'Firestore snapshot connection synchronized successfully across 184 clients.', timestamp: 'Just now', source: 'Firestore Provider' },
+    { id: 'LOG-101', level: 'Info', category: 'Firebase', message: 'Database snapshot connection synchronized successfully across 184 clients.', timestamp: 'Just now', source: 'Database Provider' },
     { id: 'LOG-102', level: 'Warning', category: 'Performance', message: 'Memory spike detected on worker node #2 (42% utilization peak).', timestamp: '2 mins ago', source: 'Cluster Monitor' },
     { id: 'LOG-103', level: 'Info', category: 'Security', message: 'RBAC permissions matrix verified for 5 active administrators.', timestamp: '5 mins ago', source: 'Auth Guard' },
     { id: 'LOG-104', level: 'Error', category: 'Performance', message: 'Index scan latency on questions_collection exceeded 45ms threshold.', timestamp: '12 mins ago', source: 'Query Analyzer' },
@@ -257,7 +257,7 @@ export const SystemHealthModule: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Continuous operational overview of Cloud Firestore, server response times, active connections, security threats & Smart Health Analysis.
+              Continuous operational overview of Supabase Database, server response times, active connections, security threats & Smart Health Analysis.
             </p>
           </div>
         </div>
@@ -341,10 +341,10 @@ export const SystemHealthModule: React.FC = () => {
           <span className="text-[10px] text-emerald-400 font-medium mt-1 block">Authentication & SDK</span>
         </div>
 
-        {/* Firestore Database */}
+        {/* Database Database */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-left shadow-sm">
           <div className="flex justify-between items-start">
-            <span className="text-[11px] text-slate-400 font-medium">Firestore Status</span>
+            <span className="text-[11px] text-slate-400 font-medium">Database Status</span>
             <Database className="w-4 h-4 text-indigo-400" />
           </div>
           <p className="text-2xl font-black text-indigo-300 mt-1">Connected</p>
@@ -449,7 +449,7 @@ export const SystemHealthModule: React.FC = () => {
           { id: 'dashboard', label: 'Overview & Hardware', icon: BarChart3 },
           { id: 'performance', label: 'Server Performance', icon: Cpu },
           { id: 'firebase', label: 'Firebase Services', icon: Database },
-          { id: 'database', label: 'Firestore Collections', icon: Layers },
+          { id: 'database', label: 'Database Collections', icon: Layers },
           { id: 'errors', label: 'Error Tracker', icon: AlertTriangle },
           { id: 'security', label: 'Security Threats', icon: ShieldAlert },
           { id: 'insights', label: 'Smart Health Analysis', icon: Sparkles },
@@ -709,7 +709,7 @@ export const SystemHealthModule: React.FC = () => {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
-                  <span>Enable client-side caching for University & Department metadata schemas to save 12% daily Firestore read operations.</span>
+                  <span>Enable client-side caching for University & Department metadata schemas to save 12% daily Database read operations.</span>
                 </li>
               </ul>
             </div>
@@ -720,7 +720,7 @@ export const SystemHealthModule: React.FC = () => {
                 <span>Resource Usage Forecast</span>
               </h4>
               <p className="text-slate-400 leading-relaxed">
-                Based on student growth trends (+12% this month), Firestore reads are projected to reach 45,000/day during upcoming semester examination week. Current quota settings are well sufficient.
+                Based on student growth trends (+12% this month), Database reads are projected to reach 45,000/day during upcoming semester examination week. Current quota settings are well sufficient.
               </p>
             </div>
 

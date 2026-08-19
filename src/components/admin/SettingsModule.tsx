@@ -150,7 +150,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
     setTimeout(() => {
       StorageService.saveSystemSettingsPayload(settings);
       setIsSaving(false);
-      triggerToast('System configurations updated and synchronized to Cloud Firestore!');
+      triggerToast('System configurations updated and synchronized to Supabase Database!');
     }, 400);
   };
 
@@ -1057,7 +1057,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
           </div>
 
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-3xl space-y-2">
-            <span className="text-slate-400 font-bold uppercase text-[10px]">Firestore Latency</span>
+            <span className="text-slate-400 font-bold uppercase text-[10px]">Database Latency</span>
             <p className="text-2xl font-black text-indigo-400">18 ms</p>
             <div className="h-2 bg-slate-950 rounded-full overflow-hidden">
               <div className="h-full bg-indigo-500 w-[15%]"></div>

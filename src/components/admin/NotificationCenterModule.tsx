@@ -1209,7 +1209,7 @@ export const NotificationCenterModule: React.FC<NotificationCenterModuleProps> =
             <AlertTriangle className="w-10 h-10 text-rose-500 mx-auto" />
             <h3 className="font-extrabold text-white text-sm">Delete Notification?</h3>
             <p className="text-xs text-slate-400">
-              This will permanently remove this notification record from Firestore and history.
+              This will permanently remove this notification record from Database and history.
             </p>
             <div className="flex justify-center gap-3 pt-2">
               <button

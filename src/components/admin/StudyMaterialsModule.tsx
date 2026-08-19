@@ -282,7 +282,7 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
   };
 
   const handleDeleteMaterial = (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this study material? This will update Firestore immediately.')) return;
+    if (!window.confirm('Are you sure you want to delete this study material? This will update Database immediately.')) return;
     const newList = materials.filter((m) => m.id !== id);
     onUpdateMaterials(newList);
     StorageService.saveMaterials(newList);

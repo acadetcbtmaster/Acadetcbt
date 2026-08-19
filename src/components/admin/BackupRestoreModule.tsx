@@ -193,7 +193,7 @@ export const BackupRestoreModule: React.FC = () => {
 
     setTimeout(() => {
       setBackupProgressPct(35);
-      setBackupProgressStage('Validating Firestore data integrity and relations...');
+      setBackupProgressStage('Validating Database data integrity and relations...');
     }, 600);
 
     setTimeout(() => {
@@ -287,7 +287,7 @@ export const BackupRestoreModule: React.FC = () => {
 
     setTimeout(() => {
       setRestoreProgressPct(70);
-      setRestoreProgressStage('Overwriting Firestore collections with backup dataset...');
+      setRestoreProgressStage('Overwriting Database tables with backup dataset...');
     }, 1600);
 
     setTimeout(() => {
@@ -461,7 +461,7 @@ export const BackupRestoreModule: React.FC = () => {
             <Server className="w-4 h-4 text-blue-400" />
           </div>
           <p className="text-xl font-black text-blue-400">42.5 MB</p>
-          <p className="text-[9px] text-slate-400">14 Firestore collections</p>
+          <p className="text-[9px] text-slate-400">14 Database tables</p>
         </div>
 
         <div
@@ -886,7 +886,7 @@ export const BackupRestoreModule: React.FC = () => {
                 <Clock className="w-5 h-5 text-cyan-400" />
                 <span>Automatic Backup Configuration</span>
               </h3>
-              <p className="text-xs text-slate-400 mt-0.5">Configure scheduled background backups executed directly by Cloud Firestore Scheduler.</p>
+              <p className="text-xs text-slate-400 mt-0.5">Configure scheduled background backups executed directly by Supabase Database Scheduler.</p>
             </div>
           </div>
 
@@ -1000,7 +1000,7 @@ export const BackupRestoreModule: React.FC = () => {
               <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-start gap-3">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold text-white block">Firestore Multi-Region Sync Verified</span>
+                  <span className="font-bold text-white block">Database Multi-Region Sync Verified</span>
                   <p className="text-[11px] text-slate-400 mt-0.5">Database snapshots are replicated in London (eu-west2) and Frankfurt (eu-central1).</p>
                 </div>
               </div>
@@ -1168,7 +1168,7 @@ export const BackupRestoreModule: React.FC = () => {
                   <div>
                     <span className="font-bold block text-rose-400 text-sm">CRITICAL WARNING</span>
                     <p className="mt-1 leading-relaxed">
-                      Restoring from this snapshot will overwrite current Firestore database collections with the state stored in:
+                      Restoring from this snapshot will overwrite current Database database collections with the state stored in:
                       <strong className="text-white block mt-1">{restoreTarget.name} ({restoreTarget.id})</strong>
                     </p>
                   </div>

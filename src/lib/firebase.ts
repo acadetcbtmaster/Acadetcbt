@@ -33,9 +33,6 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 // Initialize Firebase Storage for attachments if needed
 export const storage = getStorage(app);
 
-// Firestore is completely removed in favor of Supabase Database
-export const db = null as any;
-
 export {
   signInWithPopup,
   firebaseSignOut,

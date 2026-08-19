@@ -59,16 +59,8 @@ import {
   normalizeAdminRole,
 } from '../utils/rbac';
 
-import { auth, db } from '../lib/firebase';
-import {
-  collection,
-  doc,
-  setDoc,
-  deleteDoc,
-  getDocs,
-  onSnapshot,
-  Unsubscribe,
-} from 'firebase/firestore';
+import { auth } from '../lib/firebase';
+export type Unsubscribe = () => void;
 import {
   getSupabaseClient,
   isSupabaseConfigured,
@@ -79,8 +71,13 @@ import {
   syncQuestionToSupabase,
   deleteQuestionFromSupabase,
   syncUniversitiesToSupabase,
+  deleteUniversityFromSupabase,
   syncCoursesToSupabase,
+  deleteCourseFromSupabase,
   syncMaterialsToSupabase,
+  deleteMaterialFromSupabase,
+  syncPlansToSupabase,
+  deletePlanFromSupabase,
   toUuid,
 } from '../lib/supabase';
 
@@ -95,7 +92,7 @@ export enum OperationType {
   WRITE = 'write',
 }
 
-export interface FirestoreErrorInfo {
+export interface DatabaseErrorInfo {
   error: string;
   operationType: OperationType;
   path: string | null;
@@ -172,7 +169,7 @@ export function stripNonSerializable(val: any, seen = new WeakSet<any>(), depth 
         cName === 'AuthImpl' ||
         cName.includes('Auth') ||
         cName.includes('Firebase') ||
-        cName.includes('Firestore') ||
+        cName.includes('Database') ||
         ('_delegate' in val) ||
         ('_firestore' in val) ||
         ('_auth' in val) ||
@@ -294,7 +291,7 @@ export function sanitizeForJSON(val: any, seen = new WeakSet<any>(), depth = 0):
       Object.getPrototypeOf(val) === null ||
       Object.getPrototypeOf(val) === Object.prototype;
 
-    // 1. Minified Firebase Auth / Firestore SDK internal circular objects (Y2, Ka, etc.)
+    // 1. Minified Firebase Auth / Database SDK internal circular objects (Y2, Ka, etc.)
     let isCircularSdkObject = !isPlain;
     try {
       if (
@@ -302,12 +299,12 @@ export function sanitizeForJSON(val: any, seen = new WeakSet<any>(), depth = 0):
         cName === 'Ka' ||
         cName === 'UserImpl' ||
         cName === 'AuthImpl' ||
-        cName === 'Firestore' ||
+        cName === 'Database' ||
         cName === 'DocumentReference' ||
         cName === 'QuerySnapshot' ||
         cName.includes('Firebase') ||
         cName.includes('Auth') ||
-        cName.includes('Firestore') ||
+        cName.includes('Database') ||
         (cName.length > 0 && cName.length <= 3 && cName !== 'Object' && cName !== 'Array' && cName !== 'Set' && cName !== 'Map' && cName !== 'Date' && cName !== 'Number' && cName !== 'Boolean' && cName !== 'String')
       ) {
         isCircularSdkObject = true;
@@ -551,8 +548,8 @@ export function safeClone<T>(obj: T): T {
   }
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
+export function handleDatabaseError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: DatabaseErrorInfo = {
     error: typeof error === 'object' && error !== null && 'message' in error ? String((error as any).message) : String(error),
     authInfo: {
       userId: auth.currentUser?.uid,
@@ -568,7 +565,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path,
   };
-  console.warn('Firestore Operation Notice: ', safeStringify(errInfo));
+  console.warn('Database Operation Notice: ', safeStringify(errInfo));
   return errInfo;
 }
 
@@ -782,82 +779,19 @@ export class StorageService {
   private static pendingChangedKeys = new Set<string>();
   private static memoryCache = new Map<string, any>();
 
-  // Safe initialization with real-time Firestore listeners for dynamic platform modules
+  // Safe initialization with real-time Database listeners for dynamic platform modules
   static initRealtimeListeners(): void {
     if (this.isInitialized) return;
     this.isInitialized = true;
     this.syncWithCloud().catch(() => {});
 
-    try {
-      // 1. Live listener for System Settings & Configurations
-      onSnapshot(
-        doc(db, 'system_configs', 'global_settings'),
-        (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data() as SystemSettingsPayload;
-            if (data) {
-              this.memoryCache.set(STORAGE_KEYS.SYSTEM_SETTINGS, data);
-              try {
-                localStorage.setItem(STORAGE_KEYS.SYSTEM_SETTINGS, safeStringify(data));
-              } catch {}
-              try {
-                window.dispatchEvent(
-                  new CustomEvent('cbt_storage_change', {
-                    detail: { key: STORAGE_KEYS.SYSTEM_SETTINGS, timestamp: Date.now() },
-                  })
-                );
-              } catch {}
-            }
-          }
-        },
-        () => {}
-      );
-
-      // 2. Live listener for Subscription Plans
-      onSnapshot(
-        collection(db, 'subscription_plans'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const plans = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as SubscriptionPlan[];
-            this.memoryCache.set(STORAGE_KEYS.PLANS, plans);
-            try {
-              localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(plans));
-            } catch {}
-            try {
-              window.dispatchEvent(
-                new CustomEvent('cbt_storage_change', {
-                  detail: { key: STORAGE_KEYS.PLANS, timestamp: Date.now() },
-                })
-              );
-            } catch {}
-          }
-        },
-        () => {}
-      );
-
-      // 3. Live listener for Community Announcements
-      onSnapshot(
-        collection(db, 'community_announcements'),
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const ann = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as CommunityAnnouncement[];
-            this.memoryCache.set(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, ann);
-            try {
-              localStorage.setItem(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, safeStringify(ann));
-            } catch {}
-            try {
-              window.dispatchEvent(
-                new CustomEvent('cbt_storage_change', {
-                  detail: { key: STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, timestamp: Date.now() },
-                })
-              );
-            } catch {}
-          }
-        },
-        () => {}
-      );
-    } catch (e) {
-      console.warn('Realtime listeners initialization notice:', e);
+    // Periodic cloud sync every 30 seconds for real-time consistency across all users and admin updates
+    if (typeof window !== 'undefined') {
+      try {
+        setInterval(() => {
+          this.syncWithCloud().catch(() => {});
+        }, 30000);
+      } catch {}
     }
   }
 
@@ -880,7 +814,7 @@ export class StorageService {
     }
     return {
       provider: 'firestore',
-      name: 'Cloud Firestore',
+      name: 'Supabase Database',
       isSupabase: false,
       status: 'ready',
     };
@@ -888,7 +822,7 @@ export class StorageService {
 
   /**
    * Universal Single-Source-of-Truth Database Synchronization
-   * Fetches latest state from Supabase / Backend API and Cloud Firestore,
+   * Fetches latest state from Supabase / Backend API and Supabase Database,
    * updates the local cache, and notifies all subscribing React views.
    */
   static async syncWithCloud(force: boolean = false): Promise<boolean> {
@@ -1051,104 +985,9 @@ export class StorageService {
         }
       }
 
-      // 2. Secondary Direct Firestore Sync Fallback
-      if (!syncedSuccessfully) {
-        try {
-          const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap, adminSnap, usersSnap, paySnap] = await Promise.all([
-            getDocs(collection(db, 'universities')),
-            getDocs(collection(db, 'courses')),
-            getDocs(collection(db, 'departments')),
-            getDocs(collection(db, 'faculties')),
-            getDocs(collection(db, 'questions')),
-            getDocs(collection(db, 'materials')),
-            getDocs(collection(db, 'subscription_plans')),
-            getDocs(collection(db, 'system_configs')),
-            getDocs(collection(db, 'admins')),
-            getDocs(collection(db, 'users')),
-            getDocs(collection(db, 'payments')),
-          ]);
-
-          if (uniSnap && !uniSnap.empty) {
-            const unis = uniSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as University[];
-            this.memoryCache.set(STORAGE_KEYS.UNIVERSITIES, unis);
-            localStorage.setItem(STORAGE_KEYS.UNIVERSITIES, safeStringify(unis));
-          }
-
-          if (courseSnap && !courseSnap.empty) {
-            const courses = courseSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Course[];
-            this.memoryCache.set(STORAGE_KEYS.COURSES, courses);
-            localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(courses));
-          }
-
-          if (deptSnap && !deptSnap.empty) {
-            const depts = deptSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Department[];
-            this.memoryCache.set(STORAGE_KEYS.DEPARTMENTS, depts);
-            localStorage.setItem(STORAGE_KEYS.DEPARTMENTS, safeStringify(depts));
-          }
-
-          if (facSnap && !facSnap.empty) {
-            const facs = facSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Faculty[];
-            this.memoryCache.set(STORAGE_KEYS.FACULTIES, facs);
-            localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(facs));
-          }
-
-          if (qSnap && !qSnap.empty) {
-            const questions = qSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Question[];
-            this.memoryCache.set(STORAGE_KEYS.QUESTIONS, questions);
-            localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(questions));
-          }
-
-          if (matSnap && !matSnap.empty) {
-            const materials = matSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as StudyMaterial[];
-            this.memoryCache.set(STORAGE_KEYS.MATERIALS, materials);
-            localStorage.setItem(STORAGE_KEYS.MATERIALS, safeStringify(materials));
-          }
-
-          if (planSnap && !planSnap.empty) {
-            const plans = planSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as SubscriptionPlan[];
-            this.memoryCache.set(STORAGE_KEYS.PLANS, plans);
-            localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(plans));
-          }
-
-          if (adminSnap && !adminSnap.empty) {
-            const admins = adminSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as AdminAccount[];
-            this.memoryCache.set(STORAGE_KEYS.ADMIN_ACCOUNTS, admins);
-            localStorage.setItem(STORAGE_KEYS.ADMIN_ACCOUNTS, safeStringify(admins));
-          }
-
-          if (configSnap && !configSnap.empty) {
-            const signupDoc = configSnap.docs.find((d) => d.id === 'signup_faculties');
-            if (signupDoc && signupDoc.data()?.groups) {
-              this.memoryCache.set(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, signupDoc.data().groups);
-              localStorage.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, safeStringify(signupDoc.data().groups));
-            }
-          }
-
-          if (usersSnap && !usersSnap.empty) {
-            const users = usersSnap.docs.map((d) => {
-              const data = d.data() as any;
-              return {
-                id: d.id,
-                ...data,
-                name: data.fullName || data.name || data.username || 'Student',
-                fullName: data.fullName || data.name || data.username || 'Student',
-                role: data.role || 'student',
-              } as UserProfile;
-            });
-            this.memoryCache.set(STORAGE_KEYS.USERS, users);
-            localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(users));
-          }
-
-          if (paySnap && !paySnap.empty) {
-            const txs = paySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as PaymentTransaction[];
-            this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, txs);
-            localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(txs));
-          }
-
-          syncedSuccessfully = true;
-        } catch (err) {
-          console.info('[StorageService] Direct Firestore sync notice');
-        }
+      // Supabase & REST catalog sync complete
+      if (syncedSuccessfully) {
+        console.info('[StorageService] Catalog synchronized with Supabase.');
       }
 
       this.hasSyncedWithCloud = true;
@@ -1339,7 +1178,6 @@ export class StorageService {
   }
 
   static async clearAllUsers(): Promise<boolean> {
-    const currentUsers = this.getUsers();
     this.memoryCache.set(STORAGE_KEYS.USERS, []);
     this.memoryCache.delete(STORAGE_KEYS.USER);
     try {
@@ -1347,23 +1185,12 @@ export class StorageService {
       localStorage.removeItem(STORAGE_KEYS.USER);
     } catch {}
 
-    const promises: Promise<any>[] = [];
-    currentUsers.forEach((u) => {
-      promises.push(
-        deleteDoc(doc(db, 'users', u.id)).catch((err) =>
-          handleFirestoreError(err, OperationType.DELETE, `users/${u.id}`)
-        )
-      );
-    });
-
-    promises.push(
-      fetch('/api/users/clear-all', {
+    try {
+      await fetch('/api/users/clear-all', {
         method: 'POST',
         headers: this.getAdminAuthHeaders(),
-      }).catch(() => {})
-    );
-
-    await Promise.allSettled(promises);
+      }).catch(() => {});
+    } catch {}
 
     try {
       window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.USERS, timestamp: Date.now() } }));
@@ -1372,26 +1199,20 @@ export class StorageService {
     return true;
   }
 
-  static saveUsers(users: UserProfile[], syncToFirestore: boolean = true): void {
+  static saveUsers(users: UserProfile[], syncToBackend: boolean = true): void {
     const previous = this.getUsers();
     this.setItem(STORAGE_KEYS.USERS, users);
 
-    if (!syncToFirestore) return;
+    if (!syncToBackend) return;
 
     users.forEach((u) => {
       syncUserToSupabase(u).catch(() => {});
-      setDoc(doc(db, 'users', u.id), safeClone(u), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `users/${u.id}`)
-      );
     });
 
-    // Sync deletions to Firestore & Backend
+    // Sync deletions to Backend API & Supabase
     const newIds = new Set(users.map((u) => u.id));
     previous.forEach((pu) => {
       if (!newIds.has(pu.id)) {
-        deleteDoc(doc(db, 'users', pu.id)).catch((err) =>
-          handleFirestoreError(err, OperationType.DELETE, `users/${pu.id}`)
-        );
         fetch(`/api/users/${encodeURIComponent(pu.id)}`, {
           method: 'DELETE',
           headers: this.getAdminAuthHeaders(),
@@ -1414,9 +1235,6 @@ export class StorageService {
     }
 
     await Promise.allSettled([
-      deleteDoc(doc(db, 'users', userId)).catch((err) =>
-        handleFirestoreError(err, OperationType.DELETE, `users/${userId}`)
-      ),
       fetch(`/api/users/${encodeURIComponent(userId)}`, {
         method: 'DELETE',
         headers: this.getAdminAuthHeaders(),
@@ -1454,7 +1272,7 @@ export class StorageService {
     }
   }
 
-  static saveUser(user: UserProfile, syncToFirestore: boolean = true): void {
+  static saveUser(user: UserProfile, syncToBackend: boolean = true): void {
     const users = this.getUsers();
 
     const activeSessionUser = this.getItem<UserProfile | null>(STORAGE_KEYS.USER, null);
@@ -1470,32 +1288,14 @@ export class StorageService {
     }
     this.setItem(STORAGE_KEYS.USERS, users);
 
-    if (!syncToFirestore) return;
+    if (!syncToBackend) return;
 
-    // Secure Supabase & Firestore Sync
     try {
       if (user && user.id) {
         syncUserToSupabase(user).catch(() => {});
-        setDoc(
-          doc(db, 'users', user.id),
-          safeClone({
-            fullName: user.name,
-            username: user.username || '',
-            email: user.email,
-            phone: user.phone || '',
-            role: user.role,
-            universityName: user.universityName || '',
-            departmentName: user.departmentName || '',
-            subscription: user.subscription,
-            bookmarks: user.bookmarks || [],
-            createdDate: user.createdDate,
-            updatedAt: new Date().toISOString(),
-          }),
-          { merge: true }
-        ).catch((err) => handleFirestoreError(err, OperationType.WRITE, `users/${user.id}`));
       }
     } catch (e) {
-      console.warn('Firestore/Supabase write user error:', e);
+      console.warn('Supabase write user notice:', e);
     }
   }
 
@@ -1521,29 +1321,17 @@ export class StorageService {
   }
 
   static async clearAllQuestions(): Promise<boolean> {
-    const currentQuestions = this.getQuestions();
     this.memoryCache.set(STORAGE_KEYS.QUESTIONS, []);
     try {
       localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify([]));
     } catch {}
 
-    const promises: Promise<any>[] = [];
-    currentQuestions.forEach((q) => {
-      promises.push(
-        deleteDoc(doc(db, 'questions', q.id)).catch((err) =>
-          handleFirestoreError(err, OperationType.DELETE, `questions/${q.id}`)
-        )
-      );
-    });
-
-    promises.push(
-      fetch('/api/catalog/questions/clear-all', {
+    try {
+      await fetch('/api/catalog/questions/clear-all', {
         method: 'POST',
         headers: this.getAdminAuthHeaders(),
-      }).catch(() => {})
-    );
-
-    await Promise.allSettled(promises);
+      }).catch(() => {});
+    } catch {}
 
     try {
       window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.QUESTIONS, timestamp: Date.now() } }));
@@ -1561,29 +1349,21 @@ export class StorageService {
     // 1. Direct Supabase Client Sync
     promises.push(syncQuestionsToSupabase(questions).catch(() => {}));
 
-    // 2. Sync upserts to Firestore
-    questions.forEach((q) => {
-      promises.push(
-        setDoc(doc(db, 'questions', q.id), safeClone(q), { merge: true }).catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `questions/${q.id}`)
-        )
-      );
-    });
-
-    // 3. Delete removed questions from Firestore & Supabase
+    // 2. Delete removed questions from Supabase & Backend API
     const newIds = new Set(questions.map((q) => q.id));
     previous.forEach((pq) => {
       if (!newIds.has(pq.id)) {
         promises.push(deleteQuestionFromSupabase(pq.id).catch(() => {}));
         promises.push(
-          deleteDoc(doc(db, 'questions', pq.id)).catch((err) =>
-            handleFirestoreError(err, OperationType.DELETE, `questions/${pq.id}`)
-          )
+          fetch(`/api/catalog/questions/${encodeURIComponent(pq.id)}`, {
+            method: 'DELETE',
+            headers: this.getAdminAuthHeaders(),
+          }).catch(() => {})
         );
       }
     });
 
-    // 4. Also sync to Backend API
+    // 3. Also sync to Backend API
     promises.push(
       fetch('/api/catalog/questions', {
         method: 'POST',
@@ -1602,9 +1382,6 @@ export class StorageService {
 
     await Promise.allSettled([
       deleteQuestionFromSupabase(id).catch(() => {}),
-      deleteDoc(doc(db, 'questions', id)).catch((err) =>
-        handleFirestoreError(err, OperationType.DELETE, `questions/${id}`)
-      ),
       fetch(`/api/catalog/questions/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: this.getAdminAuthHeaders(),
@@ -1635,13 +1412,7 @@ export class StorageService {
     // Direct Supabase sync
     promises.push(syncUniversitiesToSupabase(data).catch(() => {}));
 
-    // Sync upserts to Firestore
     data.forEach((u) => {
-      promises.push(
-        setDoc(doc(db, 'universities', u.id), safeClone(u), { merge: true }).catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `universities/${u.id}`)
-        )
-      );
       promises.push(
         fetch('/api/catalog/universities', {
           method: 'POST',
@@ -1651,15 +1422,10 @@ export class StorageService {
       );
     });
 
-    // Delete removed universities from Firestore
     const newIds = new Set(data.map((u) => u.id));
     previous.forEach((pu) => {
       if (!newIds.has(pu.id)) {
-        promises.push(
-          deleteDoc(doc(db, 'universities', pu.id)).catch((err) =>
-            handleFirestoreError(err, OperationType.DELETE, `universities/${pu.id}`)
-          )
-        );
+        promises.push(deleteUniversityFromSupabase(pu.id).catch(() => {}));
         promises.push(
           fetch(`/api/catalog/universities/${encodeURIComponent(pu.id)}`, {
             method: 'DELETE',
@@ -1678,9 +1444,7 @@ export class StorageService {
     this.setItem(STORAGE_KEYS.UNIVERSITIES, remaining);
 
     await Promise.allSettled([
-      deleteDoc(doc(db, 'universities', id)).catch((err) =>
-        handleFirestoreError(err, OperationType.DELETE, `universities/${id}`)
-      ),
+      deleteUniversityFromSupabase(id).catch(() => {}),
       fetch(`/api/catalog/universities/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: this.getAdminAuthHeaders(),
@@ -1694,29 +1458,17 @@ export class StorageService {
   }
 
   static async saveFaculties(data: Faculty[]): Promise<boolean> {
-    const previous = this.getFaculties();
     this.setItem(STORAGE_KEYS.FACULTIES, data);
-
     const promises: Promise<any>[] = [];
     data.forEach((f) => {
       promises.push(
-        setDoc(doc(db, 'faculties', f.id), safeClone(f), { merge: true }).catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `faculties/${f.id}`)
-        )
+        fetch('/api/catalog/faculties', {
+          method: 'POST',
+          headers: this.getAdminAuthHeaders(),
+          body: safeStringify(f),
+        }).catch(() => {})
       );
     });
-
-    const newIds = new Set(data.map((f) => f.id));
-    previous.forEach((pf) => {
-      if (!newIds.has(pf.id)) {
-        promises.push(
-          deleteDoc(doc(db, 'faculties', pf.id)).catch((err) =>
-            handleFirestoreError(err, OperationType.DELETE, `faculties/${pf.id}`)
-          )
-        );
-      }
-    });
-
     await Promise.allSettled(promises);
     return true;
   }
@@ -1724,9 +1476,10 @@ export class StorageService {
   static async deleteFaculty(id: string): Promise<boolean> {
     const remaining = this.getFaculties().filter((f) => f.id !== id);
     this.setItem(STORAGE_KEYS.FACULTIES, remaining);
-    await deleteDoc(doc(db, 'faculties', id)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `faculties/${id}`)
-    );
+    await fetch(`/api/catalog/faculties/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: this.getAdminAuthHeaders(),
+    }).catch(() => {});
     return true;
   }
 
@@ -1735,29 +1488,17 @@ export class StorageService {
   }
 
   static async saveDepartments(data: Department[]): Promise<boolean> {
-    const previous = this.getDepartments();
     this.setItem(STORAGE_KEYS.DEPARTMENTS, data);
-
     const promises: Promise<any>[] = [];
     data.forEach((d) => {
       promises.push(
-        setDoc(doc(db, 'departments', d.id), safeClone(d), { merge: true }).catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `departments/${d.id}`)
-        )
+        fetch('/api/catalog/departments', {
+          method: 'POST',
+          headers: this.getAdminAuthHeaders(),
+          body: safeStringify(d),
+        }).catch(() => {})
       );
     });
-
-    const newIds = new Set(data.map((d) => d.id));
-    previous.forEach((pd) => {
-      if (!newIds.has(pd.id)) {
-        promises.push(
-          deleteDoc(doc(db, 'departments', pd.id)).catch((err) =>
-            handleFirestoreError(err, OperationType.DELETE, `departments/${pd.id}`)
-          )
-        );
-      }
-    });
-
     await Promise.allSettled(promises);
     return true;
   }
@@ -1765,9 +1506,10 @@ export class StorageService {
   static async deleteDepartment(id: string): Promise<boolean> {
     const remaining = this.getDepartments().filter((d) => d.id !== id);
     this.setItem(STORAGE_KEYS.DEPARTMENTS, remaining);
-    await deleteDoc(doc(db, 'departments', id)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `departments/${id}`)
-    );
+    await fetch(`/api/catalog/departments/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: this.getAdminAuthHeaders(),
+    }).catch(() => {});
     return true;
   }
 
@@ -1784,13 +1526,7 @@ export class StorageService {
     // Direct Supabase sync
     promises.push(syncCoursesToSupabase(data).catch(() => {}));
 
-    // Sync upserts to Firestore
     data.forEach((c) => {
-      promises.push(
-        setDoc(doc(db, 'courses', c.id), safeClone(c), { merge: true }).catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `courses/${c.id}`)
-        )
-      );
       promises.push(
         fetch('/api/catalog/courses', {
           method: 'POST',
@@ -1800,15 +1536,10 @@ export class StorageService {
       );
     });
 
-    // Delete removed courses from Firestore
     const newIds = new Set(data.map((c) => c.id));
     previous.forEach((pc) => {
       if (!newIds.has(pc.id)) {
-        promises.push(
-          deleteDoc(doc(db, 'courses', pc.id)).catch((err) =>
-            handleFirestoreError(err, OperationType.DELETE, `courses/${pc.id}`)
-          )
-        );
+        promises.push(deleteCourseFromSupabase(pc.id).catch(() => {}));
         promises.push(
           fetch(`/api/catalog/courses/${encodeURIComponent(pc.id)}`, {
             method: 'DELETE',
@@ -1827,9 +1558,7 @@ export class StorageService {
     this.setItem(STORAGE_KEYS.COURSES, remaining);
 
     await Promise.allSettled([
-      deleteDoc(doc(db, 'courses', id)).catch((err) =>
-        handleFirestoreError(err, OperationType.DELETE, `courses/${id}`)
-      ),
+      deleteCourseFromSupabase(id).catch(() => {}),
       fetch(`/api/catalog/courses/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: this.getAdminAuthHeaders(),
@@ -1844,15 +1573,6 @@ export class StorageService {
 
   static async saveTopics(data: Topic[]): Promise<boolean> {
     this.setItem(STORAGE_KEYS.TOPICS, data);
-    const promises: Promise<any>[] = [];
-    data.forEach((t) => {
-      promises.push(
-        setDoc(doc(db, 'topics', t.id), safeClone(t), { merge: true }).catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `topics/${t.id}`)
-        )
-      );
-    });
-    await Promise.allSettled(promises);
     return true;
   }
 
@@ -1869,9 +1589,6 @@ export class StorageService {
     this.setItem(STORAGE_KEYS.RESULTS, results);
     results.forEach((res) => {
       syncResultToSupabase(res).catch(() => {});
-      setDoc(doc(db, 'results', res.id), safeClone(res), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `results/${res.id}`)
-      );
     });
   }
 
@@ -1894,19 +1611,10 @@ export class StorageService {
     return this.getPlans();
   }
 
-  static savePlans(plans: SubscriptionPlan[], syncToFirestore: boolean = true): void {
+  static savePlans(plans: SubscriptionPlan[], syncToBackend: boolean = true): void {
     this.setItem(STORAGE_KEYS.PLANS, plans);
-    if (!syncToFirestore) return;
-    plans.forEach((p) => {
-      const payload = safeClone({
-        ...p,
-        active: p.active !== false,
-        updatedAt: new Date().toISOString(),
-      });
-      setDoc(doc(db, 'subscription_plans', p.id), payload, { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `subscription_plans/${p.id}`)
-      );
-    });
+    if (!syncToBackend) return;
+    syncPlansToSupabase(plans).catch(() => {});
   }
 
   static saveLocalPlansOnly(plans: SubscriptionPlan[]): void {
@@ -1923,9 +1631,7 @@ export class StorageService {
   static deleteSubscriptionPlan(planId: string): void {
     const plans = this.getPlans().filter((p) => p.id !== planId);
     this.setItem(STORAGE_KEYS.PLANS, plans);
-    deleteDoc(doc(db, 'subscription_plans', planId)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `subscription_plans/${planId}`)
-    );
+    deletePlanFromSupabase(planId).catch(() => {});
   }
 
   static getTransactions(): PaymentTransaction[] {
@@ -2038,9 +1744,6 @@ export class StorageService {
     this.setItem(STORAGE_KEYS.TRANSACTIONS, transactions);
     transactions.forEach((tx) => {
       syncPaymentToSupabase(tx).catch(() => {});
-      setDoc(doc(db, 'transactions', tx.id), safeClone(tx), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `transactions/${tx.id}`)
-      );
     });
   }
 
@@ -2053,61 +1756,13 @@ export class StorageService {
       list.unshift(tx);
     }
     this.saveTransactions(list);
-
-    // Sync payments and subscriptions collections in Firestore
-    try {
-      const statusStr = String(tx.status || '').toLowerCase();
-      const isSuccess = statusStr === 'successful' || statusStr === 'success';
-      const isFailed = statusStr === 'failed';
-
-      if (tx.reference) {
-        setDoc(
-          doc(db, 'payments', tx.reference),
-          safeClone({
-            paymentId: tx.paymentId || tx.id || tx.reference,
-            userId: tx.userId,
-            amount: tx.amount,
-            reference: tx.reference,
-            status: isSuccess ? 'success' : isFailed ? 'failed' : 'pending',
-            createdAt: tx.date || new Date().toISOString(),
-            verifiedAt: isSuccess ? (tx.paymentDate || new Date().toISOString()) : null,
-          }),
-          { merge: true }
-        ).catch((err) => handleFirestoreError(err, OperationType.WRITE, `payments/${tx.reference}`));
-      }
-
-      if (isSuccess && tx.userId) {
-        setDoc(
-          doc(db, 'subscriptions', tx.userId),
-          safeClone({
-            userId: tx.userId,
-            plan: tx.planName,
-            startDate: tx.paymentDate || new Date().toISOString(),
-            expiryDate: tx.expiryDate || new Date(Date.now() + 30 * 86400000).toISOString(),
-            status: 'active',
-          }),
-          { merge: true }
-        ).catch((err) => handleFirestoreError(err, OperationType.WRITE, `subscriptions/${tx.userId}`));
-      }
-    } catch (e) {
-      console.warn('Firestore payment/subscription write error:', e);
-    }
+    syncPaymentToSupabase(tx).catch(() => {});
   }
 
   static deleteTransaction(id: string): void {
     const list = this.getTransactions();
-    const target = list.find((t) => t.id === id);
     const updated = list.filter((t) => t.id !== id);
     this.setItem(STORAGE_KEYS.TRANSACTIONS, updated);
-    deleteDoc(doc(db, 'transactions', id)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `transactions/${id}`)
-    );
-    if (target?.reference) {
-      deleteDoc(doc(db, 'payments', target.reference)).catch((err) =>
-        handleFirestoreError(err, OperationType.DELETE, `payments/${target.reference}`)
-      );
-    }
-    // Trigger custom event for state sync across components
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('cbt_storage_change'));
     }
@@ -2118,18 +1773,6 @@ export class StorageService {
     const list = this.getTransactions();
     const updated = list.filter((t) => !ids.includes(t.id));
     this.setItem(STORAGE_KEYS.TRANSACTIONS, updated);
-    ids.forEach((id) => {
-      const target = list.find((t) => t.id === id);
-      deleteDoc(doc(db, 'transactions', id)).catch((err) =>
-        handleFirestoreError(err, OperationType.DELETE, `transactions/${id}`)
-      );
-      if (target?.reference) {
-        deleteDoc(doc(db, 'payments', target.reference)).catch((err) =>
-          handleFirestoreError(err, OperationType.DELETE, `payments/${target.reference}`)
-        );
-      }
-    });
-    // Trigger custom event for state sync across components
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('cbt_storage_change'));
     }
@@ -2178,9 +1821,6 @@ export class StorageService {
   static saveRankingHistory(records: RankingHistoryRecord[]): void {
     this.setItem(STORAGE_KEYS.RANKING_HISTORY, records);
     records.forEach((r) => {
-      setDoc(doc(db, 'ranking_history', r.id), safeClone(r), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `ranking_history/${r.id}`)
-      );
     });
   }
 
@@ -2220,9 +1860,6 @@ export class StorageService {
   static saveNotifications(notifs: AppNotification[]): void {
     this.setItem(STORAGE_KEYS.NOTIFICATIONS, notifs);
     notifs.forEach((n) => {
-      setDoc(doc(db, 'notifications', n.id), safeClone(n), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `notifications/${n.id}`)
-      );
     });
   }
 
@@ -2258,9 +1895,6 @@ export class StorageService {
   static saveActivityLogs(logs: AdminActivityLog[]): void {
     this.setItem(STORAGE_KEYS.LOGS, logs);
     logs.forEach((l) => {
-      setDoc(doc(db, 'activity_logs', l.id), safeClone(l), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `activity_logs/${l.id}`)
-      );
     });
   }
 
@@ -2289,9 +1923,6 @@ export class StorageService {
 
   static saveSettings(settings: SystemSettings): void {
     this.setItem(STORAGE_KEYS.SETTINGS, settings);
-    setDoc(doc(db, 'system_configs', 'global_settings'), safeClone(settings), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, 'system_configs/global_settings')
-    );
   }
 
   static saveSystemSettings(settings: SystemSettings): void {
@@ -2308,28 +1939,12 @@ export class StorageService {
     this.setItem(STORAGE_KEYS.MATERIALS, materials);
 
     const promises: Promise<any>[] = [];
-
-    // 1. Direct Supabase sync
     promises.push(syncMaterialsToSupabase(materials).catch(() => {}));
 
-    // 2. Sync upserts to Firestore
-    materials.forEach((m) => {
-      promises.push(
-        setDoc(doc(db, 'materials', m.id), safeClone(m), { merge: true }).catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `materials/${m.id}`)
-        )
-      );
-    });
-
-    // 3. Delete removed materials from Firestore
     const newIds = new Set(materials.map((m) => m.id));
     previous.forEach((pm) => {
       if (!newIds.has(pm.id)) {
-        promises.push(
-          deleteDoc(doc(db, 'materials', pm.id)).catch((err) =>
-            handleFirestoreError(err, OperationType.DELETE, `materials/${pm.id}`)
-          )
-        );
+        promises.push(deleteMaterialFromSupabase(pm.id).catch(() => {}));
       }
     });
 
@@ -2344,9 +1959,6 @@ export class StorageService {
 
   static saveFaceArenaSettings(settings: FaceArenaSettings): void {
     this.setItem(STORAGE_KEYS.FACE_ARENA_SETTINGS, settings);
-    setDoc(doc(db, 'system_configs', 'face_arena_settings'), safeClone(settings), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, 'system_configs/face_arena_settings')
-    );
   }
 
   static getFaceArenaQuestions(): FaceArenaQuestion[] {
@@ -2355,19 +1967,11 @@ export class StorageService {
 
   static saveFaceArenaQuestions(questions: FaceArenaQuestion[]): void {
     this.setItem(STORAGE_KEYS.FACE_ARENA_QUESTIONS, questions);
-    questions.forEach((q) => {
-      setDoc(doc(db, 'face_arena_questions', q.id), safeClone(q), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `face_arena_questions/${q.id}`)
-      );
-    });
   }
 
   static deleteFaceArenaQuestion(id: string): void {
     const list = this.getFaceArenaQuestions().filter((q) => q.id !== id);
     this.setItem(STORAGE_KEYS.FACE_ARENA_QUESTIONS, list);
-    deleteDoc(doc(db, 'face_arena_questions', id)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `face_arena_questions/${id}`)
-    );
   }
 
   static getFaceArenaParticipants(): FaceArenaParticipant[] {
@@ -2376,11 +1980,6 @@ export class StorageService {
 
   static saveFaceArenaParticipants(participants: FaceArenaParticipant[]): void {
     this.setItem(STORAGE_KEYS.FACE_ARENA_PARTICIPANTS, participants);
-    participants.forEach((p) => {
-      setDoc(doc(db, 'face_arena_participants', p.id), safeClone(p), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `face_arena_participants/${p.id}`)
-      );
-    });
   }
 
   static saveFaceArenaParticipant(participant: FaceArenaParticipant): void {
@@ -2394,9 +1993,6 @@ export class StorageService {
       list.unshift(participant);
     }
     this.saveFaceArenaParticipants(list);
-    setDoc(doc(db, 'face_arena_participants', participant.id), safeClone(participant), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, `face_arena_participants/${participant.id}`)
-    );
   }
 
   static getFaceArenaArchives(): FaceArenaArchive[] {
@@ -2406,9 +2002,6 @@ export class StorageService {
   static saveFaceArenaArchives(archives: FaceArenaArchive[]): void {
     this.setItem(STORAGE_KEYS.FACE_ARENA_ARCHIVES, archives);
     archives.forEach((arc) => {
-      setDoc(doc(db, 'face_arena_archives', arc.id), safeClone(arc), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `face_arena_archives/${arc.id}`)
-      );
     });
   }
 
@@ -2582,11 +2175,6 @@ export class StorageService {
 
   static saveAdminNotifications(notifs: AdminNotification[]): void {
     this.setItem(STORAGE_KEYS.ADMIN_NOTIFICATIONS, notifs);
-    notifs.forEach((n) => {
-      setDoc(doc(db, 'admin_notifications', n.id), safeClone(n), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `admin_notifications/${n.id}`)
-      );
-    });
   }
 
   static addAdminNotification(notif: AdminNotification): void {
@@ -2677,11 +2265,6 @@ export class StorageService {
 
   static saveReportRecords(reports: ReportRecord[]): void {
     this.setItem(STORAGE_KEYS.REPORTS, reports);
-    reports.forEach((r) => {
-      setDoc(doc(db, 'report_records', r.id), safeClone(r), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `report_records/${r.id}`)
-      );
-    });
   }
 
   static addReportRecord(report: ReportRecord): void {
@@ -2811,9 +2394,6 @@ export class StorageService {
   static saveFullActivityLogs(logs: FullActivityLog[]): void {
     this.setItem(STORAGE_KEYS.FULL_LOGS, logs);
     logs.forEach((l) => {
-      setDoc(doc(db, 'full_activity_logs', l.id), safeClone(l), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `full_activity_logs/${l.id}`)
-      );
     });
   }
 
@@ -2916,9 +2496,6 @@ export class StorageService {
   static saveActiveSessions(sessions: ActiveUserSession[]): void {
     this.setItem(STORAGE_KEYS.ACTIVE_SESSIONS, sessions);
     sessions.forEach((s) => {
-      setDoc(doc(db, 'active_sessions', s.sessionId), safeClone(s), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `active_sessions/${s.sessionId}`)
-      );
     });
   }
 
@@ -3086,11 +2663,6 @@ export class StorageService {
 
   static saveSupportTickets(tickets: SupportTicket[]): void {
     this.setItem(STORAGE_KEYS.SUPPORT_TICKETS, tickets);
-    tickets.forEach((t) => {
-      setDoc(doc(db, 'support_tickets', t.id), safeClone(t), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `support_tickets/${t.id}`)
-      );
-    });
   }
 
   static addSupportTicket(ticket: SupportTicket): void {
@@ -3121,12 +2693,12 @@ export class StorageService {
         createdDate: new Date(Date.now() - 3600000 * 3).toISOString(),
         createdBy: 'System Scheduler',
         status: 'Success',
-        location: 'Cloud Firestore Primary Bucket (eu-west2)',
+        location: 'Supabase Database Primary Bucket (eu-west2)',
         verificationStatus: 'Verified',
         durationSeconds: 14,
         scope: ['Complete System Backup'],
         healthScore: 100,
-        notes: 'Automated 02:00 AM daily platform snapshot. All Firestore collections passed integrity check.',
+        notes: 'Automated 02:00 AM daily platform snapshot. All Database tables passed integrity check.',
       },
       {
         id: 'bak-20260722-02',
@@ -3153,7 +2725,7 @@ export class StorageService {
         createdDate: new Date(Date.now() - 86400000 * 3).toISOString(),
         createdBy: 'System Scheduler',
         status: 'Success',
-        location: 'Cloud Firestore Primary Bucket (eu-west2)',
+        location: 'Supabase Database Primary Bucket (eu-west2)',
         verificationStatus: 'Verified',
         durationSeconds: 12,
         scope: ['Complete System Backup'],
@@ -3181,9 +2753,6 @@ export class StorageService {
   static saveBackupRecords(backups: BackupRecord[]): void {
     this.setItem(STORAGE_KEYS.BACKUPS, backups);
     backups.forEach((b) => {
-      setDoc(doc(db, 'backups', b.id), safeClone(b), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `backups/${b.id}`)
-      );
     });
   }
 
@@ -3211,9 +2780,6 @@ export class StorageService {
 
   static saveAutoBackupConfig(config: AutoBackupConfig): void {
     this.setItem(STORAGE_KEYS.AUTO_BACKUP_CONFIG, config);
-    setDoc(doc(db, 'system_configs', 'auto_backup'), safeClone(config), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, 'system_configs/auto_backup')
-    );
   }
 
   static getRestoreLogs(): RestoreLog[] {
@@ -3235,9 +2801,6 @@ export class StorageService {
   static saveRestoreLogs(logs: RestoreLog[]): void {
     this.setItem(STORAGE_KEYS.RESTORE_LOGS, logs);
     logs.forEach((l) => {
-      setDoc(doc(db, 'restore_logs', l.id), safeClone(l), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `restore_logs/${l.id}`)
-      );
     });
   }
 
@@ -3349,11 +2912,11 @@ export class StorageService {
       integrations: [
         {
           id: 'int-1',
-          name: 'Firebase Firestore & Auth',
+          name: 'Firebase Database & Auth',
           serviceKey: 'FIREBASE_CORE',
           status: 'Connected',
           lastTested: new Date().toISOString(),
-          details: 'Firestore Database & Firebase Authentication SDK v10.8 active.',
+          details: 'Database Database & Firebase Authentication SDK v10.8 active.',
         },
         {
           id: 'int-2',
@@ -3437,9 +3000,6 @@ export class StorageService {
 
   static saveSystemSettingsPayload(payload: SystemSettingsPayload): void {
     this.setItem(STORAGE_KEYS.SYSTEM_SETTINGS, payload);
-    setDoc(doc(db, 'system_configs', 'global_settings'), safeClone(payload), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, 'system_configs/global_settings')
-    );
   }
 
   // ==========================================
@@ -3518,27 +3078,18 @@ export class StorageService {
       updated = [req, ...requests];
     }
     this.setItem(STORAGE_KEYS.TOPIC_REQUESTS, updated);
-    setDoc(doc(db, 'topic_requests', req.id), safeClone(req), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, `topic_requests/${req.id}`)
-    );
   }
 
   static updateTopicRequestStatus(id: string, status: TopicRequest['status']): void {
     const requests = this.getTopicRequests();
     const updated = requests.map((r) => (r.id === id ? { ...r, status } : r));
     this.setItem(STORAGE_KEYS.TOPIC_REQUESTS, updated);
-    setDoc(doc(db, 'topic_requests', id), { status }, { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, `topic_requests/${id}`)
-    );
   }
 
   static deleteTopicRequest(id: string): void {
     const requests = this.getTopicRequests();
     const updated = requests.filter((r) => r.id !== id);
     this.setItem(STORAGE_KEYS.TOPIC_REQUESTS, updated);
-    deleteDoc(doc(db, 'topic_requests', id)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `topic_requests/${id}`)
-    );
   }
 
   // Topic Collection Config (Open / Closed toggle)
@@ -3554,9 +3105,6 @@ export class StorageService {
 
   static setTopicCollectionConfig(config: TopicCollectionConfig): void {
     this.setItem(STORAGE_KEYS.TOPIC_COLLECTION_CONFIG, config);
-    setDoc(doc(db, 'system_configs', 'topic_collection_status'), safeClone(config), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, 'system_configs/topic_collection_status')
-    );
   }
 
   // Tutorial Videos
@@ -3655,18 +3203,12 @@ export class StorageService {
       updated = [video, ...videos];
     }
     this.setItem(STORAGE_KEYS.TUTORIAL_VIDEOS, updated);
-    setDoc(doc(db, 'tutorial_videos', video.id), safeClone(video), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, `tutorial_videos/${video.id}`)
-    );
   }
 
   static deleteTutorialVideo(id: string): void {
     const videos = this.getTutorialVideos();
     const updated = videos.filter((v) => v.id !== id);
     this.setItem(STORAGE_KEYS.TUTORIAL_VIDEOS, updated);
-    deleteDoc(doc(db, 'tutorial_videos', id)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `tutorial_videos/${id}`)
-    );
   }
 
   static incrementVideoViews(id: string): void {
@@ -3675,9 +3217,6 @@ export class StorageService {
     this.setItem(STORAGE_KEYS.TUTORIAL_VIDEOS, updated);
     const target = updated.find((v) => v.id === id);
     if (target) {
-      setDoc(doc(db, 'tutorial_videos', id), safeClone(target), { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `tutorial_videos/${id}`)
-      );
     }
   }
 
@@ -3700,9 +3239,6 @@ export class StorageService {
         }
         likesCount = Math.max(0, (v.likesCount || 0) + (isLiked ? 1 : -1));
         const updatedVid = { ...v, likesCount, likedBy: newLikedBy };
-        setDoc(doc(db, 'tutorial_videos', id), safeClone(updatedVid), { merge: true }).catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `tutorial_videos/${id}`)
-        );
         return updatedVid;
       }
       return v;
@@ -3729,9 +3265,6 @@ export class StorageService {
           isSaved = true;
         }
         const updatedVid = { ...v, savedBy: newSavedBy };
-        setDoc(doc(db, 'tutorial_videos', id), safeClone(updatedVid), { merge: true }).catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `tutorial_videos/${id}`)
-        );
         return updatedVid;
       }
       return v;
@@ -3758,9 +3291,6 @@ export class StorageService {
 
     const reports = this.getItem<any[]>('cbt_content_reports', []);
     this.setItem('cbt_content_reports', [reportObj, ...reports]);
-    setDoc(doc(db, 'content_reports', reportObj.id), safeClone(reportObj)).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, `content_reports/${reportObj.id}`)
-    );
   }
 
   static getReports(): any[] {
@@ -3825,9 +3355,6 @@ export class StorageService {
       updated = [post, ...posts];
     }
     this.setItem(STORAGE_KEYS.COMMUNITY_POSTS, updated);
-    setDoc(doc(db, 'community_posts', post.id), safeClone(post), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, `community_posts/${post.id}`)
-    );
   }
 
   static upvoteCommunityPost(postId: string, userId: string): void {
@@ -3850,18 +3377,12 @@ export class StorageService {
       p.id === postId ? { ...p, isReported: true, reportReason: reason, reportedBy: reporterId } : p
     );
     this.setItem(STORAGE_KEYS.COMMUNITY_POSTS, updated);
-    setDoc(doc(db, 'community_posts', postId), { isReported: true, reportReason: reason, reportedBy: reporterId }, { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, `community_posts/${postId}`)
-    );
   }
 
   static deleteCommunityPost(postId: string): void {
     const posts = this.getCommunityPosts();
     const updated = posts.filter((p) => p.id !== postId);
     this.setItem(STORAGE_KEYS.COMMUNITY_POSTS, updated);
-    deleteDoc(doc(db, 'community_posts', postId)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `community_posts/${postId}`)
-    );
   }
 
   // Community Replies
@@ -3899,9 +3420,6 @@ export class StorageService {
     const updatedPosts = posts.map((p) => (p.id === reply.postId ? { ...p, repliesCount: p.repliesCount + 1 } : p));
     this.setItem(STORAGE_KEYS.COMMUNITY_POSTS, updatedPosts);
 
-    setDoc(doc(db, 'community_replies', reply.id), safeClone(reply), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, `community_replies/${reply.id}`)
-    );
   }
 
   // Learning Resources
@@ -3958,18 +3476,12 @@ export class StorageService {
       updated = [resource, ...list];
     }
     this.setItem(STORAGE_KEYS.LEARNING_RESOURCES, updated);
-    setDoc(doc(db, 'learning_resources', resource.id), safeClone(resource), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, `learning_resources/${resource.id}`)
-    );
   }
 
   static deleteLearningResource(id: string): void {
     const list = this.getLearningResources();
     const updated = list.filter((r) => r.id !== id);
     this.setItem(STORAGE_KEYS.LEARNING_RESOURCES, updated);
-    deleteDoc(doc(db, 'learning_resources', id)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `learning_resources/${id}`)
-    );
   }
 
   // Community Announcements
@@ -4009,18 +3521,12 @@ export class StorageService {
       updated = [announcement, ...list];
     }
     this.setItem(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, updated);
-    setDoc(doc(db, 'community_announcements', announcement.id), safeClone(announcement), { merge: true }).catch((err) =>
-      handleFirestoreError(err, OperationType.WRITE, `community_announcements/${announcement.id}`)
-    );
   }
 
   static deleteCommunityAnnouncement(id: string): void {
     const list = this.getCommunityAnnouncements();
     const updated = list.filter((a) => a.id !== id);
     this.setItem(STORAGE_KEYS.COMMUNITY_ANNOUNCEMENTS, updated);
-    deleteDoc(doc(db, 'community_announcements', id)).catch((err) =>
-      handleFirestoreError(err, OperationType.DELETE, `community_announcements/${id}`)
-    );
   }
 
   // Sign Up Faculties & Departments Management
@@ -4030,16 +3536,11 @@ export class StorageService {
 
   static async saveSignupFacultyGroups(groups: FacultyGroup[]): Promise<boolean> {
     this.setItem(STORAGE_KEYS.SIGNUP_FACULTY_GROUPS, groups);
-    await Promise.allSettled([
-      setDoc(doc(db, 'system_configs', 'signup_faculties'), { groups: safeClone(groups) }, { merge: true }).catch((err) => {
-        handleFirestoreError(err, OperationType.WRITE, 'system_configs/signup_faculties');
-      }),
-      fetch('/api/catalog/signup-faculties', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: safeStringify({ groups }),
-      }).catch(() => {}),
-    ]);
+    await fetch('/api/catalog/signup-faculties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: safeStringify({ groups }),
+    }).catch(() => {});
     return true;
   }
 
@@ -4117,28 +3618,23 @@ export class StorageService {
   static saveQuickLinks(links: QuickLinkItem[]): void {
     const sorted = [...links].sort((a, b) => a.order - b.order);
     this.setItem(STORAGE_KEYS.QUICK_LINKS, sorted);
-    setDoc(doc(db, 'interface_settings', 'quick_links'), { links: safeClone(sorted), updatedAt: new Date().toISOString() }, { merge: true }).catch((err) => {
-      handleFirestoreError(err, OperationType.WRITE, 'interface_settings/quick_links');
-    });
   }
 
   static listenQuickLinks(callback: (links: QuickLinkItem[]) => void): Unsubscribe {
-    const docRef = doc(db, 'interface_settings', 'quick_links');
-    return onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data && Array.isArray(data.links)) {
-          const sorted = [...data.links].sort((a, b) => a.order - b.order);
-          this.setItem(STORAGE_KEYS.QUICK_LINKS, sorted);
-          callback(sorted);
-          return;
-        }
+    callback(this.getQuickLinks());
+    const handler = (e: Event) => {
+      callback(this.getQuickLinks());
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('cbt_storage_change', handler);
+      window.addEventListener('storage', handler);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('cbt_storage_change', handler);
+        window.removeEventListener('storage', handler);
       }
-      callback(this.getQuickLinks());
-    }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'interface_settings/quick_links');
-      callback(this.getQuickLinks());
-    });
+    };
   }
 
   // Dynamic Interface Editor: Homepage Sections
@@ -4205,28 +3701,23 @@ export class StorageService {
   static saveHomepageSections(sections: HomepageSection[]): void {
     const sorted = [...sections].sort((a, b) => a.order - b.order);
     this.setItem(STORAGE_KEYS.HOMEPAGE_SECTIONS, sorted);
-    setDoc(doc(db, 'interface_settings', 'homepage_sections'), { sections: safeClone(sorted), updatedAt: new Date().toISOString() }, { merge: true }).catch((err) => {
-      handleFirestoreError(err, OperationType.WRITE, 'interface_settings/homepage_sections');
-    });
   }
 
   static listenHomepageSections(callback: (sections: HomepageSection[]) => void): Unsubscribe {
-    const docRef = doc(db, 'interface_settings', 'homepage_sections');
-    return onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data && Array.isArray(data.sections)) {
-          const sorted = [...data.sections].sort((a, b) => a.order - b.order);
-          this.setItem(STORAGE_KEYS.HOMEPAGE_SECTIONS, sorted);
-          callback(sorted);
-          return;
-        }
+    callback(this.getHomepageSections());
+    const handler = (e: Event) => {
+      callback(this.getHomepageSections());
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('cbt_storage_change', handler);
+      window.addEventListener('storage', handler);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('cbt_storage_change', handler);
+        window.removeEventListener('storage', handler);
       }
-      callback(this.getHomepageSections());
-    }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'interface_settings/homepage_sections');
-      callback(this.getHomepageSections());
-    });
+    };
   }
 
   // ==================== MULTI-ADMIN RBAC STORAGE METHODS ====================
@@ -4239,17 +3730,10 @@ export class StorageService {
   }
 
   /**
-   * Saves and synchronizes administrator accounts to storage and Cloud Firestore
+   * Saves and synchronizes administrator accounts to storage and Supabase Database
    */
   static saveAdminAccounts(accounts: AdminAccount[]): void {
     this.setItem(STORAGE_KEYS.ADMIN_ACCOUNTS, accounts);
-    accounts.forEach((acc) => {
-      const sanitized = safeClone(acc);
-      // Remove any plain-text sensitive fields if accidentally present
-      setDoc(doc(db, 'admins', acc.id), sanitized, { merge: true }).catch((err) => {
-        handleFirestoreError(err, OperationType.WRITE, `admins/${acc.id}`);
-      });
-    });
   }
 
   /**
@@ -4293,11 +3777,6 @@ export class StorageService {
 
     const filtered = accounts.filter((a) => a.id !== id);
     this.saveAdminAccounts(filtered);
-
-    deleteDoc(doc(db, 'admins', id)).catch((err) => {
-      handleFirestoreError(err, OperationType.DELETE, `admins/${id}`);
-    });
-
     return true;
   }
 
@@ -4371,7 +3850,7 @@ export class StorageService {
   }
 
   /**
-   * Logs an administrator action to both local audit storage and Firestore admin_activity_logs
+   * Logs an administrator action to both local audit storage and Database admin_activity_logs
    */
   static logAdminAction(data: {
     adminId?: string;

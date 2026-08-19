@@ -6,13 +6,8 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { initializeApp as initFirebaseApp, getApps as getFirebaseApps, getApp as getFirebaseApp } from "firebase/app";
-import { getAuth as getFirebaseAuth, signInWithEmailAndPassword as signInFirebaseEmail, createUserWithEmailAndPassword as createFirebaseUser } from "firebase/auth";
-import { initializeFirestore, doc, setDoc, getDoc, getDocs, collection, deleteDoc, setLogLevel } from "firebase/firestore";
-import { getSupabaseAdminClient, isSupabaseConfigured } from "./src/lib/supabase.ts";
-
-try {
-  setLogLevel('silent');
-} catch {}
+import { getAuth as getFirebaseAuth } from "firebase/auth";
+import { getSupabaseAdminClient, isSupabaseConfigured } from "./src/lib/supabase";
 
 dotenv.config();
 
@@ -22,45 +17,19 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: "10mb" }));
 
-// Initialize Server-side Firestore Connection
-let dbServer: any = null;
+// Firebase Auth server handle (for Auth verify if needed)
 let authServer: any = null;
 try {
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(firebaseConfigPath)) {
     const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf-8"));
     const fbApp = getFirebaseApps().length > 0 ? getFirebaseApp() : initFirebaseApp(firebaseConfig);
-    const dbId = firebaseConfig.firestoreDatabaseId === 'ai-studio-aicbtsimulator-24029710-e20e-4e1e-a3cf-846d58bd47cf' ? '(default)' : (firebaseConfig.firestoreDatabaseId || '(default)');
-    dbServer = initializeFirestore(fbApp, { ignoreUndefinedProperties: true }, dbId);
     authServer = getFirebaseAuth(fbApp);
-
-    // Authenticate backend server as Administrator if email provider is enabled
-    const adminEmail = "admin@menmex.ng";
-    const adminPass = process.env.ADMIN_PASSWORD || "joyce@menmex";
-    signInFirebaseEmail(authServer, adminEmail, adminPass)
-      .then(() => console.log("[Firestore Server] Authenticated backend as Administrator"))
-      .catch((signInErr) => {
-        const isNotAllowed =
-          signInErr?.code === 'auth/operation-not-allowed' ||
-          String(signInErr?.message || '').includes('operation-not-allowed');
-
-        if (!isNotAllowed) {
-          createFirebaseUser(authServer, adminEmail, adminPass)
-            .then(() => console.log("[Firestore Server] Created & Authenticated Admin user in Firebase Auth"))
-            .catch((err) => {
-              const creationNotAllowed =
-                err?.code === 'auth/operation-not-allowed' ||
-                String(err?.message || '').includes('operation-not-allowed');
-              if (!creationNotAllowed) {
-                console.warn("[Firestore Server] Admin Auth notice:", err.message || err);
-              }
-            });
-        }
-      });
   }
 } catch (e) {
-  console.warn("Server-side Firestore initialization warning:", e);
+  console.warn("Server-side Firebase Auth initialization notice:", e);
 }
+
 
 // In-Memory Protection Lock for Duplicate Transactions
 const processedSquadReferences = new Set<string>();
@@ -122,7 +91,7 @@ const SUBSCRIPTION_PLANS: Record<string, { id: string; name: string; price: numb
   "plan-90d": { id: "plan-90d", name: "Premium Pro (90-Day)", price: 3500, durationDays: 90 },
 };
 
-// Helper: Create pending payment record in Firestore (payments/{paymentId})
+// Helper: Create pending payment record in Database (Supabase)
 const createPendingPaymentInFirestore = async (params: {
   userId: string;
   email: string;
@@ -134,110 +103,58 @@ const createPendingPaymentInFirestore = async (params: {
   durationDays?: number;
   provider?: string;
 }) => {
-  if (!dbServer) return;
   try {
     const provider = params.provider || (params.reference.includes("_KORA_") ? "korapay" : "squad");
-    const paymentRef = doc(dbServer, "payments", params.reference);
-    await setDoc(
-      paymentRef,
-      {
-        userId: params.userId,
-        fullName: params.fullName || "Acadet Student",
-        email: params.email,
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from("payments").upsert({
+        id: toUuid(params.reference),
+        user_id: toUuid(params.userId),
+        user_email: params.email,
         amount: params.amount,
-        plan: params.plan || "Premium Membership",
-        planId: params.planId || "premium",
-        durationDays: params.durationDays || 30,
-        provider,
-        transactionRef: params.reference,
-        squadTransactionId: null,
-        gatewayTransactionId: null,
+        plan_id: params.planId || "premium",
+        gateway: provider,
+        reference: params.reference,
         status: "pending",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
-    console.log(`[Firestore Server] Created pending payment record: ${params.reference} (Amount: ₦${params.amount}, Duration: ${params.durationDays || 30} days, Provider: ${provider})`);
+        metadata: {
+          fullName: params.fullName || "Acadet Student",
+          plan: params.plan || "Premium Membership",
+          durationDays: params.durationDays || 30,
+        },
+        created_at: new Date().toISOString(),
+      });
+    }
+    console.log(`[Database Server] Created pending payment record: ${params.reference} (Amount: ₦${params.amount}, Duration: ${params.durationDays || 30} days, Provider: ${provider})`);
   } catch (err) {
-    console.error("[Firestore Server] Failed to create pending payment record:", err);
+    console.error("[Database Server] Failed to create pending payment record:", err);
   }
 };
 
-// Helper: Process Referral Reward & Leaderboard Rankings
+// Helper: Process Referral Reward
 const processReferralReward = async (uid: string) => {
-  if (!dbServer) return;
   try {
-    const userRef = doc(dbServer, "users", uid);
-    const userSnap = await getDoc(userRef);
-    if (!userSnap.exists()) return;
-    const userData = userSnap.data();
-
-    const referrerId = userData.referredBy || userData.referrerId || userData.referredByCode || null;
+    const supabase = getSupabaseAdminClient();
+    if (!supabase) return;
+    const { data: user } = await supabase.from("users").select("*").eq("id", toUuid(uid)).maybeSingle();
+    if (!user) return;
+    const referrerId = user.referred_by || user.referrer_id || null;
     if (!referrerId) return;
 
-    const referralId = `ref_${referrerId}_${uid}`;
-    const refDocRef = doc(dbServer, "referrals", referralId);
-    const refSnap = await getDoc(refDocRef);
-    if (refSnap.exists() && refSnap.data()?.status === "completed") {
-      console.log(`[Referral] Referral ${referralId} already completed.`);
-      return;
+    // Increment referrer's streak/referral stats
+    const { data: referrer } = await supabase.from("users").select("*").eq("id", toUuid(referrerId)).maybeSingle();
+    if (referrer) {
+      await supabase.from("users").update({
+        streak_count: (referrer.streak_count || 0) + 1,
+        updated_at: new Date().toISOString(),
+      }).eq("id", toUuid(referrerId));
+      console.log(`[Referral System] Successfully credited Referrer ${referrerId} for user ${uid}`);
     }
-
-    // 1. Create referral record in referrals/{referralId}
-    await setDoc(
-      refDocRef,
-      {
-        referrerId,
-        referredUserId: uid,
-        status: "completed",
-        createdAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
-
-    // 2. Increment referrer's totalReferrals in users/{referrerId}
-    const referrerRef = doc(dbServer, "users", referrerId);
-    const referrerSnap = await getDoc(referrerRef);
-    let referrerName = "Student";
-    let updatedTotal = 1;
-
-    if (referrerSnap.exists()) {
-      const rData = referrerSnap.data();
-      referrerName = rData.fullName || rData.username || rData.email?.split("@")[0] || "Student";
-      updatedTotal = (rData.totalReferrals || 0) + 1;
-      await setDoc(referrerRef, { totalReferrals: updatedTotal }, { merge: true });
-    } else {
-      await setDoc(
-        referrerRef,
-        {
-          fullName: referrerName,
-          totalReferrals: 1,
-          createdAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-    }
-
-    // 3. Update leaderboard/{referrerId}
-    const leaderboardRef = doc(dbServer, "leaderboard", referrerId);
-    await setDoc(
-      leaderboardRef,
-      {
-        name: referrerName,
-        referralCount: updatedTotal,
-        rank: 1, // Default, will recalculate
-      },
-      { merge: true }
-    );
-
-    console.log(`[Referral System] Successfully rewarded Referrer ${referrerId} for user ${uid}. New count: ${updatedTotal}`);
   } catch (err) {
     console.error("[Referral System Error]", err);
   }
 };
 
-// Helper: Activate subscription and record transactions in Firestore
+// Helper: Activate subscription and record transactions in Database (Supabase)
 const activateSubscriptionInFirestore = async (params: {
   userId: string;
   userName?: string;
@@ -259,7 +176,6 @@ const activateSubscriptionInFirestore = async (params: {
   const provider = params.provider || (params.reference.includes("_KORA_") ? "korapay" : "squad");
   const gatewayDisplayName = provider === "korapay" ? "KoraPay" : "Squad";
 
-  // 1. users/{uid} payload
   const userPayload = {
     fullName: params.userName || "Acadet Student",
     name: params.userName || "Acadet Student",
@@ -282,7 +198,6 @@ const activateSubscriptionInFirestore = async (params: {
     updatedAt: paidAt,
   };
 
-  // 2. payments/{paymentId} payload
   const paymentRecord = {
     userId: params.userId,
     fullName: params.userName || "Acadet Student",
@@ -299,7 +214,6 @@ const activateSubscriptionInFirestore = async (params: {
     updatedAt: paidAt,
   };
 
-  // 3. subscriptions/{uid} payload
   const subscriptionRecord = {
     userId: params.userId,
     plan: params.planName || "Premium Membership",
@@ -311,82 +225,73 @@ const activateSubscriptionInFirestore = async (params: {
     paymentReference: params.reference,
   };
 
-  if (dbServer) {
+  const supabase = getSupabaseAdminClient();
+  if (supabase) {
     try {
-      // 1. Update User Profile in Firestore (users/{uid})
-      const userRef = doc(dbServer, "users", params.userId);
-      await setDoc(userRef, userPayload, { merge: true });
+      // 1. Update User in Supabase
+      await supabase.from("users").upsert({
+        id: toUuid(params.userId),
+        full_name: params.userName || "Acadet Student",
+        email: params.userEmail,
+        role: "student",
+        subscription: userPayload.subscription,
+        updated_at: paidAt,
+      });
 
-      // 2. Update Payments Collection (payments/{paymentId})
-      const paymentRef = doc(dbServer, "payments", params.reference);
-      await setDoc(paymentRef, paymentRecord, { merge: true });
+      // 2. Update Payment Record in Supabase
+      await supabase.from("payments").upsert({
+        id: toUuid(params.reference),
+        user_id: toUuid(params.userId),
+        user_email: params.userEmail,
+        amount: params.amount,
+        plan_id: params.planName || "premium",
+        gateway: provider,
+        reference: params.reference,
+        status: "success",
+        metadata: paymentRecord,
+        created_at: paidAt,
+      });
 
-      // 3. Update Subscriptions Collection (subscriptions/{uid})
-      const subRef = doc(dbServer, "subscriptions", params.userId);
-      await setDoc(subRef, subscriptionRecord, { merge: true });
-
-      // 4. Trigger referral system check
+      // 3. Referral processing
       await processReferralReward(params.userId);
-
-      console.log(`[Firestore Server] Verified & Activated ${gatewayDisplayName} Subscription for User ${params.userId} (${params.reference})`);
+      console.log(`[Database Server] Verified & Activated ${gatewayDisplayName} Subscription for User ${params.userId} (${params.reference}) in Supabase`);
     } catch (err) {
-      console.error("[Firestore Server] Failed to write subscription/payment records:", err);
+      console.error("[Database Server] Failed to write subscription/payment records in Supabase:", err);
     }
   }
 
   return { userPayload, paymentRecord, subscriptionRecord };
 };
 
-// Helper: Cancel all user subscriptions across Firestore until a new payment is made
+// Helper: Cancel all user subscriptions across Database until a new payment is made
 const cancelAllUserSubscriptionsInFirestore = async () => {
-  if (!dbServer) {
-    console.warn("[Firestore Server] dbServer not initialized, skipping subscription cancellation.");
-    return { success: false, count: 0, reason: "dbServer unavailable" };
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) {
+    return { success: false, count: 0, reason: "Supabase client unavailable" };
   }
   try {
-    const usersSnap = await getDocs(collection(dbServer, "users"));
-    let cancelledCount = 0;
     const nowIso = new Date().toISOString();
+    const { data: users, error } = await supabase.from("users").select("id, role");
+    if (error) throw error;
+    let cancelledCount = 0;
 
-    for (const docSnap of usersSnap.docs) {
-      const data = docSnap.data();
-      // Keep system admin role unchanged
-      if (data.role === "admin") continue;
-
-      const userRef = doc(dbServer, "users", docSnap.id);
-      await setDoc(
-        userRef,
-        {
-          subscriptionStatus: "cancelled",
-          subscriptionPlan: "Cancelled (Free Tier)",
-          subscription: {
-            isPremium: false,
-            plan: "30-Question Free Tier",
-            startDate: nowIso,
-            expiryDate: null,
-            questionsAttemptedCount: 0,
-            freeLimit: 30,
-          },
-          updatedAt: nowIso,
+    for (const u of users || []) {
+      if (u.role === "admin") continue;
+      await supabase.from("users").update({
+        subscription: {
+          isPremium: false,
+          plan: "30-Question Free Tier",
+          startDate: nowIso,
+          expiryDate: null,
+          questionsAttemptedCount: 0,
+          freeLimit: 30,
         },
-        { merge: true }
-      );
-
-      const subRef = doc(dbServer, "subscriptions", docSnap.id);
-      await setDoc(
-        subRef,
-        {
-          status: "cancelled",
-          plan: "Cancelled (Free Tier)",
-          updatedAt: nowIso,
-        },
-        { merge: true }
-      );
-
+        updated_at: nowIso,
+      }).eq("id", u.id);
       cancelledCount++;
     }
 
-    console.log(`[Admin Security Sync] Successfully cancelled all ${cancelledCount} user subscriptions in Firestore until new payments are made.`);
+    console.log(`[Admin Security Sync] Successfully cancelled ${cancelledCount} user subscriptions in Supabase.`);
     return { success: true, count: cancelledCount };
   } catch (err) {
     console.error("[Admin Security Sync Error] Failed to cancel user subscriptions:", err);
@@ -798,30 +703,27 @@ app.get("/api/squad/config", (_req, res) => {
   });
 });
 
-// Helper: Fetch live subscription plan from Firestore (subscription_plans/{planId}) with 600ms fast timeout
+// Helper: Fetch live subscription plan from Supabase / Memory
 const getLivePlanFromFirestore = async (planId: string) => {
-  if (!dbServer || !planId) return null;
+  if (!planId) return null;
   try {
-    const planRef = doc(dbServer, "subscription_plans", planId);
-    // Timeout getDoc after 150ms so payment initiation is instantaneous
-    const planSnap = await Promise.race([
-      getDoc(planRef),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 150)),
-    ]);
-    if (planSnap && planSnap.exists()) {
-      const data = planSnap.data();
-      return {
-        id: planSnap.id,
-        name: String(data.name || "Premium Plan"),
-        price: Number(data.price) || 0,
-        durationDays: Number(data.durationDays) || 30,
-        active: data.active !== false,
-      };
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      const { data } = await supabase.from("subscription_plans").select("*").eq("id", toUuid(planId)).maybeSingle();
+      if (data) {
+        return {
+          id: data.id,
+          name: String(data.name || "Premium Plan"),
+          price: Number(data.price) || 0,
+          durationDays: Number(data.duration_days || data.durationDays) || 30,
+          active: data.is_active !== false,
+        };
+      }
     }
   } catch (err) {
-    console.warn(`[Firestore Server] Failed to fetch subscription_plan ${planId}:`, err);
+    console.warn(`[Database Server] Failed to fetch subscription_plan ${planId}:`, err);
   }
-  return null;
+  return SUBSCRIPTION_PLANS[planId] || null;
 };
 
 // 2. Initiate Payment (POST /api/payments/initiate & aliases)
@@ -1209,11 +1111,14 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
 
     let isKorapay = String(reference).startsWith("ACADE_KORA_") || String(req.body?.provider || req.query?.provider || "").toLowerCase() === "korapay";
 
-    if (!isKorapay && dbServer) {
+    if (!isKorapay) {
       try {
-        const existingDoc = await getDoc(doc(dbServer, "payments", reference));
-        if (existingDoc.exists() && existingDoc.data()?.provider === "korapay") {
-          isKorapay = true;
+        const supabase = getSupabaseAdminClient();
+        if (supabase) {
+          const { data: pDoc } = await supabase.from("payments").select("payment_gateway, metadata").eq("transaction_reference", reference).maybeSingle();
+          if (pDoc && (pDoc.payment_gateway === "korapay" || (pDoc.metadata as any)?.provider === "korapay")) {
+            isKorapay = true;
+          }
         }
       } catch (e) {
         // fallback
@@ -1251,20 +1156,16 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       const effEmail = email || meta.userEmail || verifyData.data?.customer?.email || "student@acadet.cbt";
 
       if (!isSuccess) {
-        if (dbServer) {
-          setDoc(
-            doc(dbServer, "payments", reference),
-            {
-              userId: effUserId,
-              email: effEmail,
-              transactionRef: reference,
-              provider: "korapay",
+        try {
+          const supabase = getSupabaseAdminClient();
+          if (supabase) {
+            await supabase.from("payments").update({
               status: "failed",
-              updatedAt: new Date().toISOString(),
-              korapayResponse: verifyData,
-            },
-            { merge: true }
-          ).catch((err) => console.error("Failed to set payment failed status:", err));
+              metadata: { korapayResponse: verifyData, updatedAt: new Date().toISOString() },
+            }).eq("transaction_reference", reference);
+          }
+        } catch (err) {
+          console.error("Failed to set payment failed status:", err);
         }
 
         return res.status(400).json({
@@ -1278,15 +1179,22 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
       processedKorapayReferences.add(reference);
 
       let storedPending: any = null;
-      if (dbServer) {
-        try {
-          const pSnap = await getDoc(doc(dbServer, "payments", reference));
-          if (pSnap.exists()) {
-            storedPending = pSnap.data();
+      try {
+        const supabase = getSupabaseAdminClient();
+        if (supabase) {
+          const { data: pDoc } = await supabase.from("payments").select("*").eq("transaction_reference", reference).maybeSingle();
+          if (pDoc) {
+            storedPending = {
+              ...pDoc,
+              amount: pDoc.amount,
+              planId: (pDoc.metadata as any)?.planId,
+              plan: (pDoc.metadata as any)?.planName,
+              durationDays: (pDoc.metadata as any)?.durationDays,
+            };
           }
-        } catch (e) {
-          console.warn("[KoraPay Verify] Could not fetch stored pending doc:", e);
         }
+      } catch (e) {
+        console.warn("[KoraPay Verify] Could not fetch stored pending doc:", e);
       }
 
       const rawAmount = verifyData.data?.amount || meta.amount || storedPending?.amount || 800;
@@ -1358,20 +1266,16 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
     const effEmail = email || verifyData.data?.email || verifyData.data?.customer?.email || "student@acadet.cbt";
 
     if (!isSuccess) {
-      if (dbServer) {
-        setDoc(
-          doc(dbServer, "payments", reference),
-          {
-            userId: effUserId,
-            email: effEmail,
-            transactionRef: reference,
-            provider: "squad",
+      try {
+        const supabase = getSupabaseAdminClient();
+        if (supabase) {
+          await supabase.from("payments").update({
             status: "failed",
-            updatedAt: new Date().toISOString(),
-            squadResponse: verifyData,
-          },
-          { merge: true }
-        ).catch((err) => console.error("Failed to set payment failed status:", err));
+            metadata: { squadResponse: verifyData, updatedAt: new Date().toISOString() },
+          }).eq("transaction_reference", reference);
+        }
+      } catch (err) {
+        console.error("Failed to set payment failed status:", err);
       }
 
       return res.status(400).json({
@@ -1385,15 +1289,22 @@ const handlePaymentVerification = async (req: express.Request, res: express.Resp
     processedSquadReferences.add(reference);
 
     let storedPending: any = null;
-    if (dbServer) {
-      try {
-        const pSnap = await getDoc(doc(dbServer, "payments", reference));
-        if (pSnap.exists()) {
-          storedPending = pSnap.data();
+    try {
+      const supabase = getSupabaseAdminClient();
+      if (supabase) {
+        const { data: pDoc } = await supabase.from("payments").select("*").eq("transaction_reference", reference).maybeSingle();
+        if (pDoc) {
+          storedPending = {
+            ...pDoc,
+            amount: pDoc.amount,
+            planId: (pDoc.metadata as any)?.planId,
+            plan: (pDoc.metadata as any)?.planName,
+            durationDays: (pDoc.metadata as any)?.durationDays,
+          };
         }
-      } catch (e) {
-        console.warn("[Squad Verify] Could not fetch stored pending doc:", e);
       }
+    } catch (e) {
+      console.warn("[Squad Verify] Could not fetch stored pending doc:", e);
     }
 
     const returnedAmt = verifyData.data.transaction_amount || verifyData.data.amount;
@@ -1493,15 +1404,24 @@ const handleSquadWebhook = async (req: express.Request, res: express.Response) =
       processedSquadReferences.add(reference);
 
       let storedPending: any = null;
-      if (dbServer) {
-        try {
-          const pSnap = await getDoc(doc(dbServer, "payments", reference));
-          if (pSnap.exists()) {
-            storedPending = pSnap.data();
+      try {
+        const supabase = getSupabaseAdminClient();
+        if (supabase) {
+          const { data: pDoc } = await supabase.from("payments").select("*").eq("transaction_reference", reference).maybeSingle();
+          if (pDoc) {
+            storedPending = {
+              ...pDoc,
+              amount: pDoc.amount,
+              userId: pDoc.user_id,
+              email: pDoc.email,
+              planId: (pDoc.metadata as any)?.planId,
+              plan: (pDoc.metadata as any)?.planName,
+              durationDays: (pDoc.metadata as any)?.durationDays,
+            };
           }
-        } catch (e) {
-          console.warn("[Squad Webhook] Could not fetch stored pending doc:", e);
         }
+      } catch (e) {
+        console.warn("[Squad Webhook] Could not fetch stored pending doc:", e);
       }
 
       const metadata = bodyData.meta || bodyData.metadata || {};
@@ -1517,21 +1437,6 @@ const handleSquadWebhook = async (req: express.Request, res: express.Response) =
       const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
       const durationDays = Number(metadata.durationDays) || Number(metadata["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
       const planTitle = metadata.planName || metadata["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
-
-      // Log webhook event in webhook_logs/{logId}
-      if (dbServer) {
-        const logId = `log_${Date.now()}_${reference}`;
-        setDoc(doc(dbServer, "webhook_logs", logId), {
-          event: rawEvent || "charge_successful",
-          transactionRef: reference,
-          gatewayRef,
-          userId,
-          email: userEmail,
-          amount,
-          squadResponse: payload,
-          createdAt: new Date().toISOString(),
-        }, { merge: true }).catch((err) => console.error("Failed to store webhook log:", err));
-      }
 
       if (userId) {
         await activateSubscriptionInFirestore({
@@ -1617,15 +1522,24 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
       }
 
       let storedPending: any = null;
-      if (dbServer) {
-        try {
-          const pSnap = await getDoc(doc(dbServer, "payments", reference));
-          if (pSnap.exists()) {
-            storedPending = pSnap.data();
+      try {
+        const supabase = getSupabaseAdminClient();
+        if (supabase) {
+          const { data: pDoc } = await supabase.from("payments").select("*").eq("transaction_reference", reference).maybeSingle();
+          if (pDoc) {
+            storedPending = {
+              ...pDoc,
+              amount: pDoc.amount,
+              userId: pDoc.user_id,
+              email: pDoc.email,
+              planId: (pDoc.metadata as any)?.planId,
+              plan: (pDoc.metadata as any)?.planName,
+              durationDays: (pDoc.metadata as any)?.durationDays,
+            };
           }
-        } catch (e) {
-          console.warn("[KoraPay Webhook] Could not fetch stored pending doc:", e);
         }
+      } catch (e) {
+        console.warn("[KoraPay Webhook] Could not fetch stored pending doc:", e);
       }
 
       const meta = data.metadata || {};
@@ -1640,20 +1554,6 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
       const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
       const durationDays = Number(meta.durationDays) || Number(meta["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
       const planTitle = meta.planName || meta["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
-
-      if (dbServer) {
-        const logId = `kora_log_${Date.now()}_${reference}`;
-        setDoc(doc(dbServer, "webhook_logs", logId), {
-          event: event || "charge.success",
-          transactionRef: reference,
-          provider: "korapay",
-          userId,
-          email: userEmail,
-          amount,
-          korapayResponse: payload,
-          createdAt: new Date().toISOString(),
-        }, { merge: true }).catch((err) => console.error("Failed to store KoraPay webhook log:", err));
-      }
 
       if (userId) {
         await activateSubscriptionInFirestore({
@@ -1930,19 +1830,33 @@ const SEED_ADMINS_SERVER: AdminAccountServer[] = [
 // Initialize seed admins
 SEED_ADMINS_SERVER.forEach((a) => inMemoryAdmins.set(a.id, a));
 
-// Synchronize admins from Firestore if available
+// Synchronize admins from Supabase if available
 async function loadAdminsFromFirestore() {
-  if (!dbServer) return;
   try {
-    const snap = await getDocs(collection(dbServer, 'admins'));
-    if (!snap.empty) {
-      snap.forEach((docSnap) => {
-        const data = docSnap.data() as AdminAccountServer;
-        inMemoryAdmins.set(data.id || docSnap.id, { ...data, id: data.id || docSnap.id });
-      });
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      const { data: admins } = await supabase.from('admins').select('*');
+      if (admins && admins.length > 0) {
+        admins.forEach((data: any) => {
+          inMemoryAdmins.set(data.id, {
+            id: data.id,
+            fullName: data.full_name || data.fullName,
+            username: data.username,
+            email: data.email,
+            phone: data.phone,
+            role: data.role,
+            status: data.status,
+            passwordHash: data.password_hash || data.passwordHash,
+            createdDate: data.created_date || data.createdDate,
+            lastLogin: data.last_login || data.lastLogin,
+            loginCount: data.login_count || data.loginCount,
+            createdBy: data.created_by || data.createdBy,
+          });
+        });
+      }
     }
   } catch (err) {
-    console.warn('[RBAC Server] Could not load admins from Firestore on boot:', err);
+    console.warn('[RBAC Server] Could not load admins from database on boot:', err);
   }
 }
 loadAdminsFromFirestore();
@@ -2106,12 +2020,24 @@ app.post('/api/admin/login', async (req, res) => {
   targetAdmin.lastIpAddress = clientIp;
   inMemoryAdmins.set(targetAdmin.id, targetAdmin);
 
-  // Sync to Firestore asynchronously
-  if (dbServer) {
-    setDoc(doc(dbServer, 'admins', targetAdmin.id), targetAdmin, { merge: true }).catch((err) =>
-      console.warn('[RBAC Server] Could not update admin lastLogin in Firestore:', err)
-    );
-  }
+  // Sync to Supabase asynchronously
+  try {
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from('admins').upsert({
+        id: targetAdmin.id,
+        full_name: targetAdmin.fullName,
+        username: targetAdmin.username,
+        email: targetAdmin.email,
+        phone: targetAdmin.phone,
+        role: targetAdmin.role,
+        status: targetAdmin.status,
+        password_hash: targetAdmin.passwordHash,
+        last_login: targetAdmin.lastLogin,
+        login_count: targetAdmin.loginCount,
+      });
+    }
+  } catch {}
 
   const normRole = normalizeServerRole(targetAdmin.role);
   const permissions = ROLE_PERMISSIONS_SERVER[normRole] || ROLE_PERMISSIONS_SERVER[targetAdmin.role] || [];
@@ -2260,10 +2186,24 @@ app.post('/api/admin/admins', requireAdminPermission('manage_other_administrator
   };
 
   inMemoryAdmins.set(newId, newAdmin);
-  if (dbServer) {
-    await setDoc(doc(dbServer, 'admins', newId), newAdmin).catch((err) =>
-      console.warn('[RBAC Server] Failed to save new admin in Firestore:', err)
-    );
+  try {
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from('admins').upsert({
+        id: newAdmin.id,
+        full_name: newAdmin.fullName,
+        username: newAdmin.username,
+        email: newAdmin.email,
+        phone: newAdmin.phone,
+        role: newAdmin.role,
+        status: newAdmin.status,
+        password_hash: newAdmin.passwordHash,
+        created_date: newAdmin.createdDate,
+        created_by: newAdmin.createdBy,
+      });
+    }
+  } catch (err) {
+    console.warn('[RBAC Server] Failed to save new admin in database:', err);
   }
 
   return res.json({
@@ -2310,10 +2250,22 @@ app.put('/api/admin/admins/:id', requireAdminPermission('manage_other_administra
   target.updatedDate = new Date().toISOString();
 
   inMemoryAdmins.set(id, target);
-  if (dbServer) {
-    await setDoc(doc(dbServer, 'admins', id), target, { merge: true }).catch((err) =>
-      console.warn('[RBAC Server] Failed to update admin in Firestore:', err)
-    );
+  try {
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from('admins').upsert({
+        id: target.id,
+        full_name: target.fullName,
+        username: target.username,
+        email: target.email,
+        phone: target.phone,
+        role: target.role,
+        status: target.status,
+        password_hash: target.passwordHash,
+      });
+    }
+  } catch (err) {
+    console.warn('[RBAC Server] Failed to update admin in database:', err);
   }
 
   return res.json({
@@ -2346,21 +2298,26 @@ app.delete('/api/admin/admins/:id', requireAdminPermission('manage_other_adminis
   }
 
   inMemoryAdmins.delete(id);
+  try {
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from('admins').delete().eq('id', id);
+    }
+  } catch {}
+
   return res.json({ success: true, message: 'Administrator account deleted successfully.' });
 });
 
 // Activity Logging Endpoints
 app.get('/api/admin/activity-logs', requireAdminPermission('view_activity_logs'), async (_req, res) => {
   try {
-    if (dbServer) {
-      const snap = await getDocs(collection(dbServer, 'full_activity_logs'));
-      if (!snap.empty) {
-        const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        return res.json({ success: true, logs });
-      }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      const { data: logs } = await supabase.from('full_activity_logs').select('*').limit(100);
+      if (logs) return res.json({ success: true, logs });
     }
   } catch (err) {
-    console.warn('[RBAC Server] Could not fetch logs from Firestore:', err);
+    console.warn('[RBAC Server] Could not fetch logs from database:', err);
   }
   return res.json({ success: true, logs: [] });
 });
@@ -2382,13 +2339,15 @@ app.post("/api/admin/cancel-all-subscriptions", requireAdminPermission('manage_s
 // Admin Payments Data Retrieval (Strictly Protected: manage_payments)
 app.get(['/api/payments', '/api/admin/payments'], requireAdminPermission('manage_payments'), async (_req, res) => {
   try {
-    if (dbServer) {
-      const snap = await getDocs(collection(dbServer, 'payment_transactions'));
-      const transactions = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      return res.json({ success: true, transactions });
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      const { data: payments } = await supabase.from('payments').select('*').order('created_at', { ascending: false }).limit(200);
+      if (payments) {
+        return res.json({ success: true, transactions: payments });
+      }
     }
   } catch (err: any) {
-    console.warn('[RBAC Server] Could not fetch payment transactions from Firestore:', err);
+    console.warn('[RBAC Server] Could not fetch payment transactions from database:', err);
   }
   return res.json({ success: true, transactions: [] });
 });
@@ -2396,13 +2355,15 @@ app.get(['/api/payments', '/api/admin/payments'], requireAdminPermission('manage
 // Admin Students Data Retrieval (Strictly Protected: manage_students)
 app.get('/api/admin/students', requireAdminPermission('manage_students'), async (_req, res) => {
   try {
-    if (dbServer) {
-      const snap = await getDocs(collection(dbServer, 'users'));
-      const students = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      return res.json({ success: true, students });
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      const { data: users } = await supabase.from('users').select('*').order('created_at', { ascending: false }).limit(500);
+      if (users) {
+        return res.json({ success: true, students: users });
+      }
     }
   } catch (err: any) {
-    console.warn('[RBAC Server] Could not fetch students from Firestore:', err);
+    console.warn('[RBAC Server] Could not fetch students from database:', err);
   }
   return res.json({ success: true, students: [] });
 });
@@ -2419,10 +2380,12 @@ app.get('/api/admin/reports', requireAdminPermission('manage_reports'), async (_
 // Admin System Settings (Strictly Protected: manage_settings)
 app.get('/api/admin/settings', requireAdminPermission('manage_settings'), async (_req, res) => {
   try {
-    if (dbServer) {
-      const snap = await getDocs(collection(dbServer, 'system_configs'));
-      const configs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      return res.json({ success: true, configs });
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      const { data: configs } = await supabase.from('system_configs').select('*');
+      if (configs) {
+        return res.json({ success: true, configs });
+      }
     }
   } catch (err: any) {
     console.warn('[RBAC Server] Could not fetch configs:', err);
@@ -2833,63 +2796,17 @@ app.get("/api/catalog/all", async (_req, res) => {
       }
     }
 
-    if (!dbServer) {
-      return res.json({ success: true, universities: [], courses: [], departments: [], faculties: [], questions: [], materials: [], plans: [], users: [], payments: [] });
-    }
-
-    const [uniSnap, courseSnap, deptSnap, facSnap, qSnap, matSnap, planSnap, configSnap, userSnap, paySnap] = await Promise.all([
-      getDocs(collection(dbServer, "universities")).catch(() => ({ docs: [] })),
-      getDocs(collection(dbServer, "courses")).catch(() => ({ docs: [] })),
-      getDocs(collection(dbServer, "departments")).catch(() => ({ docs: [] })),
-      getDocs(collection(dbServer, "faculties")).catch(() => ({ docs: [] })),
-      getDocs(collection(dbServer, "questions")).catch(() => ({ docs: [] })),
-      getDocs(collection(dbServer, "materials")).catch(() => ({ docs: [] })),
-      getDocs(collection(dbServer, "subscription_plans")).catch(() => ({ docs: [] })),
-      getDocs(collection(dbServer, "system_configs")).catch(() => ({ docs: [] })),
-      getDocs(collection(dbServer, "users")).catch(() => ({ docs: [] })),
-      getDocs(collection(dbServer, "payments")).catch(() => ({ docs: [] })),
-    ]);
-
-    const universities = (uniSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
-    const courses = (courseSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
-    const departments = (deptSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
-    const faculties = (facSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
-    const questions = (qSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
-    const materials = (matSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
-    const plans = (planSnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
-    const users = (userSnap.docs || []).map((d: any) => {
-      const data = d.data() || {};
-      return {
-        id: d.id,
-        ...data,
-        name: data.fullName || data.name || data.username || 'Student',
-        fullName: data.fullName || data.name || data.username || 'Student',
-        role: data.role || 'student',
-      };
-    });
-    const payments = (paySnap.docs || []).map((d: any) => ({ id: d.id, ...d.data() }));
-
-    let signupFaculties: any = null;
-    if (configSnap.docs) {
-      const found = configSnap.docs.find((d: any) => d.id === 'signup_faculties');
-      if (found && found.data()?.groups) {
-        signupFaculties = found.data().groups;
-      }
-    }
-
     return res.json({
       success: true,
-      source: 'firestore',
-      universities,
-      courses,
-      departments,
-      faculties,
-      questions,
-      materials,
-      plans,
-      users,
-      payments,
-      signupFaculties,
+      universities: [],
+      courses: [],
+      departments: [],
+      faculties: [],
+      questions: [],
+      materials: [],
+      plans: [],
+      users: [],
+      payments: [],
     });
   } catch (err: any) {
     console.warn("[Catalog API] Warning in /api/catalog/all:", err);
@@ -2918,9 +2835,6 @@ app.post("/api/catalog/universities", requireAdminPermission('manage_universitie
         console.warn("[Supabase] University save notice:", sbErr);
       }
     }
-    if (dbServer) {
-      await setDoc(doc(dbServer, "universities", data.id), data, { merge: true });
-    }
     return res.json({ success: true, university: data });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || "Failed to save university." });
@@ -2936,9 +2850,6 @@ app.delete("/api/catalog/universities/:id", requireAdminPermission('manage_unive
       try {
         await supabase.from("universities").delete().eq("id", toUuid(id));
       } catch {}
-    }
-    if (dbServer) {
-      await deleteDoc(doc(dbServer, "universities", id));
     }
     return res.json({ success: true, message: `University ${id} deleted successfully.` });
   } catch (err: any) {
@@ -2970,9 +2881,6 @@ app.post("/api/catalog/courses", requireAdminPermission('manage_courses'), async
         console.warn("[Supabase] Course save notice:", sbErr);
       }
     }
-    if (dbServer) {
-      await setDoc(doc(dbServer, "courses", data.id), data, { merge: true });
-    }
     return res.json({ success: true, course: data });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || "Failed to save course." });
@@ -2988,9 +2896,6 @@ app.delete("/api/catalog/courses/:id", requireAdminPermission('manage_courses'),
       try {
         await supabase.from("courses").delete().eq("id", toUuid(id));
       } catch {}
-    }
-    if (dbServer) {
-      await deleteDoc(doc(dbServer, "courses", id));
     }
     return res.json({ success: true, message: `Course ${id} deleted successfully.` });
   } catch (err: any) {
@@ -3029,13 +2934,6 @@ app.post("/api/catalog/questions", requireAdminPermission('manage_questions'), a
         console.warn("[Supabase] Questions save notice:", sbErr);
       }
     }
-    if (dbServer) {
-      for (const q of items) {
-        if (q && q.id) {
-          await setDoc(doc(dbServer, "questions", q.id), q, { merge: true });
-        }
-      }
-    }
     return res.json({ success: true, count: items.length });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || "Failed to save question(s)." });
@@ -3052,9 +2950,6 @@ app.delete("/api/catalog/questions/:id", requireAdminPermission('manage_question
         await supabase.from("questions").delete().eq("id", toUuid(id));
       } catch {}
     }
-    if (dbServer) {
-      await deleteDoc(doc(dbServer, "questions", id));
-    }
     return res.json({ success: true, message: `Question ${id} deleted successfully.` });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || "Failed to delete question." });
@@ -3070,15 +2965,211 @@ app.post("/api/catalog/questions/clear-all", async (req, res) => {
         await supabase.from("questions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       } catch {}
     }
-    if (dbServer) {
-      const snap = await getDocs(collection(dbServer, "questions"));
-      for (const d of snap.docs) {
-        await deleteDoc(doc(dbServer, "questions", d.id)).catch(() => {});
-      }
-    }
     return res.json({ success: true, message: "All questions cleared from database." });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || "Failed to clear questions." });
+  }
+});
+
+// Save or update faculties
+app.post("/api/catalog/faculties", requireAdminPermission('manage_universities'), async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || !data.id || !data.name) {
+      return res.status(400).json({ success: false, error: "Faculty ID and name are required." });
+    }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      try {
+        await supabase.from("faculties").upsert({
+          id: toUuid(data.id),
+          name: data.name,
+          code: data.code || '',
+          university_id: data.universityId ? toUuid(data.universityId) : null,
+        });
+      } catch (sbErr) {
+        console.warn("[Supabase] Faculty save notice:", sbErr);
+      }
+    }
+    return res.json({ success: true, faculty: data });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to save faculty." });
+  }
+});
+
+// Delete a faculty
+app.delete("/api/catalog/faculties/:id", requireAdminPermission('manage_universities'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      try {
+        await supabase.from("faculties").delete().eq("id", toUuid(id));
+      } catch {}
+    }
+    return res.json({ success: true, message: `Faculty ${id} deleted successfully.` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to delete faculty." });
+  }
+});
+
+// Save or update departments
+app.post("/api/catalog/departments", requireAdminPermission('manage_universities'), async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || !data.id || !data.name) {
+      return res.status(400).json({ success: false, error: "Department ID and name are required." });
+    }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      try {
+        await supabase.from("departments").upsert({
+          id: toUuid(data.id),
+          name: data.name,
+          code: data.code || '',
+          university_id: data.universityId ? toUuid(data.universityId) : null,
+          faculty_id: data.facultyId ? toUuid(data.facultyId) : null,
+        });
+      } catch (sbErr) {
+        console.warn("[Supabase] Department save notice:", sbErr);
+      }
+    }
+    return res.json({ success: true, department: data });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to save department." });
+  }
+});
+
+// Delete a department
+app.delete("/api/catalog/departments/:id", requireAdminPermission('manage_universities'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      try {
+        await supabase.from("departments").delete().eq("id", toUuid(id));
+      } catch {}
+    }
+    return res.json({ success: true, message: `Department ${id} deleted successfully.` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to delete department." });
+  }
+});
+
+// Save or update study materials
+app.post("/api/catalog/materials", requireAdminPermission('manage_materials'), async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || !data.id || !data.title) {
+      return res.status(400).json({ success: false, error: "Material ID and title are required." });
+    }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      try {
+        await supabase.from("materials").upsert({
+          id: toUuid(data.id),
+          course_id: data.courseId ? toUuid(data.courseId) : null,
+          university_id: data.universityId ? toUuid(data.universityId) : null,
+          title: data.title,
+          file_url: data.fileUrl || data.file_url || '',
+          material_type: data.fileType || data.material_type || 'pdf',
+          description: data.description || '',
+        });
+      } catch (sbErr) {
+        console.warn("[Supabase] Material save notice:", sbErr);
+      }
+    }
+    return res.json({ success: true, material: data });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to save material." });
+  }
+});
+
+// Delete a study material
+app.delete("/api/catalog/materials/:id", requireAdminPermission('manage_materials'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      try {
+        await supabase.from("materials").delete().eq("id", toUuid(id));
+      } catch {}
+    }
+    return res.json({ success: true, message: `Material ${id} deleted successfully.` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to delete material." });
+  }
+});
+
+// Save or update subscription plans
+app.post("/api/catalog/plans", requireAdminPermission('manage_payments'), async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || !data.id || !data.name) {
+      return res.status(400).json({ success: false, error: "Plan ID and name are required." });
+    }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      try {
+        await supabase.from("subscription_plans").upsert({
+          id: toUuid(data.id),
+          name: data.name,
+          price: Number(data.price || 0),
+          duration_days: Number(data.durationDays || data.duration_days || 30),
+          features: Array.isArray(data.features) ? data.features : [],
+          is_active: data.isActive ?? true,
+        });
+      } catch (sbErr) {
+        console.warn("[Supabase] Plan save notice:", sbErr);
+      }
+    }
+    return res.json({ success: true, plan: data });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to save plan." });
+  }
+});
+
+// Delete a subscription plan
+app.delete("/api/catalog/plans/:id", requireAdminPermission('manage_payments'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      try {
+        await supabase.from("subscription_plans").delete().eq("id", toUuid(id));
+      } catch {}
+    }
+    return res.json({ success: true, message: `Plan ${id} deleted successfully.` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to delete plan." });
+  }
+});
+
+// Sync users
+app.post("/api/users/sync", async (req, res) => {
+  try {
+    const { user, users } = req.body;
+    const items = users || (user ? [user] : []);
+    const supabase = getSupabaseAdminClient();
+    if (supabase && items.length > 0) {
+      const records = items.map((u: any) => ({
+        id: toUuid(u.id),
+        full_name: u.fullName || u.name || 'Student',
+        email: u.email,
+        phone: u.phone || null,
+        role: u.role || 'student',
+        university_name: u.universityName || null,
+        department_name: u.departmentName || null,
+        subscription: u.subscription || {},
+        bookmarks: u.bookmarks || [],
+        streak_count: Number(u.streakCount || 0),
+        updated_at: new Date().toISOString(),
+      }));
+      await supabase.from("users").upsert(records);
+    }
+    return res.json({ success: true, count: items.length });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to sync users." });
   }
 });
 
@@ -3086,8 +3177,9 @@ app.post("/api/catalog/questions/clear-all", async (req, res) => {
 app.delete("/api/users/:id", requireAdminPermission('manage_users'), async (req, res) => {
   try {
     const { id } = req.params;
-    if (dbServer) {
-      await deleteDoc(doc(dbServer, "users", id)).catch(() => {});
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from("users").delete().eq("id", toUuid(id));
     }
     return res.json({ success: true, message: `User ${id} deleted successfully.` });
   } catch (err: any) {
@@ -3098,11 +3190,9 @@ app.delete("/api/users/:id", requireAdminPermission('manage_users'), async (req,
 // Clear all users
 app.post("/api/users/clear-all", async (req, res) => {
   try {
-    if (dbServer) {
-      const snap = await getDocs(collection(dbServer, "users"));
-      for (const d of snap.docs) {
-        await deleteDoc(doc(dbServer, "users", d.id)).catch(() => {});
-      }
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from("users").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     }
     return res.json({ success: true, message: "All users cleared from database." });
   } catch (err: any) {
@@ -3117,8 +3207,14 @@ app.post("/api/catalog/signup-faculties", requireAdminPermission('manage_univers
     if (!groups || !Array.isArray(groups)) {
       return res.status(400).json({ success: false, error: "Valid groups array required." });
     }
-    if (dbServer) {
-      await setDoc(doc(dbServer, "system_configs", "signup_faculties"), { groups }, { merge: true });
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      await supabase.from("system_configs").upsert({
+        id: "signup_faculties",
+        key: "signup_faculties",
+        config_data: { groups },
+        updated_at: new Date().toISOString(),
+      });
     }
     return res.json({ success: true, groups });
   } catch (err: any) {

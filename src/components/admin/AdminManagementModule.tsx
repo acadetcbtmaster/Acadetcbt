@@ -127,7 +127,7 @@ const ALL_PERMISSION_KEYS = [
   { key: 'manage_payments', label: 'Manage Payments', desc: 'Verify transactions, handle refunds & plans' },
   { key: 'manage_reports', label: 'Manage Reports', desc: 'Access financial & student performance analytics' },
   { key: 'manage_notifications', label: 'Manage Notifications', desc: 'Send system broadcasts and announcement banners' },
-  { key: 'manage_backups', label: 'Manage Backups', desc: 'Trigger Firestore snapshots & data restores' },
+  { key: 'manage_backups', label: 'Manage Backups', desc: 'Trigger Database backups & data restores' },
   { key: 'manage_settings', label: 'Manage Settings', desc: 'Configure global app rules, timers & limits' },
   { key: 'manage_support_tickets', label: 'Manage Support Tickets', desc: 'Resolve student help requests and complaints' },
   { key: 'view_activity_logs', label: 'View Activity Logs', desc: 'Inspect full system-wide administrative audit trail' },

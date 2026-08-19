@@ -211,7 +211,7 @@ export const ReportsManagementModule: React.FC<ReportsManagementModuleProps> = (
         computedRecordCount = 850;
         summary = `Custom administrative dataset generated for ${genCategory}.`;
         insights = [
-          'Dataset synchronized directly with Cloud Firestore.',
+          'Dataset synchronized directly with Supabase Database.',
           'Passed all security and RBAC administrative audit parameters.'
         ];
       }
@@ -289,7 +289,7 @@ export const ReportsManagementModule: React.FC<ReportsManagementModuleProps> = (
             <h2 className="text-xl font-black text-white tracking-tight">Reports & Performance Analytics Center</h2>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Dynamic platform reporting engine powered by live Cloud Firestore and Firebase Storage data.
+            Dynamic platform reporting engine powered by live Supabase Database and Firebase Storage data.
           </p>
         </div>
 
@@ -313,7 +313,7 @@ export const ReportsManagementModule: React.FC<ReportsManagementModuleProps> = (
         >
           <p className="text-[10px] font-bold uppercase text-slate-400 group-hover:text-amber-400 transition-colors">Total Reports</p>
           <p className="text-xl font-black text-white mt-1">{totalReports}</p>
-          <span className="text-[9px] text-emerald-400 block mt-0.5">Firestore Live</span>
+          <span className="text-[9px] text-emerald-400 block mt-0.5">Database Live</span>
         </div>
 
         {/* Card 2 */}
@@ -802,7 +802,7 @@ export const ReportsManagementModule: React.FC<ReportsManagementModuleProps> = (
                   {isGenerating ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Analyzing Firestore Data...</span>
+                      <span>Analyzing Database Data...</span>
                     </>
                   ) : (
                     <>

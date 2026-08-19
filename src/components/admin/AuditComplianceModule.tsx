@@ -169,7 +169,7 @@ export const AuditComplianceModule: React.FC = () => {
       user: 'Babatunde Lawal (Super Admin)',
       userRole: 'Super Admin',
       module: 'Database Settings',
-      description: 'Updated Firestore read replica threshold limits and re-indexed course collection.',
+      description: 'Updated Database read replica threshold limits and re-indexed course collection.',
       severity: 'Medium',
       status: 'Active',
       timestamp: new Date(Date.now() - 1000 * 60 * 90).toLocaleString(),
@@ -239,7 +239,7 @@ export const AuditComplianceModule: React.FC = () => {
       user: 'Babatunde Lawal (Super Admin)',
       userRole: 'Super Admin',
       module: 'Backup & Restore',
-      description: 'Created full system Firestore snapshot backup #BK-2026-0723.',
+      description: 'Created full system Database snapshot backup #BK-2026-0723.',
       severity: 'Low',
       status: 'Active',
       timestamp: new Date(Date.now() - 1000 * 60 * 600).toLocaleString(),
@@ -559,7 +559,7 @@ export const AuditComplianceModule: React.FC = () => {
             <Database className="w-4 h-4 text-indigo-400" />
           </div>
           <p className="text-2xl font-black text-white mt-1">{totalAuditRecords.toLocaleString()}</p>
-          <span className="text-[10px] text-indigo-400 font-medium mt-1 block">Cloud Firestore Synced</span>
+          <span className="text-[10px] text-indigo-400 font-medium mt-1 block">Supabase Database Synced</span>
         </div>
 
         {/* Security Events */}
@@ -676,7 +676,7 @@ export const AuditComplianceModule: React.FC = () => {
             <Server className="w-4 h-4 text-amber-400" />
           </div>
           <p className="text-2xl font-black text-amber-300 mt-1">{sysConfigChanges}</p>
-          <span className="text-[10px] text-amber-400/80 font-medium mt-1 block">Settings & Firestore Tweaks</span>
+          <span className="text-[10px] text-amber-400/80 font-medium mt-1 block">Settings & Database Tweaks</span>
         </div>
 
         {/* Financial Audit Events */}
@@ -1184,7 +1184,7 @@ export const AuditComplianceModule: React.FC = () => {
               { title: 'Security Compliance Audit', desc: 'Full log of login security, role modifications & access guards.', icon: ShieldCheck },
               { title: 'Financial Audit Report', desc: 'Detailed log of manual payment approvals, refunds & subscription changes.', icon: DollarSign },
               { title: 'Administrator Activity Audit', desc: 'Comprehensive record of all admin management operations.', icon: UserCheck },
-              { title: 'System Configuration Audit', desc: 'Firestore index settings, maintenance logs & database changes.', icon: Server }
+              { title: 'System Configuration Audit', desc: 'Database index settings, maintenance logs & database changes.', icon: Server }
             ].map((rep, idx) => {
               const Icon = rep.icon;
               return (
@@ -1283,7 +1283,7 @@ export const AuditComplianceModule: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-slate-950 border border-slate-800 p-5 rounded-xl space-y-4">
               <h4 className="font-bold text-white text-xs">Retention Period Settings</h4>
-              <p className="text-slate-400 text-[11px]">Audit logs older than the threshold will be moved to compressed Firestore cold storage.</p>
+              <p className="text-slate-400 text-[11px]">Audit logs older than the threshold will be moved to compressed Database cold storage.</p>
               
               <div className="space-y-2">
                 <label className="text-slate-300 font-bold">Auto-Archive Threshold</label>

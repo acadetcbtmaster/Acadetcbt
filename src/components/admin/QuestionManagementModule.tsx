@@ -399,7 +399,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
   };
 
   const handleDeleteQuestion = (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this question? This action will sync immediately to Cloud Firestore.')) return;
+    if (!window.confirm('Are you sure you want to delete this question? This action will sync immediately to Supabase Database.')) return;
     const newList = questions.filter((q) => q.id !== id);
     onUpdateQuestions(newList);
     StorageService.saveQuestions(newList);
@@ -750,7 +750,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
             <HelpCircle className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
           </div>
           <p className="text-2xl font-black text-white">{summary.total.toLocaleString()}</p>
-          <span className="text-[10px] text-slate-500 mt-1 block">Live Firestore Database</span>
+          <span className="text-[10px] text-slate-500 mt-1 block">Live Database Database</span>
         </div>
 
         <div
@@ -1777,7 +1777,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
                 type="submit"
                 className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg cursor-pointer"
               >
-                {editingQuestion ? 'Update Question in Firestore' : 'Save & Publish Question'}
+                {editingQuestion ? 'Update Question in Database' : 'Save & Publish Question'}
               </button>
             </form>
           </div>

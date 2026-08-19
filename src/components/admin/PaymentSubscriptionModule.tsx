@@ -625,7 +625,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
         updatedAt: new Date().toISOString(),
       };
       updatedPlans = plans.map((p) => (p.id === editingPlan.id ? updatedPlan : p));
-      showToast(`Subscription Plan "${planForm.name}" updated successfully in Firestore.`);
+      showToast(`Subscription Plan "${planForm.name}" updated successfully in Database.`);
     } else {
       const planIdToUse = planForm.id ? planForm.id.toLowerCase().replace(/\s+/g, '-') : `plan-${Date.now()}`;
       const newPlan: SubscriptionPlan = {
@@ -643,7 +643,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
         updatedAt: new Date().toISOString(),
       };
       updatedPlans = [...plans, newPlan];
-      showToast(`New Subscription Plan "${planForm.name}" created in Firestore!`);
+      showToast(`New Subscription Plan "${planForm.name}" created in Database!`);
     }
 
     onUpdatePlans(updatedPlans);
@@ -657,7 +657,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
       StorageService.deleteSubscriptionPlan(planId);
       const updated = plans.filter((p) => p.id !== planId);
       onUpdatePlans(updated);
-      showToast(`Plan "${planName}" permanently deleted from Firestore.`);
+      showToast(`Plan "${planName}" permanently deleted from Database.`);
     }
   };
 
@@ -727,7 +727,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`🚫 Successfully cancelled all ${data.cancelledCount || 0} user subscriptions in Firestore.`);
+        showToast(`🚫 Successfully cancelled all ${data.cancelledCount || 0} user subscriptions in Database.`);
       } else {
         showToast(`⚠️ Sync notice: ${data.error || 'All active user subscriptions cancelled.'}`);
       }
@@ -1251,7 +1251,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
           <div className="flex justify-between items-center flex-wrap gap-3">
             <div>
               <h3 className="text-base font-bold text-white">Configured Subscription Plans</h3>
-              <p className="text-xs text-slate-400">Set pricing tiers, features, and durations for student passes. Changes sync immediately to Firestore.</p>
+              <p className="text-xs text-slate-400">Set pricing tiers, features, and durations for student passes. Changes sync immediately to Database.</p>
             </div>
 
             <button
@@ -1917,7 +1917,7 @@ export const PaymentSubscriptionModule: React.FC<PaymentSubscriptionModuleProps>
 
             <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-300 font-medium flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>This action will purge the history logs from local storage and Cloud Firestore.</span>
+              <span>This action will purge the history logs from local storage and Supabase Database.</span>
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-2">

@@ -462,7 +462,7 @@ export const LeaderboardManagementModule: React.FC<LeaderboardManagementModulePr
               Automated Ranking Engine
             </span>
             <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Live Firestore Synced
+              <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Live Database Synced
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-white">Leaderboard & Academic Rankings Management</h1>

@@ -268,7 +268,7 @@ export const ActivityLogsModule: React.FC<ActivityLogsModuleProps> = ({
             </div>
           </div>
           <p className="text-2xl font-black text-white">{totalLogsCount.toLocaleString()}</p>
-          <p className="text-[10px] text-emerald-400 font-medium">Real-time Cloud Firestore synced</p>
+          <p className="text-[10px] text-emerald-400 font-medium">Real-time Supabase Database synced</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800/80 p-5 rounded-3xl space-y-2 hover:border-slate-700 transition-all">

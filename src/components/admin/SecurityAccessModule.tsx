@@ -708,7 +708,7 @@ export const SecurityAccessModule: React.FC = () => {
                 <Database className="w-5 h-5 text-indigo-400" />
                 <span>Firebase Security Rules Verification & Engine</span>
               </h3>
-              <p className="text-xs text-slate-400 mt-1">Live status of Firestore security rules, Firebase Auth token validation & App Check attestation.</p>
+              <p className="text-xs text-slate-400 mt-1">Live status of Database security rules, Firebase Auth token validation & App Check attestation.</p>
             </div>
             <button
               onClick={() => showToast('Security Rules syntax verified successfully.', 'success')}
@@ -720,7 +720,7 @@ export const SecurityAccessModule: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             {[
-              { service: 'Cloud Firestore Rules', status: 'Enforced', version: 'v2', lastUpdated: '2026-07-20', detail: 'Match /databases/{db}/documents - allow read, write if request.auth != null' },
+              { service: 'Supabase Database Rules', status: 'Enforced', version: 'v2', lastUpdated: '2026-07-20', detail: 'Match /databases/{db}/documents - allow read, write if request.auth != null' },
               { service: 'Firebase Auth Guards', status: 'Active', version: 'v1.4', lastUpdated: '2026-07-22', detail: 'Token claims verified on server-side proxies.' },
               { service: 'Firebase Storage Rules', status: 'Enforced', version: 'v2', lastUpdated: '2026-07-18', detail: 'Match /b/{bucket}/o - PDF and JPEG mime-type restrict.' },
               { service: 'Firebase App Check', status: 'Active', version: 'reCAPTCHA Enterprise', lastUpdated: '2026-07-23', detail: 'Enforces attestation against automated bot scripts.' }
@@ -1014,7 +1014,7 @@ export const SecurityAccessModule: React.FC = () => {
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
-              Are you sure you want to execute <strong className="text-white">{emergencyActionModal}</strong>? This action takes immediate effect across all live user sessions and Cloud Firestore databases.
+              Are you sure you want to execute <strong className="text-white">{emergencyActionModal}</strong>? This action takes immediate effect across all live user sessions and Supabase Database databases.
             </p>
 
             <div className="flex gap-2 pt-2">
