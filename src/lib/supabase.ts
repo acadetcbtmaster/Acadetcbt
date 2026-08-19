@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { auth } from './firebase';
 
 // Helper to safely extract Supabase credentials from either client or server environment
 const getSupabaseUrl = (): string => {
@@ -207,9 +208,13 @@ export async function syncUserToSupabase(user: any): Promise<boolean> {
     }
     
     if (typeof window !== 'undefined') {
+      const headers = getAuthHeaders();
+      if (auth.currentUser) {
+        headers['Authorization'] = `Bearer ${await auth.currentUser.getIdToken()}`;
+      }
       await fetch('/api/users/sync', {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers,
         body: JSON.stringify(user),
       });
       return true;

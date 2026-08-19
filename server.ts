@@ -7,6 +7,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { initializeApp as initFirebaseApp, getApps as getFirebaseApps, getApp as getFirebaseApp } from "firebase/app";
 import { getAuth as getFirebaseAuth } from "firebase/auth";
+import { cert as firebaseAdminCert, getApps as getFirebaseAdminApps, getApp as getFirebaseAdminApp, initializeApp as initFirebaseAdminApp } from "firebase-admin/app";
+import { getAuth as getFirebaseAdminAuth } from "firebase-admin/auth";
 import { getSupabaseAdminClient, isSupabaseConfigured } from "./src/lib/supabase";
 
 dotenv.config();
@@ -33,6 +35,23 @@ try {
   }
 } catch (e) {
   console.warn("Server-side Firebase Auth initialization notice:", e);
+}
+
+let firebaseAdminAuth: any = null;
+try {
+  const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  if (projectId && clientEmail && privateKey) {
+    const adminApp = getFirebaseAdminApps().length > 0
+      ? getFirebaseAdminApp()
+      : initFirebaseAdminApp({
+          credential: firebaseAdminCert({ projectId, clientEmail, privateKey }),
+        });
+    firebaseAdminAuth = getFirebaseAdminAuth(adminApp);
+  }
+} catch (e) {
+  console.warn("Server-side Firebase Admin Auth initialization notice:", e);
 }
 
 
@@ -89,7 +108,15 @@ const secureCompare = (left: string, right: string): boolean => {
 };
 
 // Official Subscription Plans Configuration
-const SUBSCRIPTION_PLANS: Record<string, { id: string; name: string; price: number; durationDays: number }> = {
+interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: number;
+  durationDays: number;
+  active?: boolean;
+}
+
+const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
   "plan-1d": { id: "plan-1d", name: "1-Day Starter Pass", price: 150, durationDays: 1 },
   "premium-150": { id: "premium-150", name: "1-Day Starter Pass", price: 150, durationDays: 1 },
   "plan-150": { id: "plan-150", name: "1-Day Starter Pass", price: 150, durationDays: 1 },
@@ -803,8 +830,8 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
   try {
     console.log(`[Payment Init] Validation Started (Elapsed: 0ms)`);
     const { planId, email, userEmail, userId, uid, userName, userUsername } = req.body;
-    const reqAmount = Number(req.body.amount);
     const provider = String(req.body.provider || req.body.gateway || "").toLowerCase();
+    const requestedPlanId = typeof planId === "string" ? planId.trim() : "";
 
     const effUserId = userId || uid || email || userEmail || "usr-student";
     const effEmail = email || userEmail || (userUsername ? `${userUsername}@acadet.cbt` : "student@acadet.cbt");
@@ -816,12 +843,15 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       });
     }
 
-    // Determine Plan and Amount (Fast resolution without blocking on Firestore if price is provided)
-    let livePlan = null;
-    if ((!reqAmount || reqAmount <= 0) && planId) {
-      livePlan = await getLivePlanFromFirestore(planId);
+    if (!requestedPlanId) {
+      return res.status(400).json({
+        success: false,
+        error: "A valid subscription plan is required to initiate payment.",
+      });
     }
-    const knownPlan = livePlan || SUBSCRIPTION_PLANS[planId];
+
+    const livePlan = await getLivePlanFromFirestore(requestedPlanId);
+    const knownPlan = livePlan || SUBSCRIPTION_PLANS[requestedPlanId];
 
     if (livePlan && !livePlan.active) {
       return res.status(400).json({
@@ -830,10 +860,17 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       });
     }
 
-    // Amount in Naira is always stored and treated in Naira (e.g. 150, 800, 1500)
-    const amountInNaira = knownPlan ? knownPlan.price : (reqAmount && reqAmount > 0 ? reqAmount : 800);
-    const planTitle = req.body.planName || (knownPlan ? knownPlan.name : (planId === "premium-plus" || planId === "plan-30d" ? "Premium Plus" : "Premium Membership"));
-    const durationDays = Number(req.body.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
+    if (!knownPlan || !Number.isFinite(knownPlan.price) || knownPlan.price <= 0 || !Number.isFinite(knownPlan.durationDays) || knownPlan.durationDays <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Subscription plan "${requestedPlanId}" is unknown or invalid.`,
+      });
+    }
+
+    // Amount, display name, and duration are always resolved from the server plan.
+    const amountInNaira = knownPlan.price;
+    const planTitle = knownPlan.name;
+    const durationDays = knownPlan.durationDays;
     const amountInKobo = Math.round(amountInNaira * 100);
 
     const gatewayName = provider === "korapay" ? "KoraPay" : "Squad";
@@ -844,7 +881,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
     console.log(`- Plan Duration Days: ${durationDays} days`);
     console.log(`- Gateway Name: ${gatewayName}`);
     console.log(`- Amount Sent To Gateway: ${amountSentToGateway} (${provider === 'korapay' ? 'Naira' : 'Kobo'})`);
-    console.log(`- Plan ID: ${planId || 'default'} | Plan Name: ${planTitle}`);
+    console.log(`- Plan ID: ${requestedPlanId} | Plan Name: ${planTitle}`);
 
     const timestamp = Date.now();
     const cleanUid = String(effUserId).replace(/[^a-zA-Z0-9_]/g, '');
@@ -910,7 +947,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         reference: cleanRef,
         amount: amountInNaira,
         plan: planTitle,
-        planId: planId || "premium",
+        planId: requestedPlanId,
         durationDays,
         provider: "korapay",
       }).catch((e) => console.warn("[Firestore Server] Non-blocking Korapay pending record creation error:", e));
@@ -950,7 +987,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         metadata: {
           userId: String(effUserId).substring(0, 50),
           userEmail: userEmailStr.substring(0, 50),
-          planId: String(planId || "premium").substring(0, 20),
+          planId: requestedPlanId.substring(0, 20),
           planName: String(planTitle).substring(0, 50),
           durationDays: String(durationDays),
         },
@@ -1029,7 +1066,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
           checkoutUrl,
           paymentLink: checkoutUrl,
           amount: amountInNaira,
-          planId: planId || "premium",
+          planId: requestedPlanId,
           planName: planTitle,
           gatewayTimeMs: gatewayDuration,
           backendTimeMs: totalBackendTimeMs,
@@ -1063,7 +1100,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
       reference,
       amount: amountInNaira,
       plan: planTitle,
-      planId: planId || "premium",
+      planId: requestedPlanId,
       durationDays,
       provider: "squad",
     }).catch((e) => console.warn("[Firestore Server] Non-blocking Squad pending record creation error:", e));
@@ -1081,10 +1118,10 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         userId: effUserId,
         userEmail: effEmail,
         userName: userName || "Acadet Student",
-        planId: planId || "premium",
+        planId: requestedPlanId,
         planName: planTitle,
         amount: amountInNaira,
-        durationDays: Number(req.body?.durationDays) || (knownPlan ? knownPlan.durationDays : 30),
+        durationDays,
       },
     };
 
@@ -1129,7 +1166,7 @@ const handlePaymentInitiation = async (req: express.Request, res: express.Respon
         checkoutUrl,
         paymentLink: checkoutUrl,
         amount: amountInNaira,
-        planId: planId || "premium",
+        planId: requestedPlanId,
         planName: planTitle,
         gatewayTimeMs: gatewayDuration,
         backendTimeMs: totalBackendTimeMs,
@@ -1447,44 +1484,29 @@ const handleSquadWebhook = async (req: express.Request, res: express.Response) =
         return res.status(200).json({ status: "success", message: "Already processed" });
       }
 
-      processedSquadReferences.add(reference);
-
-      let storedPending: any = null;
-      try {
-        const supabase = getSupabaseAdminClient();
-        if (supabase) {
-          const { data: pDoc } = await supabase.from("payments").select("*").eq("transaction_reference", reference).maybeSingle();
-          if (pDoc) {
-            storedPending = {
-              ...pDoc,
-              amount: pDoc.amount,
-              userId: pDoc.user_id,
-              email: pDoc.email,
-              planId: (pDoc.metadata as any)?.planId,
-              plan: (pDoc.metadata as any)?.planName,
-              durationDays: (pDoc.metadata as any)?.durationDays,
-            };
-          }
-        }
-      } catch (e) {
-        console.warn("[Squad Webhook] Could not fetch stored pending doc:", e);
+      const storedPending = await getStoredPendingPayment(reference);
+      if (!storedPending?.planId || !storedPending.userId) {
+        return res.status(400).json({ status: "error", error: "No stored pending payment was found for this reference." });
       }
 
       const metadata = bodyData.meta || bodyData.metadata || {};
-      const userId = metadata.userId || bodyData.customer?.user_id || storedPending?.userId || "usr-student";
-      const userEmail = bodyData.email || metadata.userEmail || storedPending?.email || "student@acadet.cbt";
-      const userName = metadata.userName || bodyData.customer?.name || storedPending?.fullName || "Acadet Student";
-      const rawAmt = bodyData.amount || bodyData.transaction_amount || metadata.amount || storedPending?.amount || 800;
-      const amount = storedPending?.amount || (rawAmt > 10000 ? Math.round(rawAmt / 100) : rawAmt);
+      const userId = storedPending.userId;
+      const userEmail = storedPending.email || bodyData.email || metadata.userEmail || "student@acadet.cbt";
+      const userName = storedPending.fullName || bodyData.customer?.name || metadata.userName || "Acadet Student";
+      const rawAmt = Number(bodyData.amount ?? bodyData.transaction_amount);
+      const amount = rawAmt > 10000 ? Math.round(rawAmt / 100) : rawAmt;
       const gatewayRef = bodyData.gateway_ref || bodyData.transaction_ref || reference;
 
-      const reqPlanId = metadata.planId || metadata["plan-id"] || storedPending?.planId || "premium";
-      const livePlan = await getLivePlanFromFirestore(reqPlanId);
-      const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
-      const durationDays = Number(metadata.durationDays) || Number(metadata["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
-      const planTitle = metadata.planName || metadata["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
+      const livePlan = await getLivePlanFromFirestore(storedPending.planId);
+      const knownPlan = livePlan || SUBSCRIPTION_PLANS[storedPending.planId];
+      if (!knownPlan || !Number.isFinite(amount) || amount < knownPlan.price) {
+        return res.status(400).json({ status: "error", error: "Verified payment amount does not satisfy the stored subscription plan." });
+      }
+      const durationDays = knownPlan.durationDays;
+      const planTitle = knownPlan.name;
 
       if (userId) {
+        processedSquadReferences.add(reference);
         await activateSubscriptionInFirestore({
           userId,
           userName,
@@ -1548,8 +1570,6 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
         return res.status(200).json({ status: "success", message: "Already processed" });
       }
 
-      processedKorapayReferences.add(reference);
-
       // Verify transaction directly with KoraPay API for security
       const secretKey = getKorapaySecretKey();
       if (secretKey && !secretKey.includes("placeholder")) {
@@ -1569,41 +1589,28 @@ const handleKorapayWebhook = async (req: express.Request, res: express.Response)
         }
       }
 
-      let storedPending: any = null;
-      try {
-        const supabase = getSupabaseAdminClient();
-        if (supabase) {
-          const { data: pDoc } = await supabase.from("payments").select("*").eq("transaction_reference", reference).maybeSingle();
-          if (pDoc) {
-            storedPending = {
-              ...pDoc,
-              amount: pDoc.amount,
-              userId: pDoc.user_id,
-              email: pDoc.email,
-              planId: (pDoc.metadata as any)?.planId,
-              plan: (pDoc.metadata as any)?.planName,
-              durationDays: (pDoc.metadata as any)?.durationDays,
-            };
-          }
-        }
-      } catch (e) {
-        console.warn("[KoraPay Webhook] Could not fetch stored pending doc:", e);
+      const storedPending = await getStoredPendingPayment(reference);
+      if (!storedPending?.planId || !storedPending.userId) {
+        return res.status(400).json({ status: "error", error: "No stored pending payment was found for this reference." });
       }
 
       const meta = data.metadata || {};
-      const userId = meta.userId || meta["user-id"] || data.customer?.userId || storedPending?.userId || "usr-student";
-      const userEmail = meta.userEmail || meta["user-email"] || data.customer?.email || storedPending?.email || "student@acadet.cbt";
-      const userName = meta.fullName || meta.userName || data.customer?.name || storedPending?.fullName || "Acadet Student";
-      const rawAmount = data.amount || meta.amount || meta["amount"] || storedPending?.amount || 800;
-      const amount = storedPending?.amount || (rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount);
+      const userId = storedPending.userId;
+      const userEmail = storedPending.email || data.customer?.email || meta.userEmail || "student@acadet.cbt";
+      const userName = storedPending.fullName || data.customer?.name || meta.fullName || meta.userName || "Acadet Student";
+      const rawAmount = Number(data.amount);
+      const amount = rawAmount > 5000 ? Math.round(rawAmount / 100) : rawAmount;
 
-      const reqPlanId = meta.planId || meta["plan-id"] || storedPending?.planId || "premium";
-      const livePlan = await getLivePlanFromFirestore(reqPlanId);
-      const knownPlan = livePlan || SUBSCRIPTION_PLANS[reqPlanId];
-      const durationDays = Number(meta.durationDays) || Number(meta["duration-days"]) || Number(storedPending?.durationDays) || (knownPlan ? knownPlan.durationDays : 30);
-      const planTitle = meta.planName || meta["plan-name"] || storedPending?.plan || (knownPlan ? knownPlan.name : "Premium Membership");
+      const livePlan = await getLivePlanFromFirestore(storedPending.planId);
+      const knownPlan = livePlan || SUBSCRIPTION_PLANS[storedPending.planId];
+      if (!knownPlan || !Number.isFinite(amount) || amount < knownPlan.price) {
+        return res.status(400).json({ status: "error", error: "Verified payment amount does not satisfy the stored subscription plan." });
+      }
+      const durationDays = knownPlan.durationDays;
+      const planTitle = knownPlan.name;
 
       if (userId) {
+        processedKorapayReferences.add(reference);
         await activateSubscriptionInFirestore({
           userId,
           userName,
@@ -2668,8 +2675,6 @@ app.get("/api/catalog/all", async (_req, res) => {
           { data: sbQuestions },
           { data: sbMaterials },
           { data: sbPlans },
-          { data: sbUsers },
-          { data: sbPayments },
           { data: sbConfigs },
         ] = await Promise.all([
           Promise.resolve(supabase.from("universities").select("*")).catch(() => ({ data: null })),
@@ -2679,8 +2684,6 @@ app.get("/api/catalog/all", async (_req, res) => {
           Promise.resolve(supabase.from("questions").select("*")).catch(() => ({ data: null })),
           Promise.resolve(supabase.from("materials").select("*")).catch(() => ({ data: null })),
           Promise.resolve(supabase.from("subscription_plans").select("*")).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from("users").select("*")).catch(() => ({ data: null })),
-          Promise.resolve(supabase.from("payments").select("*")).catch(() => ({ data: null })),
           Promise.resolve(supabase.from("system_configs").select("*")).catch(() => ({ data: null })),
         ]);
 
@@ -2757,34 +2760,6 @@ app.get("/api/catalog/all", async (_req, res) => {
             isActive: p.is_active ?? true,
           }));
 
-          const users = (sbUsers || []).map((u: any) => ({
-            id: u.id,
-            name: u.full_name || u.name || 'Student',
-            fullName: u.full_name || u.name || 'Student',
-            username: u.username || '',
-            email: u.email,
-            phone: u.phone || '',
-            role: u.role || 'student',
-            universityName: u.university_name || '',
-            departmentName: u.department_name || '',
-            subscription: u.subscription || { isPremium: false, plan: 'Free Tier' },
-            bookmarks: u.bookmarks || [],
-            streakCount: u.streak_count || 0,
-          }));
-
-          const payments = (sbPayments || []).map((p: any) => ({
-            id: p.id,
-            reference: p.reference,
-            userId: p.user_id || p.userId,
-            userEmail: p.user_email || p.userEmail,
-            amount: Number(p.amount || 0),
-            gateway: p.gateway || 'squad',
-            status: p.status || 'success',
-            planId: p.plan_id || p.planId,
-            metadata: p.metadata || {},
-            createdAt: p.created_at || new Date().toISOString(),
-          }));
-
           let signupFaculties: any = null;
           const configEntry = (sbConfigs || []).find((c: any) => c.key === 'signup_faculties' || c.id === 'signup_faculties');
           if (configEntry && (configEntry.data?.groups || configEntry.config_data?.groups)) {
@@ -2801,8 +2776,6 @@ app.get("/api/catalog/all", async (_req, res) => {
             questions,
             materials,
             plans,
-            users,
-            payments,
             signupFaculties,
           });
         }
@@ -2820,8 +2793,6 @@ app.get("/api/catalog/all", async (_req, res) => {
       questions: [],
       materials: [],
       plans: [],
-      users: [],
-      payments: [],
     });
   } catch (err: any) {
     console.warn("[Catalog API] Warning in /api/catalog/all:", err);
@@ -3165,20 +3136,46 @@ app.post("/api/users/sync", async (req, res) => {
   try {
     const { user, users } = req.body;
     const items = users || (user ? [user] : []);
+    if (!Array.isArray(items) || items.some((item: any) => !item || typeof item !== "object")) {
+      return res.status(400).json({ success: false, error: "A valid user profile is required." });
+    }
+
+    let verifiedUid: string | null = null;
+    if (firebaseAdminAuth) {
+      const authorization = req.headers.authorization;
+      const token = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+      if (!token) {
+        return res.status(401).json({ success: false, error: "A Firebase ID token is required." });
+      }
+      try {
+        const decodedToken = await firebaseAdminAuth.verifyIdToken(token);
+        verifiedUid = decodedToken.uid;
+      } catch {
+        return res.status(401).json({ success: false, error: "Invalid Firebase ID token." });
+      }
+      if (items.some((u: any) => String(u.id || "") !== verifiedUid)) {
+        return res.status(403).json({ success: false, error: "Users may only sync their own profile." });
+      }
+    }
+
     const supabase = getSupabaseAdminClient();
     if (supabase && items.length > 0) {
-      const records = items.map((u: any) => ({
-        id: toUuid(u.id),
-        full_name: u.fullName || u.name || 'Student',
-        email: u.email,
-        phone: u.phone || null,
-        role: u.role || 'student',
-        university_name: u.universityName || null,
-        department_name: u.departmentName || null,
-        subscription: u.subscription || {},
-        bookmarks: u.bookmarks || [],
-        streak_count: Number(u.streakCount || 0),
-        updated_at: new Date().toISOString(),
+      const records = await Promise.all(items.map(async (u: any) => {
+        const id = toUuid(u.id);
+        const { data: existing } = await supabase.from("users").select("role, subscription").eq("id", id).maybeSingle();
+        return {
+          id,
+          full_name: u.fullName || u.name || 'Student',
+          email: u.email,
+          phone: u.phone || null,
+          role: existing?.role || 'student',
+          university_name: u.universityName || null,
+          department_name: u.departmentName || null,
+          subscription: existing?.subscription || {},
+          bookmarks: u.bookmarks || [],
+          streak_count: Number(u.streakCount || 0),
+          updated_at: new Date().toISOString(),
+        };
       }));
       await supabase.from("users").upsert(records);
     }
