@@ -9,7 +9,8 @@ import {
   QuestionSource,
   QuestionVersion,
 } from '../../types';
-import { StorageService, safeStringify } from '../../services/storage';
+import { StorageService } from '../../services/storage';
+import { dateStamp, downloadCsv, downloadJson } from '../../utils/fileExport';
 import { ApiClient } from '../../services/apiClient';
 import { ACADEMIC_LEVELS, ACADEMIC_SEMESTERS, normalizeLevel, normalizeSemester } from '../../utils/academicStructure';
 import {
@@ -489,34 +490,23 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
   const handleExportQuestions = (format: 'json' | 'csv') => {
     const exportData = filteredQuestions;
     if (format === 'json') {
-      const blob = new Blob([safeStringify(exportData, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `cbt_questions_export_${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
+      downloadJson(`cbt_questions_export_${dateStamp()}.json`, exportData);
     } else {
       const headers = ['ID', 'CourseCode', 'Question', 'OptionA', 'OptionB', 'OptionC', 'OptionD', 'CorrectAnswer', 'Difficulty', 'Status', 'Explanation'];
       const rows = exportData.map((q) => [
-        `"${q.id}"`,
-        `"${q.courseCode || ''}"`,
-        `"${q.question.replace(/"/g, '""')}"`,
-        `"${(q.optionA || '').replace(/"/g, '""')}"`,
-        `"${(q.optionB || '').replace(/"/g, '""')}"`,
-        `"${(q.optionC || '').replace(/"/g, '""')}"`,
-        `"${(q.optionD || '').replace(/"/g, '""')}"`,
-        `"${q.correctAnswer}"`,
-        `"${q.difficulty}"`,
-        `"${q.status}"`,
-        `"${(q.explanation || '').replace(/"/g, '""')}"`,
+        q.id,
+        q.courseCode || '',
+        q.question,
+        q.optionA || '',
+        q.optionB || '',
+        q.optionC || '',
+        q.optionD || '',
+        q.correctAnswer,
+        q.difficulty,
+        q.status,
+        q.explanation || '',
       ]);
-      const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `cbt_questions_export_${new Date().toISOString().split('T')[0]}.csv`;
-      a.click();
+      downloadCsv(`cbt_questions_export_${dateStamp()}.csv`, headers, rows);
     }
   };
 

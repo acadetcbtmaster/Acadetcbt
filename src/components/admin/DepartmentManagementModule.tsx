@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { FacultyGroup, DEFAULT_FACULTY_DEPARTMENTS } from '../../types';
 import { StorageService } from '../../services/storage';
+import { useToast } from '../../hooks/useToast';
 
 export const DepartmentManagementModule: React.FC = () => {
   const [facultyGroups, setFacultyGroups] = useState<FacultyGroup[]>([]);
@@ -26,7 +27,7 @@ export const DepartmentManagementModule: React.FC = () => {
   const [expandedFaculties, setExpandedFaculties] = useState<Record<string, boolean>>({});
 
   // Feedback Toast State
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const { toast: toastMessage, showToast } = useToast();
 
   // Modals State
   const [showAddFacultyModal, setShowAddFacultyModal] = useState(false);
@@ -60,13 +61,6 @@ export const DepartmentManagementModule: React.FC = () => {
       initialExpanded[fac.id] = idx < 3;
     });
     setExpandedFaculties(initialExpanded);
-  };
-
-  const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
-    setToastMessage({ text, type });
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
   };
 
   const toggleExpand = (facultyId: string) => {

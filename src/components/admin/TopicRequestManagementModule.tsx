@@ -10,6 +10,7 @@ import {
   LearningResourceItem,
 } from '../../types';
 import { StorageService } from '../../services/storage';
+import { dateStamp, downloadCsv } from '../../utils/fileExport';
 import {
   MessageSquarePlus,
   MessageSquare,
@@ -478,29 +479,20 @@ export const TopicRequestManagementModule: React.FC<TopicRequestManagementModule
 
   // Export CSV
   const handleExportCSV = () => {
-    const csvRows = [
-      ['Request ID', 'Student Name', 'University', 'Level', 'Semester', 'Course Code', 'Topic Title', 'Status', 'Date'],
-      ...requests.map((r) => [
-        r.id,
-        `"${r.studentName}"`,
-        `"${r.universityName}"`,
-        r.level,
-        r.semester,
-        r.courseCode,
-        `"${r.topicTitle}"`,
-        r.status,
-        new Date(r.createdAt).toLocaleDateString(),
-      ]),
-    ];
+    const headers = ['Request ID', 'Student Name', 'University', 'Level', 'Semester', 'Course Code', 'Topic Title', 'Status', 'Date'];
+    const rows = requests.map((r) => [
+      r.id,
+      r.studentName,
+      r.universityName,
+      r.level,
+      r.semester,
+      r.courseCode,
+      r.topicTitle,
+      r.status,
+      new Date(r.createdAt).toLocaleDateString(),
+    ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + csvRows.map((e) => e.join(',')).join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Acadet_Topic_Requests_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCsv(`Acadet_Topic_Requests_${dateStamp()}.csv`, headers, rows);
   };
 
   return (

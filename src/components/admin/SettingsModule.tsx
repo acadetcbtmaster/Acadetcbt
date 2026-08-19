@@ -9,6 +9,8 @@ import {
 } from '../../types';
 import { StorageService } from '../../services/storage';
 import { hasPermission } from '../../utils/rbac';
+import { useToast } from '../../hooks/useToast';
+import { SimpleToast } from '../ui/Toast';
 import {
   Settings,
   Shield,
@@ -103,7 +105,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   // Toast & Loading
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const { toast, showToast: triggerToast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
 
   // University Modal State
@@ -139,11 +141,6 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   useEffect(() => {
     loadSettingsData();
   }, []);
-
-  const triggerToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
 
   const handleSaveAllSettings = () => {
     setIsSaving(true);
@@ -294,13 +291,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-20 right-8 z-50 bg-slate-800 border border-indigo-500/30 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-          <span className="text-xs font-semibold">{toastMessage}</span>
-        </div>
-      )}
+      <SimpleToast message={toast?.text ?? null} />
 
       {/* Header Bar */}
       <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 p-6 rounded-3xl shadow-xl flex flex-wrap items-center justify-between gap-4">
