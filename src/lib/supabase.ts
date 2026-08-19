@@ -52,21 +52,34 @@ class NoopWebSocket {
   static readonly CLOSING = 2;
   static readonly CLOSED = 3;
 
-  readonly readyState = NoopWebSocket.CLOSED;
-  onopen: ((event: unknown) => void) | null = null;
-  onmessage: ((event: unknown) => void) | null = null;
-  onerror: ((event: unknown) => void) | null = null;
-  onclose: ((event: unknown) => void) | null = null;
+  readonly CONNECTING = NoopWebSocket.CONNECTING;
+  readonly OPEN = NoopWebSocket.OPEN;
+  readonly CLOSING = NoopWebSocket.CLOSING;
+  readonly CLOSED = NoopWebSocket.CLOSED;
+  readonly readyState = this.CLOSED;
+  readonly url: string;
+  readonly protocol = '';
+  onopen: ((this: NoopWebSocket, event: Event) => void) | null = null;
+  onmessage: ((this: NoopWebSocket, event: MessageEvent) => void) | null = null;
+  onerror: ((this: NoopWebSocket, event: Event) => void) | null = null;
+  onclose: ((this: NoopWebSocket, event: CloseEvent) => void) | null = null;
+  binaryType = 'blob';
+  bufferedAmount = 0;
+  extensions = '';
 
-  constructor(_url: string) {}
+  constructor(url: string | URL, _subprotocols?: string | string[]) {
+    this.url = String(url);
+  }
 
-  addEventListener(_type: string, _listener: (...args: unknown[]) => void): void {}
-  removeEventListener(_type: string, _listener: (...args: unknown[]) => void): void {}
-  send(_data: unknown): void {}
-  close(): void {}
+  addEventListener(_type: string, _listener: EventListener): void {}
+  removeEventListener(_type: string, _listener: EventListener): void {}
+  send(_data: string | ArrayBufferLike | Blob | ArrayBufferView): void {}
+  close(_code?: number, _reason?: string): void {}
 }
 
-function getRealtimeOptions(): { transport: typeof NoopWebSocket } | undefined {
+type RealtimeOptions = NonNullable<NonNullable<Parameters<typeof createClient>[2]>['realtime']>;
+
+function getRealtimeOptions(): RealtimeOptions | undefined {
   const isNode = typeof window === 'undefined' && typeof process !== 'undefined' && Boolean(process.versions?.node);
   const hasWebSocket = typeof (globalThis as { WebSocket?: unknown }).WebSocket !== 'undefined';
   return isNode && !hasWebSocket ? { transport: NoopWebSocket } : undefined;
@@ -104,7 +117,7 @@ export function getSupabaseClient(): SupabaseClient | null {
           persistSession: true,
           autoRefreshToken: true,
         },
-        realtime: getRealtimeOptions() as any,
+        realtime: getRealtimeOptions(),
       });
     } catch (err) {
       logInitializationFailure('client', err);
@@ -133,7 +146,7 @@ export function getSupabaseAdminClient(): SupabaseClient | null {
           persistSession: false,
           autoRefreshToken: false,
         },
-        realtime: getRealtimeOptions() as any,
+        realtime: getRealtimeOptions(),
       });
     } catch (err) {
       logInitializationFailure('admin client', err);
