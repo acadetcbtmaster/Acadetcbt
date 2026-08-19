@@ -3043,7 +3043,7 @@ app.post("/api/users/sync", async (req, res) => {
           ...u,
           id,
           role: existing?.role || "student",
-          subscription: existing?.subscription || {},
+          subscription: existing?.subscription || undefined,
         });
       }));
       const { error } = await supabase.from("users").upsert(records);
