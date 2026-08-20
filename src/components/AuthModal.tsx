@@ -171,8 +171,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }, [facultyGroups, selectedDepartment]);
 
   // Terms & Privacy Checkboxes
-  const [agreeTerms, setAgreeTerms] = useState<boolean>(false);
-  const [agreePrivacy, setAgreePrivacy] = useState<boolean>(false);
+  const [agreeTerms, setAgreeTerms] = useState<boolean>(true);
+  const [agreePrivacy, setAgreePrivacy] = useState<boolean>(true);
 
   // Student Login Mode State
   const [loginEmail, setLoginEmail] = useState('');
@@ -376,6 +376,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setRegTouched((prev) => ({ ...prev, [field]: true }));
   };
 
+  // Terms Container Ref for Error Focusing
+  const termsContainerRef = useRef<HTMLDivElement>(null);
+
   // Focus placement helper for registration errors
   const focusFirstRegError = (errors: Record<string, string>) => {
     if (errors.fullName) {
@@ -393,9 +396,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } else if (errors.passwordHint) {
       passwordHintRef.current?.focus();
     } else if (errors.selectedUniversity) {
-      universityRef.current?.focus();
+      setIsUniDropdownOpen(true);
+      uniDropdownRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else if (errors.selectedDepartment) {
-      departmentRef.current?.focus();
+      setIsDeptDropdownOpen(true);
+      deptDropdownRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else if (errors.terms) {
+      termsContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   };
 
@@ -1783,13 +1790,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <label className="text-xs font-medium text-slate-300">
                     Password Hint <span className="text-rose-400">*</span>
                   </label>
+                  <span className="text-[10px] text-indigo-400">Account Recovery</span>
                 </div>
                 <div className="relative">
                   <KeyRound className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                   <input
                     ref={passwordHintRef}
                     type="text"
-                    placeholder="Enter something that will help you remember your password. Example: My favorite football club, My first school, My pet's name, etc."
+                    placeholder="e.g. Favorite club: Arsenal, First school: Kings College"
                     value={passwordHint}
                     onChange={(e) => {
                       setPasswordHint(e.target.value);
@@ -1804,9 +1812,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     }`}
                   />
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  This hint will only be used to recover your account if you forget your password.
-                </p>
+                
+                {/* Quick Hint Suggestions */}
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] text-slate-400">Suggestions:</span>
+                  {[
+                    'Favorite Team',
+                    'First School',
+                    'Mother\'s Maiden Name',
+                    'Childhood Pet',
+                  ].map((hintText) => (
+                    <button
+                      key={hintText}
+                      type="button"
+                      onClick={() => {
+                        setPasswordHint(`${hintText}: `);
+                        touchRegField('passwordHint');
+                        passwordHintRef.current?.focus();
+                        if (topBannerError) setTopBannerError(null);
+                      }}
+                      className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-[10px] text-slate-300 hover:text-white hover:border-indigo-500/40 hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      + {hintText}
+                    </button>
+                  ))}
+                </div>
+
                 {regTouched.passwordHint && regErrors.passwordHint && (
                   <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3 shrink-0" />
@@ -1905,11 +1936,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                     {/* Scrollable Alphabetical University List */}
                     <div className="max-h-60 overflow-y-auto divide-y divide-slate-800/40 p-1 custom-scrollbar">
+                      {/* Option to use custom typed university if search has text */}
+                      {uniSearchQuery.trim() && (
+                        <div className="p-1.5 mb-1 bg-cyan-950/40 rounded-xl border border-cyan-500/30">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const customUni = uniSearchQuery.trim();
+                              setSelectedUniversity(customUni);
+                              setSelectedDepartment('');
+                              setIsUniDropdownOpen(false);
+                              setRegTouched((prev) => ({ ...prev, selectedUniversity: true }));
+                              if (topBannerError) setTopBannerError(null);
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 hover:text-white transition-colors flex items-center justify-between group cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <Building2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                              <span className="text-xs font-semibold truncate">
+                                Use &quot;{uniSearchQuery.trim()}&quot;
+                              </span>
+                            </div>
+                            <span className="text-[10px] bg-cyan-500/30 text-cyan-200 px-1.5 py-0.5 rounded font-bold shrink-0">
+                              Custom Institution
+                            </span>
+                          </button>
+                        </div>
+                      )}
+
                       {filteredUniversities.length === 0 ? (
-                        <div className="py-8 text-center px-4">
+                        <div className="py-6 text-center px-4">
                           <Building2 className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-50" />
-                          <p className="text-xs text-slate-300 font-medium">No university found matching "{uniSearchQuery}"</p>
-                          <p className="text-[11px] text-slate-500 mt-1">Try searching by abbreviation (e.g. UNILAG, ABU, FUTA) or location state.</p>
+                          <p className="text-xs text-slate-300 font-medium">No pre-listed university found matching &quot;{uniSearchQuery}&quot;</p>
+                          <p className="text-[11px] text-slate-400 mt-1">Click the button above to use your typed institution name.</p>
                         </div>
                       ) : (
                         filteredUniversities.map((uni) => {
@@ -2038,9 +2097,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                       {/* List of Categorized Faculties & Departments */}
                       <div className="overflow-y-auto flex-1 p-2 space-y-3 custom-scrollbar">
+                        {/* Option to use custom typed department/course if search has text */}
+                        {deptSearchQuery.trim() && (
+                          <div className="p-1.5 mb-1 bg-indigo-950/40 rounded-xl border border-indigo-500/30">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const customDept = deptSearchQuery.trim();
+                                setSelectedDepartment(customDept);
+                                touchRegField('selectedDepartment');
+                                setIsDeptDropdownOpen(false);
+                                if (topBannerError) setTopBannerError(null);
+                              }}
+                              className="w-full text-left px-3 py-2 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 hover:text-white transition-colors flex items-center justify-between group cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2 overflow-hidden">
+                                <BookOpen className="w-4 h-4 text-indigo-400 shrink-0" />
+                                <span className="text-xs font-semibold truncate">
+                                  Use &quot;{deptSearchQuery.trim()}&quot;
+                                </span>
+                              </div>
+                              <span className="text-[10px] bg-indigo-500/30 text-indigo-200 px-1.5 py-0.5 rounded font-bold shrink-0">
+                                Custom Course
+                              </span>
+                            </button>
+                          </div>
+                        )}
+
                         {filteredFacultyGroups.length === 0 ? (
-                          <div className="p-4 text-center text-xs text-slate-500">
-                            No department matching "{deptSearchQuery}" found.
+                          <div className="p-4 text-center text-xs text-slate-400">
+                            <p>No pre-listed department matching &quot;{deptSearchQuery}&quot; found.</p>
+                            <p className="text-[11px] text-slate-500 mt-1">Click the button above to use your typed course name.</p>
                           </div>
                         ) : (
                           filteredFacultyGroups.map((facGroup) => (
@@ -2098,7 +2185,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
 
               {/* Checkboxes: Terms & Privacy */}
-              <div className="space-y-2 pt-1 border-t border-slate-800/80">
+              <div ref={termsContainerRef} className="space-y-2 pt-1 border-t border-slate-800/80">
                 <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-300 hover:text-slate-100 select-none">
                   <input
                     type="checkbox"

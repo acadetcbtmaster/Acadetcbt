@@ -7,6 +7,7 @@ import {
   planToRow,
   questionToRow,
   resultToRow,
+  toValidUuid,
   universityToRow,
   userToRow,
 } from './dbMappers';
@@ -214,7 +215,6 @@ async function upsertRows(table: string, rows: DbRow[]): Promise<SyncResult> {
 export async function syncResultToSupabase(result: any): Promise<SyncResult> {
   try {
     if (!result) return fail('Result is required');
-    if (getSupabaseAdminClient()) return upsertRows('results', [resultToRow(result)]);
     if (typeof window !== 'undefined') {
       return responseResult(await fetch('/api/results/sync', {
         method: 'POST',
@@ -222,6 +222,7 @@ export async function syncResultToSupabase(result: any): Promise<SyncResult> {
         body: JSON.stringify(result),
       }));
     }
+    if (getSupabaseAdminClient()) return upsertRows('results', [resultToRow(result)]);
     return fail('Supabase is not configured');
   } catch (error) {
     return fail(error);
@@ -231,7 +232,6 @@ export async function syncResultToSupabase(result: any): Promise<SyncResult> {
 export async function syncUserToSupabase(user: any): Promise<SyncResult> {
   try {
     if (!user) return fail('User is required');
-    if (getSupabaseAdminClient()) return upsertRows('users', [userToRow(user)]);
     if (typeof window !== 'undefined') {
       return responseResult(await fetch('/api/users/sync', {
         method: 'POST',
@@ -239,6 +239,7 @@ export async function syncUserToSupabase(user: any): Promise<SyncResult> {
         body: JSON.stringify(user),
       }));
     }
+    if (getSupabaseAdminClient()) return upsertRows('users', [userToRow(user)]);
     return fail('Supabase is not configured');
   } catch (error) {
     return fail(error);
@@ -249,7 +250,6 @@ export async function syncPaymentToSupabase(payment: any): Promise<SyncResult> {
   try {
     if (!payment) return fail('Payment is required');
     const normalized = { ...payment, id: payment.id || payment.reference || `REF-${Date.now()}` };
-    if (getSupabaseAdminClient()) return upsertRows('payments', [paymentToRow(normalized)]);
     if (typeof window !== 'undefined') {
       return responseResult(await fetch('/api/payments/sync', {
         method: 'POST',
@@ -257,6 +257,7 @@ export async function syncPaymentToSupabase(payment: any): Promise<SyncResult> {
         body: JSON.stringify(payment),
       }));
     }
+    if (getSupabaseAdminClient()) return upsertRows('payments', [paymentToRow(normalized)]);
     return fail('Supabase is not configured');
   } catch (error) {
     return fail(error);
@@ -267,6 +268,13 @@ export async function syncQuestionsToSupabase(questions: any[]): Promise<SyncRes
   try {
     if (!Array.isArray(questions)) return fail('Questions must be an array');
     if (questions.length === 0) return ok();
+    if (typeof window !== 'undefined') {
+      return responseResult(await fetch('/api/catalog/questions', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ questions }),
+      }));
+    }
     if (getSupabaseAdminClient()) {
       const rows = questions.map((q) => questionToRow({ ...q, id: q.id }));
       for (let i = 0; i < rows.length; i += 100) {
@@ -274,13 +282,6 @@ export async function syncQuestionsToSupabase(questions: any[]): Promise<SyncRes
         if (!result.success) return result;
       }
       return ok();
-    }
-    if (typeof window !== 'undefined') {
-      return responseResult(await fetch('/api/catalog/questions', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ questions }),
-      }));
     }
     return fail('Supabase is not configured');
   } catch (error) {
@@ -295,16 +296,17 @@ export async function syncQuestionToSupabase(q: any): Promise<SyncResult> {
 async function deleteRow(table: string, id: string, endpoint: string): Promise<SyncResult> {
   try {
     if (!id) return fail('ID is required');
-    const admin = getSupabaseAdminClient();
-    if (admin) {
-      const { error } = await admin.from(table).delete().eq('id', id);
-      return error ? fail(error.message) : ok();
-    }
     if (typeof window !== 'undefined') {
       return responseResult(await fetch(`${endpoint}/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       }));
+    }
+    const admin = getSupabaseAdminClient();
+    if (admin) {
+      const targetId = toValidUuid(id) || id;
+      const { error } = await admin.from(table).delete().eq('id', targetId);
+      return error ? fail(error.message) : ok();
     }
     return fail('Supabase is not configured');
   } catch (error) {
@@ -328,7 +330,6 @@ async function syncCollection(
   try {
     if (!Array.isArray(rows)) return fail(`${table} rows must be an array`);
     if (rows.length === 0) return ok();
-    if (getSupabaseAdminClient()) return upsertRows(table, rows.map((row) => mapper(row)));
     if (typeof window !== 'undefined') {
       for (const row of rows) {
         const result = await responseResult(await fetch(endpoint, {
@@ -340,6 +341,7 @@ async function syncCollection(
       }
       return ok();
     }
+    if (getSupabaseAdminClient()) return upsertRows(table, rows.map((row) => mapper(row)));
     return fail('Supabase is not configured');
   } catch (error) {
     return fail(error);

@@ -28,6 +28,7 @@ import {
   resultToRow,
   systemConfigFromRow,
   systemConfigToRow,
+  toValidUuid,
   universityFromRow,
   universityToRow,
   userFromRow,
@@ -2755,7 +2756,13 @@ app.post("/api/catalog/universities", requireAdminPermission('manage_universitie
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("universities").upsert(universityToRow(data));
+      const row = universityToRow(data);
+      // Check if a university with the exact same name already exists to avoid unique constraint violations
+      const { data: existingByName } = await supabase.from("universities").select("id").eq("name", data.name).maybeSingle();
+      if (existingByName && existingByName.id) {
+        row.id = existingByName.id;
+      }
+      const { error } = await supabase.from("universities").upsert(row);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, university: data });
@@ -2770,7 +2777,8 @@ app.delete("/api/catalog/universities/:id", requireAdminPermission('manage_unive
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("universities").delete().eq("id", id);
+      const targetId = toValidUuid(id) || id;
+      const { error } = await supabase.from("universities").delete().eq("id", targetId);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `University ${id} deleted successfully.` });
@@ -2788,7 +2796,17 @@ app.post("/api/catalog/courses", requireAdminPermission('manage_courses'), async
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("courses").upsert(courseToRow(data));
+      const row = courseToRow(data);
+      // Validate foreign keys to avoid FK constraint errors
+      if (row.university_id) {
+        const { data: uniCheck } = await supabase.from("universities").select("id").eq("id", row.university_id).maybeSingle();
+        if (!uniCheck) row.university_id = null;
+      }
+      if (row.department_id) {
+        const { data: deptCheck } = await supabase.from("departments").select("id").eq("id", row.department_id).maybeSingle();
+        if (!deptCheck) row.department_id = null;
+      }
+      const { error } = await supabase.from("courses").upsert(row);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, course: data });
@@ -2803,7 +2821,8 @@ app.delete("/api/catalog/courses/:id", requireAdminPermission('manage_courses'),
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("courses").delete().eq("id", id);
+      const targetId = toValidUuid(id) || id;
+      const { error } = await supabase.from("courses").delete().eq("id", targetId);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Course ${id} deleted successfully.` });
@@ -2827,8 +2846,12 @@ app.post("/api/catalog/questions", requireAdminPermission('manage_questions'), a
     const supabase = getSupabaseAdminClient();
     if (supabase && valid.length > 0) {
       const records = valid.map((q) => questionToRow(q as Partial<Question> & { id: string }));
-      const { error } = await supabase.from("questions").upsert(records);
-      if (error) return res.status(500).json({ success: false, error: error.message, skipped });
+      // Split into batches of 100
+      for (let i = 0; i < records.length; i += 100) {
+        const batch = records.slice(i, i + 100);
+        const { error } = await supabase.from("questions").upsert(batch);
+        if (error) return res.status(500).json({ success: false, error: error.message, skipped });
+      }
     }
     return res.json({ success: true, count: valid.length, skipped });
   } catch (err: any) {
@@ -2842,7 +2865,8 @@ app.delete("/api/catalog/questions/:id", requireAdminPermission('manage_question
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("questions").delete().eq("id", id);
+      const targetId = toValidUuid(id) || id;
+      const { error } = await supabase.from("questions").delete().eq("id", targetId);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Question ${id} deleted successfully.` });
@@ -2856,7 +2880,7 @@ app.post("/api/catalog/questions/clear-all", async (req, res) => {
   try {
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("questions").delete().neq("id", "");
+      const { error } = await supabase.from("questions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: "All questions cleared from database." });
@@ -2874,7 +2898,12 @@ app.post("/api/catalog/faculties", requireAdminPermission('manage_universities')
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("faculties").upsert(facultyToRow(data));
+      const row = facultyToRow(data);
+      if (row.university_id) {
+        const { data: uniCheck } = await supabase.from("universities").select("id").eq("id", row.university_id).maybeSingle();
+        if (!uniCheck) row.university_id = null;
+      }
+      const { error } = await supabase.from("faculties").upsert(row);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, faculty: data });
@@ -2889,7 +2918,8 @@ app.delete("/api/catalog/faculties/:id", requireAdminPermission('manage_universi
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("faculties").delete().eq("id", id);
+      const targetId = toValidUuid(id) || id;
+      const { error } = await supabase.from("faculties").delete().eq("id", targetId);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Faculty ${id} deleted successfully.` });
@@ -2907,7 +2937,16 @@ app.post("/api/catalog/departments", requireAdminPermission('manage_universities
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("departments").upsert(departmentToRow(data));
+      const row = departmentToRow(data);
+      if (row.university_id) {
+        const { data: uniCheck } = await supabase.from("universities").select("id").eq("id", row.university_id).maybeSingle();
+        if (!uniCheck) row.university_id = null;
+      }
+      if (row.faculty_id) {
+        const { data: facCheck } = await supabase.from("faculties").select("id").eq("id", row.faculty_id).maybeSingle();
+        if (!facCheck) row.faculty_id = null;
+      }
+      const { error } = await supabase.from("departments").upsert(row);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, department: data });
@@ -2922,7 +2961,8 @@ app.delete("/api/catalog/departments/:id", requireAdminPermission('manage_univer
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("departments").delete().eq("id", id);
+      const targetId = toValidUuid(id) || id;
+      const { error } = await supabase.from("departments").delete().eq("id", targetId);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Department ${id} deleted successfully.` });
@@ -2940,7 +2980,8 @@ app.post("/api/catalog/materials", requireAdminPermission('manage_materials'), a
     }
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("materials").upsert(materialToRow(data));
+      const row = materialToRow(data);
+      const { error } = await supabase.from("materials").upsert(row);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, material: data });
@@ -2955,7 +2996,8 @@ app.delete("/api/catalog/materials/:id", requireAdminPermission('manage_material
     const { id } = req.params;
     const supabase = getSupabaseAdminClient();
     if (supabase) {
-      const { error } = await supabase.from("materials").delete().eq("id", id);
+      const targetId = toValidUuid(id) || id;
+      const { error } = await supabase.from("materials").delete().eq("id", targetId);
       if (error) return res.status(500).json({ success: false, error: error.message });
     }
     return res.json({ success: true, message: `Material ${id} deleted successfully.` });
