@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
-import { UserProfile, StudyMaterial, University, Course } from '../types';
+import { UserProfile, StudyMaterial, University, Faculty, Department, Course } from '../types';
 import { StorageService } from '../services/storage';
 import { ACADEMIC_LEVELS, ACADEMIC_SEMESTERS, normalizeLevel, normalizeSemester } from '../utils/academicStructure';
+import { AcademicHierarchySelector, AcademicHierarchyValues } from './common/AcademicHierarchySelector';
 import {
   BookOpen,
   Download,
@@ -25,6 +26,8 @@ import {
 interface StudyMaterialsViewProps {
   user: UserProfile;
   universities?: University[];
+  faculties?: Faculty[];
+  departments?: Department[];
   courses?: Course[];
   onOpenSubscribe: () => void;
   onPurchaseMaterial?: (materialId: string) => void;
@@ -38,6 +41,8 @@ interface MaterialItem {
   courseTitle: string;
   universityId?: string;
   universityName?: string;
+  facultyId?: string;
+  departmentId?: string;
   level?: string;
   semester?: string;
   category: string;
@@ -53,6 +58,8 @@ interface MaterialItem {
 export const StudyMaterialsView: React.FC<StudyMaterialsViewProps> = ({
   user,
   universities = StorageService.getUniversities(),
+  faculties = StorageService.getFaculties(),
+  departments = StorageService.getDepartments(),
   courses = StorageService.getCourses(),
   onOpenSubscribe,
   onPurchaseMaterial,
@@ -61,11 +68,15 @@ export const StudyMaterialsView: React.FC<StudyMaterialsViewProps> = ({
   const isPremium = user?.subscription?.isPremium ?? false;
   const purchasedMaterialIds = user?.purchasedMaterialIds || [];
 
-  // Academic Hierarchy Selection (University -> Level -> Semester -> Course)
-  const [selectedUniId, setSelectedUniId] = useState<string>(universities[0]?.id || 'uni-ful');
-  const [selectedLevel, setSelectedLevel] = useState<string>('100 Level');
-  const [selectedSemester, setSelectedSemester] = useState<string>('First Semester');
-  const [selectedCourse, setSelectedCourse] = useState<string>('all');
+  // Academic Hierarchy Selection (University -> Faculty -> Department -> Level -> Semester -> Course)
+  const [hierarchy, setHierarchy] = useState<AcademicHierarchyValues>({
+    universityId: universities[0]?.id || 'uni-ful',
+    facultyId: '',
+    departmentId: '',
+    level: '100 Level',
+    semester: 'First Semester',
+    courseId: '',
+  });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
@@ -91,19 +102,7 @@ export const StudyMaterialsView: React.FC<StudyMaterialsViewProps> = ({
     return () => window.removeEventListener('cbt_storage_change', handleStorageChange);
   }, []);
 
-  const selectedUniObj = universities.find((u) => u.id === selectedUniId);
-
-  // Available courses for the selected University + Level + Semester
-  const availableCoursesForHierarchy = React.useMemo(() => {
-    return courses.filter((c) => {
-      const matchesUni = !c.universityId || c.universityId === selectedUniId || 
-        (selectedUniObj && c.universityName && c.universityName.toLowerCase().includes((selectedUniObj.abbreviation || selectedUniObj.name).toLowerCase()));
-      if (!matchesUni) return false;
-      if (c.level && normalizeLevel(c.level) !== normalizeLevel(selectedLevel)) return false;
-      if (c.semester && normalizeSemester(c.semester) !== normalizeSemester(selectedSemester)) return false;
-      return true;
-    });
-  }, [courses, selectedUniId, selectedUniObj, selectedLevel, selectedSemester]);
+  const selectedUniObj = universities.find((u) => u.id === hierarchy.universityId);
 
   const materials: MaterialItem[] = allMaterials.map((sm) => ({
     id: sm.id,
@@ -112,6 +111,8 @@ export const StudyMaterialsView: React.FC<StudyMaterialsViewProps> = ({
     courseTitle: sm.courseTitle || 'General Course',
     universityId: sm.universityId,
     universityName: sm.universityName,
+    facultyId: (sm as any).facultyId,
+    departmentId: (sm as any).departmentId,
     level: sm.level || '100 Level',
     semester: sm.semester || 'First Semester',
     category: sm.type || 'Lecture Notes',
@@ -125,27 +126,37 @@ export const StudyMaterialsView: React.FC<StudyMaterialsViewProps> = ({
   }));
 
   const filteredMaterials = materials.filter((m) => {
-    // 1. Hierarchy Filter: University -> Level -> Semester
-    if (selectedUniId !== 'all' && m.universityId) {
-      const uniMatches = m.universityId === selectedUniId || 
+    // 1. Hierarchy Filter: University -> Faculty -> Department -> Level -> Semester -> Course
+    if (hierarchy.universityId && hierarchy.universityId !== 'all' && m.universityId) {
+      const uniMatches = m.universityId === hierarchy.universityId || 
         (selectedUniObj && m.universityName && m.universityName.toLowerCase().includes((selectedUniObj.abbreviation || selectedUniObj.name).toLowerCase()));
       if (!uniMatches) return false;
     }
 
-    if (m.level && normalizeLevel(m.level) !== normalizeLevel(selectedLevel)) {
+    if (hierarchy.facultyId && m.facultyId && m.facultyId !== hierarchy.facultyId) {
       return false;
     }
 
-    if (m.semester && normalizeSemester(m.semester) !== normalizeSemester(selectedSemester)) {
+    if (hierarchy.departmentId && m.departmentId && m.departmentId !== hierarchy.departmentId) {
       return false;
     }
 
-    // 2. Course Filter
-    if (selectedCourse !== 'all' && m.courseCode !== selectedCourse) {
+    if (m.level && normalizeLevel(m.level) !== normalizeLevel(hierarchy.level)) {
       return false;
     }
 
-    // 3. Search Query
+    if (m.semester && normalizeSemester(m.semester) !== normalizeSemester(hierarchy.semester)) {
+      return false;
+    }
+
+    if (hierarchy.courseId) {
+      const targetCourse = courses.find((c) => c.id === hierarchy.courseId);
+      if (targetCourse && m.courseCode !== targetCourse.code && m.courseTitle !== targetCourse.title) {
+        return false;
+      }
+    }
+
+    // Search Query
     const matchesSearch =
       !searchQuery ||
       m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -154,7 +165,7 @@ export const StudyMaterialsView: React.FC<StudyMaterialsViewProps> = ({
 
     if (!matchesSearch) return false;
 
-    // 4. Access filter
+    // Access filter
     const isUnlocked = purchasedMaterialIds.includes(m.id);
     const matchesFilter =
       selectedFilter === 'all' ||
@@ -291,59 +302,18 @@ export const StudyMaterialsView: React.FC<StudyMaterialsViewProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-4">
         
         {/* Academic Hierarchy Dropdowns */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pb-3 border-b border-slate-800">
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">1. Select University</label>
-            <select
-              value={selectedUniId}
-              onChange={(e) => setSelectedUniId(e.target.value)}
-              className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500 font-medium"
-            >
-              {universities.map((u) => (
-                <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">2. Select Level</label>
-            <select
-              value={selectedLevel}
-              onChange={(e) => setSelectedLevel(e.target.value)}
-              className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500 font-medium"
-            >
-              {ACADEMIC_LEVELS.map((lvl) => (
-                <option key={lvl} value={lvl}>{lvl}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">3. Select Semester</label>
-            <select
-              value={selectedSemester}
-              onChange={(e) => setSelectedSemester(e.target.value)}
-              className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500 font-medium"
-            >
-              {ACADEMIC_SEMESTERS.map((sem) => (
-                <option key={sem} value={sem}>{sem}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1">4. Course Filter</label>
-            <select
-              value={selectedCourse}
-              onChange={(e) => setSelectedCourse(e.target.value)}
-              className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500 font-medium"
-            >
-              <option value="all">All Courses in Semester</option>
-              {availableCoursesForHierarchy.map((c) => (
-                <option key={c.id} value={c.code}>{c.code}: {c.title}</option>
-              ))}
-            </select>
-          </div>
+        <div className="pb-3 border-b border-slate-800">
+          <AcademicHierarchySelector
+            values={hierarchy}
+            onChange={setHierarchy}
+            universities={universities}
+            faculties={faculties}
+            departments={departments}
+            courses={courses}
+            mode="filter"
+            layout="grid-3"
+            courseLabel="6. Course (All / Specific)"
+          />
         </div>
 
         <div className="flex flex-col md:flex-row items-center gap-4">

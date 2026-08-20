@@ -1,7 +1,18 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { StudyMaterial, University, Course } from '../../types';
+import { StudyMaterial, University, Course, Faculty, Department } from '../../types';
 import { StorageService } from '../../services/storage';
-import { ACADEMIC_LEVELS, ACADEMIC_SEMESTERS, normalizeLevel, normalizeSemester } from '../../utils/academicStructure';
+import {
+  ACADEMIC_LEVELS,
+  ACADEMIC_SEMESTERS,
+  normalizeLevel,
+  normalizeSemester,
+  getFacultiesForUniversity,
+  getDepartmentsForFaculty,
+} from '../../utils/academicStructure';
+import {
+  AcademicHierarchySelector,
+  AcademicHierarchyValues,
+} from '../common/AcademicHierarchySelector';
 import { hasPermission } from '../../utils/rbac';
 import {
   BookOpen,
@@ -33,6 +44,8 @@ import {
 interface StudyMaterialsModuleProps {
   materials: StudyMaterial[];
   universities: University[];
+  faculties?: Faculty[];
+  departments?: Department[];
   courses: Course[];
   onUpdateMaterials: (updated: StudyMaterial[]) => void;
 }
@@ -40,6 +53,8 @@ interface StudyMaterialsModuleProps {
 export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
   materials,
   universities,
+  faculties = [],
+  departments = [],
   courses,
   onUpdateMaterials,
 }) => {
@@ -67,14 +82,27 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
     );
   }
 
-  // --- Search & Filter States (University -> Level -> Semester -> Course) ---
+  // --- Search & Filter States (University -> Faculty -> Department -> Level -> Semester -> Course) ---
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUniversity, setSelectedUniversity] = useState('all');
+  const [selectedFaculty, setSelectedFaculty] = useState('all');
+  const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [selectedLevel, setSelectedLevel] = useState('all');
   const [selectedSemester, setSelectedSemester] = useState('all');
   const [selectedCourse, setSelectedCourse] = useState('all');
   const [selectedType, setSelectedType] = useState('all');
   const [selectedAccess, setSelectedAccess] = useState('all');
+
+  // Dynamic filter lists
+  const availableFacultiesForFilter = useMemo(() => {
+    if (selectedUniversity === 'all') return faculties;
+    return getFacultiesForUniversity(selectedUniversity, faculties);
+  }, [selectedUniversity, faculties]);
+
+  const availableDepartmentsForFilter = useMemo(() => {
+    if (selectedFaculty === 'all') return departments;
+    return getDepartmentsForFaculty(selectedFaculty, selectedUniversity, departments, faculties);
+  }, [selectedFaculty, selectedUniversity, departments, faculties]);
 
   // --- Pagination ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -89,29 +117,22 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
   const [editingMaterial, setEditingMaterial] = useState<StudyMaterial | null>(null);
   const [viewingMaterial, setViewingMaterial] = useState<StudyMaterial | null>(null);
 
-  // --- Upload Form States ---
+  // --- Upload Form States (University -> Faculty -> Department -> Level -> Semester -> Course) ---
   const [title, setTitle] = useState('');
-  const [universityId, setUniversityId] = useState(universities[0]?.id || 'uni-1');
-  const [level, setLevel] = useState('100 Level');
-  const [semester, setSemester] = useState('First Semester');
-  const [courseId, setCourseId] = useState(courses[0]?.id || 'crs-1');
+  const [matHierarchy, setMatHierarchy] = useState<AcademicHierarchyValues>({
+    universityId: universities[0]?.id || 'uni-1',
+    facultyId: '',
+    departmentId: '',
+    level: '100 Level',
+    semester: 'First Semester',
+    courseId: courses[0]?.id || 'crs-1',
+  });
   const [type, setType] = useState<StudyMaterial['type']>('PDF');
   const [accessLevel, setAccessLevel] = useState<'Free Trial' | 'Premium Only'>('Free Trial');
   const [description, setDescription] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
-
-  // Available courses filtered by selected university in upload modal
-  const selectedUniObj = universities.find((u) => u.id === universityId);
-  const availableCoursesForSelectedUni = useMemo(() => {
-    return courses.filter((c) => {
-      if (!c.universityId) return true;
-      if (c.universityId === universityId) return true;
-      if (selectedUniObj && c.universityName && c.universityName.toLowerCase().includes((selectedUniObj.abbreviation || selectedUniObj.name).toLowerCase())) return true;
-      return false;
-    });
-  }, [courses, universityId, selectedUniObj]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -149,6 +170,8 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
         if (!matchTitle && !matchCode && !matchDesc) return false;
       }
       if (selectedUniversity !== 'all' && m.universityId !== selectedUniversity) return false;
+      if (selectedFaculty !== 'all' && m.facultyId && m.facultyId !== selectedFaculty) return false;
+      if (selectedDepartment !== 'all' && m.departmentId && m.departmentId !== selectedDepartment) return false;
       if (selectedLevel !== 'all' && m.level && normalizeLevel(m.level) !== normalizeLevel(selectedLevel)) return false;
       if (selectedSemester !== 'all' && m.semester && normalizeSemester(m.semester) !== normalizeSemester(selectedSemester)) return false;
       if (selectedCourse !== 'all' && m.courseId !== selectedCourse) return false;
@@ -157,7 +180,7 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
 
       return true;
     });
-  }, [materials, searchQuery, selectedUniversity, selectedCourse, selectedType, selectedAccess]);
+  }, [materials, searchQuery, selectedUniversity, selectedFaculty, selectedDepartment, selectedLevel, selectedSemester, selectedCourse, selectedType, selectedAccess]);
 
   const paginatedMaterials = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -170,6 +193,14 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
   const handleOpenUpload = () => {
     setEditingMaterial(null);
     setTitle('');
+    setMatHierarchy({
+      universityId: universities[0]?.id || 'uni-1',
+      facultyId: '',
+      departmentId: '',
+      level: '100 Level',
+      semester: 'First Semester',
+      courseId: courses[0]?.id || 'crs-1',
+    });
     setDescription('');
     setVideoUrl('');
     setUploadedFile(null);
@@ -181,8 +212,14 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
   const handleOpenEdit = (m: StudyMaterial) => {
     setEditingMaterial(m);
     setTitle(m.title);
-    setUniversityId(m.universityId);
-    setCourseId(m.courseId);
+    setMatHierarchy({
+      universityId: m.universityId || universities[0]?.id || 'uni-1',
+      facultyId: m.facultyId || '',
+      departmentId: m.departmentId || '',
+      level: m.level || '100 Level',
+      semester: m.semester || 'First Semester',
+      courseId: m.courseId || courses[0]?.id || 'crs-1',
+    });
     setType(m.type);
     setAccessLevel(m.accessLevel);
     setDescription(m.description || '');
@@ -196,8 +233,8 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
 
     setIsProcessingFile(true);
     try {
-      const uniObj = universities.find((u) => u.id === universityId);
-      const crsObj = courses.find((c) => c.id === courseId);
+      const uniObj = universities.find((u) => u.id === matHierarchy.universityId);
+      const crsObj = courses.find((c) => c.id === matHierarchy.courseId);
       const nowIso = new Date().toISOString().split('T')[0];
 
       let sizeStr = editingMaterial?.fileSize || '1.5 MB';
@@ -226,11 +263,13 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
         const updated: StudyMaterial = {
           ...editingMaterial,
           title,
-          universityId,
+          universityId: matHierarchy.universityId,
           universityName: uniObj?.abbreviation || uniObj?.name || 'FUL',
-          level,
-          semester,
-          courseId,
+          facultyId: matHierarchy.facultyId || undefined,
+          departmentId: matHierarchy.departmentId || undefined,
+          level: matHierarchy.level,
+          semester: matHierarchy.semester,
+          courseId: matHierarchy.courseId,
           courseCode: crsObj?.code || 'GST101',
           courseTitle: crsObj?.title || 'Use of English',
           type,
@@ -249,11 +288,13 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
         const newMat: StudyMaterial = {
           id: `mat-${Date.now()}`,
           title,
-          universityId,
+          universityId: matHierarchy.universityId,
           universityName: uniObj?.abbreviation || uniObj?.name || 'FUL',
-          level,
-          semester,
-          courseId,
+          facultyId: matHierarchy.facultyId || undefined,
+          departmentId: matHierarchy.departmentId || undefined,
+          level: matHierarchy.level,
+          semester: matHierarchy.semester,
+          courseId: matHierarchy.courseId,
           courseCode: crsObj?.code || 'GST101',
           courseTitle: crsObj?.title || 'Use of English',
           type,
@@ -377,7 +418,12 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
             <select
               value={selectedUniversity}
-              onChange={(e) => setSelectedUniversity(e.target.value)}
+              onChange={(e) => {
+                setSelectedUniversity(e.target.value);
+                setSelectedFaculty('all');
+                setSelectedDepartment('all');
+                setCurrentPage(1);
+              }}
               className="bg-slate-950 border border-slate-800 text-xs text-amber-400 font-bold py-2 px-3 rounded-xl focus:outline-none"
             >
               <option value="all">All Universities</option>
@@ -387,8 +433,37 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
             </select>
 
             <select
+              value={selectedFaculty}
+              onChange={(e) => {
+                setSelectedFaculty(e.target.value);
+                setSelectedDepartment('all');
+                setCurrentPage(1);
+              }}
+              className="bg-slate-950 border border-slate-800 text-xs text-slate-200 py-2 px-3 rounded-xl focus:outline-none"
+            >
+              <option value="all">All Faculties</option>
+              {availableFacultiesForFilter.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+
+            <select
+              value={selectedDepartment}
+              onChange={(e) => {
+                setSelectedDepartment(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="bg-slate-950 border border-slate-800 text-xs text-slate-200 py-2 px-3 rounded-xl focus:outline-none"
+            >
+              <option value="all">All Departments</option>
+              {availableDepartmentsForFilter.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+
+            <select
               value={selectedLevel}
-              onChange={(e) => setSelectedLevel(e.target.value)}
+              onChange={(e) => { setSelectedLevel(e.target.value); setCurrentPage(1); }}
               className="bg-slate-950 border border-slate-800 text-xs text-slate-200 py-2 px-3 rounded-xl focus:outline-none"
             >
               <option value="all">All Levels</option>
@@ -399,7 +474,7 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
 
             <select
               value={selectedSemester}
-              onChange={(e) => setSelectedSemester(e.target.value)}
+              onChange={(e) => { setSelectedSemester(e.target.value); setCurrentPage(1); }}
               className="bg-slate-950 border border-slate-800 text-xs text-slate-200 py-2 px-3 rounded-xl focus:outline-none"
             >
               <option value="all">All Semesters</option>
@@ -410,7 +485,7 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
 
             <select
               value={selectedCourse}
-              onChange={(e) => setSelectedCourse(e.target.value)}
+              onChange={(e) => { setSelectedCourse(e.target.value); setCurrentPage(1); }}
               className="bg-slate-950 border border-slate-800 text-xs text-slate-200 py-2 px-3 rounded-xl focus:outline-none"
             >
               <option value="all">All Courses</option>
@@ -637,62 +712,21 @@ export const StudyMaterialsModule: React.FC<StudyMaterialsModuleProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">1. Select University</label>
-                  <select
-                    value={universityId}
-                    onChange={(e) => setUniversityId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-amber-400 font-bold"
-                  >
-                    {universities.map((u) => (
-                      <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">2. Select Level</label>
-                  <select
-                    value={level}
-                    onChange={(e) => setLevel(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white"
-                  >
-                    {ACADEMIC_LEVELS.map((lvl) => (
-                      <option key={lvl} value={lvl}>{lvl}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">3. Select Semester</label>
-                  <select
-                    value={semester}
-                    onChange={(e) => setSemester(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white"
-                  >
-                    {ACADEMIC_SEMESTERS.map((sem) => (
-                      <option key={sem} value={sem}>{sem}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">4. Select Course</label>
-                  <select
-                    value={courseId}
-                    onChange={(e) => setCourseId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white font-medium"
-                  >
-                    {availableCoursesForSelectedUni.length === 0 ? (
-                      <option value="">No courses available for selected university</option>
-                    ) : (
-                      availableCoursesForSelectedUni.map((c) => (
-                        <option key={c.id} value={c.id}>{c.code} - {c.title}</option>
-                      ))
-                    )}
-                  </select>
-                </div>
+              <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+                <span className="text-[11px] font-bold text-amber-400 block">
+                  Academic Classification (University → Faculty → Department → Level → Semester → Course)
+                </span>
+                <AcademicHierarchySelector
+                  values={matHierarchy}
+                  onChange={setMatHierarchy}
+                  universities={universities}
+                  faculties={faculties}
+                  departments={departments}
+                  courses={courses}
+                  mode="form"
+                  layout="grid-3"
+                  courseLabel="6. Course"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

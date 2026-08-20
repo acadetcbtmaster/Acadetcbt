@@ -661,6 +661,10 @@ export default function App() {
         {activeTab === 'materials' && currentUser && (
           <StudyMaterialsView
             user={currentUser}
+            universities={universities}
+            faculties={faculties}
+            departments={departments}
+            courses={courses}
             onOpenSubscribe={() => setSubModalOpen(true)}
             onPurchaseMaterial={handlePurchaseMaterial}
             onNavigate={handleNavigate}

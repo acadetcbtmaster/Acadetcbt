@@ -151,6 +151,8 @@ export interface StudyMaterial {
   title: string;
   universityId: string;
   universityName?: string;
+  facultyId?: string;
+  departmentId?: string;
   level?: string;
   semester?: string;
   courseId: string;

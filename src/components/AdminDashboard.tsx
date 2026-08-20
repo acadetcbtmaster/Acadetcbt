@@ -18,6 +18,7 @@ import {
 import { StorageService, safeStringify, safeClone } from '../services/storage';
 import { ApiClient } from '../services/apiClient';
 import { ACADEMIC_LEVELS, ACADEMIC_SEMESTERS } from '../utils/academicStructure';
+import { AcademicHierarchySelector, AcademicHierarchyValues } from './common/AcademicHierarchySelector';
 import { QuestionManagementModule } from './admin/QuestionManagementModule';
 import { StudyMaterialsModule } from './admin/StudyMaterialsModule';
 import { LeaderboardManagementModule } from './admin/LeaderboardManagementModule';
@@ -432,9 +433,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       handleGenFileSelect(e.dataTransfer.files[0]);
     }
   };
-  const [genUniversityId, setGenUniversityId] = useState(universities[0]?.id || '');
-  const [genLevel, setGenLevel] = useState('100 Level');
-  const [genCourseId, setGenCourseId] = useState(courses[0]?.id || '');
+  const [genHierarchy, setGenHierarchy] = useState<AcademicHierarchyValues>({
+    universityId: universities[0]?.id || '',
+    facultyId: '',
+    departmentId: '',
+    level: '100 Level',
+    semester: 'First Semester',
+    courseId: courses[0]?.id || '',
+  });
   const [genTopic, setGenTopic] = useState('Core Fundamentals');
   const [genDifficulty, setGenDifficulty] = useState<string>('Medium');
   const [genCount, setGenCount] = useState(5);
@@ -673,16 +679,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Smart Question Generator Handler (Multimodal: PDF, Photos/Images, Documents, Text)
   const handleGenerateQuestions = async () => {
-    if (!genUniversityId || !genCourseId) {
-      alert('Please select a Target University, Level, and Course before generating questions.');
+    if (!genHierarchy.universityId || !genHierarchy.courseId) {
+      alert('Please select a Target University, Faculty, Department, Level, Semester, and Course before generating questions.');
       return;
     }
-    const selectedCourseObj = courses.find((c: any) => c.id === genCourseId) || courses[0];
-    const selectedUniObj = universities.find((u: any) => u.id === genUniversityId) || universities[0];
+    const selectedCourseObj = courses.find((c: any) => c.id === genHierarchy.courseId) || courses[0];
+    const selectedUniObj = universities.find((u: any) => u.id === genHierarchy.universityId) || universities[0];
 
     let payload: any = {
       universityName: selectedUniObj?.name || 'University',
-      level: genLevel || '100 Level',
+      level: genHierarchy.level || '100 Level',
       courseCode: selectedCourseObj?.code || 'GST101',
       courseTitle: selectedCourseObj?.title || 'General Course',
       topic: genTopic || 'Core Fundamentals',
@@ -743,13 +749,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           optionD: q.optionD,
           correctAnswer: (q.correctAnswer || 'A').toUpperCase() as any,
           explanation: q.explanation || 'SMART Generated Step-by-Step Explanation',
-          universityId: selectedUniObj?.id || 'uni-1',
-          level: genLevel || '100 Level',
-          facultyId: faculties[0]?.id || 'fac-1',
-          departmentId: departments[0]?.id || 'dept-1',
-          courseId: selectedCourseObj?.id || 'crs-1',
+          universityId: selectedUniObj?.id || genHierarchy.universityId || 'uni-1',
+          facultyId: genHierarchy.facultyId || faculties[0]?.id || 'fac-1',
+          departmentId: genHierarchy.departmentId || departments[0]?.id || 'dept-1',
+          level: genHierarchy.level || '100 Level',
+          courseId: selectedCourseObj?.id || genHierarchy.courseId || 'crs-1',
           courseCode: selectedCourseObj?.code || 'GST101',
-          semester: 'First',
+          semester: genHierarchy.semester || 'First Semester',
           session: '2025/2026',
           topicId: topics[0]?.id || 'top-1',
           difficulty: (q.difficulty || genDifficulty || 'Medium') as any,
@@ -766,7 +772,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {
             id: `gen-batch-${Date.now()}`,
             university: selectedUniObj?.abbreviation || selectedUniObj?.name || 'Uni',
-            level: genLevel || '100 Level',
+            level: genHierarchy.level || '100 Level',
             course: `${selectedCourseObj?.code || 'GST101'} - ${selectedCourseObj?.title || 'Course'}`,
             topic: genTopic || 'Exam Questions',
             questionCount: generatedQs.length,
@@ -778,7 +784,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         ]);
         setMaterialText('');
         setGenUploadedFile(null);
-        alert(`Successfully generated and published ${generatedQs.length} questions mapped to ${selectedUniObj?.abbreviation || 'University'} - ${selectedCourseObj?.code} (${genLevel || '100 Level'}) into the Question Bank!`);
+        alert(`Successfully generated and published ${generatedQs.length} questions mapped to ${selectedUniObj?.abbreviation || 'University'} - ${selectedCourseObj?.code} (${genHierarchy.level || '100 Level'}) into the Question Bank!`);
       } else {
         alert(data.error || 'Failed to generate questions.');
       }
@@ -3659,6 +3665,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <QuestionManagementModule
           questions={questions}
           universities={universities}
+          faculties={faculties}
+          departments={departments}
           courses={courses}
           onUpdateQuestions={onUpdateQuestions}
           activeSubTab={activeCategory === 'review_workflow' ? 'workflow' : activeCategory === 'question_analytics' ? 'analytics' : 'list'}
@@ -3670,6 +3678,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <StudyMaterialsModule
           materials={materialsList}
           universities={universities}
+          faculties={faculties}
+          departments={departments}
           courses={courses}
           onUpdateMaterials={async (updated) => {
             setMaterialsList(updated);
@@ -3743,58 +3753,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             {/* Target Selectors Grid */}
-            <div className="p-4 bg-slate-950/80 border border-indigo-500/30 rounded-2xl space-y-2">
+            <div className="p-4 bg-slate-950/80 border border-indigo-500/30 rounded-2xl space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
                   <GraduationCap className="w-4 h-4" />
-                  <span>Select Target Destination Before Uploading or Generating</span>
+                  <span>Academic Hierarchy (University → Faculty → Department → Level → Semester → Course)</span>
                 </span>
                 <span className="text-[10px] text-slate-400 font-semibold bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
-                  University, Level & Course Mapped
+                  Step-by-Step Cascading Flow
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-300 block mb-1">1. University</label>
-                  <select
-                    value={genUniversityId}
-                    onChange={(e) => setGenUniversityId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 text-xs text-white rounded-xl p-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    {universities.map((u: any) => (
-                      <option key={u.id} value={u.id}>{u.abbreviation || u.name}</option>
-                    ))}
-                  </select>
-                </div>
+              
+              <AcademicHierarchySelector
+                values={genHierarchy}
+                onChange={setGenHierarchy}
+                universities={universities}
+                faculties={faculties}
+                departments={departments}
+                courses={courses}
+                mode="form"
+                layout="grid-3"
+              />
 
-                <div>
-                  <label className="text-[11px] font-bold text-slate-300 block mb-1">2. Academic Level</label>
-                  <select
-                    value={genLevel}
-                    onChange={(e) => setGenLevel(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 text-xs text-white rounded-xl p-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="100 Level">100 Level</option>
-                    <option value="200 Level">200 Level</option>
-                    <option value="300 Level">300 Level</option>
-                    <option value="400 Level">400 Level</option>
-                    <option value="500 Level">500 Level</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-slate-300 block mb-1">3. Course</label>
-                  <select
-                    value={genCourseId}
-                    onChange={(e) => setGenCourseId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 text-xs text-white rounded-xl p-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    {courses.map((c: any) => (
-                      <option key={c.id} value={c.id}>{c.code} - {c.title}</option>
-                    ))}
-                  </select>
-                </div>
-
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-slate-800/80">
                 <div>
                   <label className="text-[11px] font-bold text-slate-300 block mb-1">Topic / Unit</label>
                   <input

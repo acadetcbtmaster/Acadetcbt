@@ -3,6 +3,8 @@ import {
   Question,
   University,
   Course,
+  Faculty,
+  Department,
   QuestionStatus,
   DifficultyLevel,
   QuestionType,
@@ -12,7 +14,18 @@ import {
 import { StorageService, safeStringify } from '../../services/storage';
 import type { StorageWriteResult } from '../../services/storage';
 import { ApiClient } from '../../services/apiClient';
-import { ACADEMIC_LEVELS, ACADEMIC_SEMESTERS, normalizeLevel, normalizeSemester } from '../../utils/academicStructure';
+import {
+  ACADEMIC_LEVELS,
+  ACADEMIC_SEMESTERS,
+  normalizeLevel,
+  normalizeSemester,
+  getFacultiesForUniversity,
+  getDepartmentsForFaculty,
+} from '../../utils/academicStructure';
+import {
+  AcademicHierarchySelector,
+  AcademicHierarchyValues,
+} from '../common/AcademicHierarchySelector';
 import {
   HelpCircle,
   Search,
@@ -57,6 +70,8 @@ import { hasPermission } from '../../utils/rbac';
 interface QuestionManagementModuleProps {
   questions: Question[];
   universities: University[];
+  faculties?: Faculty[];
+  departments?: Department[];
   courses: Course[];
   onUpdateQuestions: (updatedQuestions: Question[]) => void;
   activeSubTab?: 'list' | 'upload' | 'workflow' | 'analytics' | 'history';
@@ -77,6 +92,8 @@ const reportQuestionWriteResult = (result: StorageWriteResult, questionId: strin
 export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> = ({
   questions,
   universities,
+  faculties = [],
+  departments = [],
   courses,
   onUpdateQuestions,
   activeSubTab = 'list',
@@ -107,9 +124,11 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
 
   const [currentSubTab, setCurrentSubTab] = useState<'list' | 'upload' | 'workflow' | 'analytics' | 'history'>(activeSubTab);
 
-  // --- Search & Filter States (University -> Level -> Semester -> Course) ---
+  // --- Search & Filter States (University -> Faculty -> Department -> Level -> Semester -> Course) ---
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUniversity, setSelectedUniversity] = useState('all');
+  const [selectedFaculty, setSelectedFaculty] = useState('all');
+  const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [selectedLevel, setSelectedLevel] = useState('all');
   const [selectedSemester, setSelectedSemester] = useState('all');
   const [selectedCourse, setSelectedCourse] = useState('all');
@@ -118,7 +137,16 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedSource, setSelectedSource] = useState<string>('all');
 
-  // --- Table & Pagination States ---
+  // Dynamic filter lists
+  const availableFacultiesForFilter = useMemo(() => {
+    if (selectedUniversity === 'all') return faculties;
+    return getFacultiesForUniversity(selectedUniversity, faculties);
+  }, [selectedUniversity, faculties]);
+
+  const availableDepartmentsForFilter = useMemo(() => {
+    if (selectedFaculty === 'all') return departments;
+    return getDepartmentsForFaculty(selectedFaculty, selectedUniversity, departments, faculties);
+  }, [selectedFaculty, selectedUniversity, departments, faculties]);
   const [sortField, setSortField] = useState<'createdDate' | 'question' | 'difficulty'>('createdDate');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
@@ -140,11 +168,15 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
     errors: { row: number; error: string }[];
   } | null>(null);
 
-  // --- Form States for New/Edit Question ---
-  const [qUniversityId, setQUniversityId] = useState(universities[0]?.id || 'uni-1');
-  const [qLevel, setQLevel] = useState('100 Level');
-  const [qSemester, setQSemester] = useState('First Semester');
-  const [qCourseId, setQCourseId] = useState(courses[0]?.id || 'crs-1');
+  // --- Form States for New/Edit Question (University -> Faculty -> Department -> Level -> Semester -> Course) ---
+  const [qHierarchy, setQHierarchy] = useState<AcademicHierarchyValues>({
+    universityId: universities[0]?.id || 'uni-1',
+    facultyId: '',
+    departmentId: '',
+    level: '100 Level',
+    semester: 'First Semester',
+    courseId: courses[0]?.id || 'crs-1',
+  });
   const [qText, setQText] = useState('');
   const [qType, setQType] = useState<QuestionType>('MCQ');
   const [qOptA, setQOptA] = useState('');
@@ -157,7 +189,15 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
   const [qDiagramUrl, setQDiagramUrl] = useState<string>('');
   const diagramInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Smart Upload State ---
+  // --- Smart Upload State (University -> Faculty -> Department -> Level -> Semester -> Course) ---
+  const [smartHierarchy, setSmartHierarchy] = useState<AcademicHierarchyValues>({
+    universityId: universities[0]?.id || 'uni-1',
+    facultyId: '',
+    departmentId: '',
+    level: '100 Level',
+    semester: 'First Semester',
+    courseId: courses[0]?.id || 'crs-1',
+  });
   const [uploadMethod, setUploadMethod] = useState<'file' | 'text' | 'paste'>('file');
   const [pastedText, setPastedText] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -257,6 +297,10 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
       }
       // University Filter
       if (selectedUniversity !== 'all' && q.universityId !== selectedUniversity) return false;
+      // Faculty Filter
+      if (selectedFaculty !== 'all' && q.facultyId && q.facultyId !== selectedFaculty) return false;
+      // Department Filter
+      if (selectedDepartment !== 'all' && q.departmentId && q.departmentId !== selectedDepartment) return false;
       // Level Filter
       if (selectedLevel !== 'all' && q.level && normalizeLevel(q.level) !== normalizeLevel(selectedLevel)) return false;
       // Semester Filter
@@ -288,7 +332,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
       const dateB = new Date(b.createdDate || 0).getTime();
       return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
     });
-  }, [questions, searchQuery, selectedUniversity, selectedCourse, selectedStatus, selectedDifficulty, selectedType, selectedSource, sortField, sortOrder]);
+  }, [questions, searchQuery, selectedUniversity, selectedFaculty, selectedDepartment, selectedLevel, selectedSemester, selectedCourse, selectedStatus, selectedDifficulty, selectedType, selectedSource, sortField, sortOrder]);
 
   // Paginated
   const paginatedQuestions = useMemo(() => {
@@ -301,6 +345,14 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
   // --- Question Helpers & Handlers ---
   const handleOpenAddModal = () => {
     setEditingQuestion(null);
+    setQHierarchy({
+      universityId: universities[0]?.id || 'uni-1',
+      facultyId: '',
+      departmentId: '',
+      level: '100 Level',
+      semester: 'First Semester',
+      courseId: courses[0]?.id || 'crs-1',
+    });
     setQText('');
     setQOptA('');
     setQOptB('');
@@ -316,8 +368,14 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
 
   const handleOpenEditModal = (q: Question) => {
     setEditingQuestion(q);
-    setQUniversityId(q.universityId || universities[0]?.id || 'uni-1');
-    setQCourseId(q.courseId || courses[0]?.id || 'crs-1');
+    setQHierarchy({
+      universityId: q.universityId || universities[0]?.id || 'uni-1',
+      facultyId: q.facultyId || '',
+      departmentId: q.departmentId || '',
+      level: q.level || '100 Level',
+      semester: q.semester || 'First Semester',
+      courseId: q.courseId || courses[0]?.id || 'crs-1',
+    });
     setQText(q.question);
     setQOptA(q.optionA || '');
     setQOptB(q.optionB || '');
@@ -335,7 +393,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
     e.preventDefault();
     if (!qText.trim()) return;
 
-    const courseObj = courses.find((c) => c.id === qCourseId);
+    const courseObj = courses.find((c) => c.id === qHierarchy.courseId);
     const nowIso = new Date().toISOString();
 
     if (editingQuestion) {
@@ -352,10 +410,12 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
 
       const updated: Question = {
         ...editingQuestion,
-        universityId: qUniversityId,
-        level: qLevel,
-        semester: qSemester,
-        courseId: qCourseId,
+        universityId: qHierarchy.universityId,
+        facultyId: qHierarchy.facultyId || undefined,
+        departmentId: qHierarchy.departmentId || undefined,
+        level: qHierarchy.level,
+        semester: qHierarchy.semester,
+        courseId: qHierarchy.courseId,
         courseCode: courseObj?.code || editingQuestion.courseCode || 'GST101',
         question: qText,
         questionType: qType,
@@ -389,10 +449,12 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
         correctAnswer: qCorrect,
         explanation: qExplanation,
         diagramUrl: qDiagramUrl || undefined,
-        universityId: qUniversityId,
-        level: qLevel,
-        semester: qSemester,
-        courseId: qCourseId,
+        universityId: qHierarchy.universityId,
+        facultyId: qHierarchy.facultyId || undefined,
+        departmentId: qHierarchy.departmentId || undefined,
+        level: qHierarchy.level,
+        semester: qHierarchy.semester,
+        courseId: qHierarchy.courseId,
         courseCode: courseObj?.code || 'GST101',
         difficulty: qDifficulty,
         source: 'Manual Admin',
@@ -559,19 +621,19 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
   };
 
   const handleAnalyzeSmartUpload = async () => {
-    if (!qUniversityId || !qCourseId) {
-      alert('Please select a Target University, Level, and Course before proceeding.');
+    if (!smartHierarchy.universityId || !smartHierarchy.courseId) {
+      alert('Please select a Target University, Faculty, Department, Level, Semester, and Course before proceeding.');
       return;
     }
 
     setIsAnalyzingUpload(true);
     try {
-      const selectedCourseObj = courses.find((c) => c.id === qCourseId);
-      const selectedUniObj = universities.find((u) => u.id === qUniversityId);
+      const selectedCourseObj = courses.find((c) => c.id === smartHierarchy.courseId);
+      const selectedUniObj = universities.find((u) => u.id === smartHierarchy.universityId);
 
       const payload: any = {
         universityName: selectedUniObj?.name || 'University',
-        level: qLevel || '100 Level',
+        level: smartHierarchy.level || '100 Level',
         courseCode: selectedCourseObj?.code || 'GST101',
         courseTitle: selectedCourseObj?.title || 'General Course',
         topic: 'General Topic',
@@ -644,8 +706,8 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
 
   const handleSaveExtractedQuestions = async () => {
     if (extractedQuestions.length === 0) return;
-    const selectedCourseObj = courses.find((c) => c.id === qCourseId);
-    const selectedUniObj = universities.find((u) => u.id === qUniversityId);
+    const selectedCourseObj = courses.find((c) => c.id === smartHierarchy.courseId);
+    const selectedUniObj = universities.find((u) => u.id === smartHierarchy.universityId);
     const nowIso = new Date().toISOString();
 
     const newItems: Question[] = extractedQuestions
@@ -659,9 +721,12 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
         optionD: eq.optD,
         correctAnswer: eq.correctAnswer,
         explanation: eq.explanation,
-        universityId: qUniversityId,
-        level: qLevel || '100 Level',
-        courseId: qCourseId,
+        universityId: smartHierarchy.universityId,
+        facultyId: smartHierarchy.facultyId || undefined,
+        departmentId: smartHierarchy.departmentId || undefined,
+        level: smartHierarchy.level || '100 Level',
+        semester: smartHierarchy.semester || 'First Semester',
+        courseId: smartHierarchy.courseId,
         courseCode: selectedCourseObj?.code || 'GST101',
         difficulty: 'Medium',
         source: 'Smart Upload',
@@ -677,7 +742,7 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
     const result = await StorageService.saveQuestions(newList);
     if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
     setExtractedQuestions([]);
-    alert(`Successfully imported ${newItems.length} questions assigned to ${selectedUniObj?.abbreviation || 'University'} - ${selectedCourseObj?.code || 'Course'} (${qLevel || '100 Level'}) into the Smart Question Review Workflow (Pending State).`);
+    alert(`Successfully imported ${newItems.length} questions assigned to ${selectedUniObj?.abbreviation || 'University'} - ${selectedCourseObj?.code || 'Course'} (${smartHierarchy.level || '100 Level'}) into the Smart Question Review Workflow (Pending State).`);
     setCurrentSubTab('workflow');
   };
 
@@ -844,12 +909,46 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
               <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                 <select
                   value={selectedUniversity}
-                  onChange={(e) => { setSelectedUniversity(e.target.value); setCurrentPage(1); }}
+                  onChange={(e) => {
+                    setSelectedUniversity(e.target.value);
+                    setSelectedFaculty('all');
+                    setSelectedDepartment('all');
+                    setCurrentPage(1);
+                  }}
                   className="bg-slate-950 border border-slate-800 text-xs text-amber-400 font-bold py-2 px-3 rounded-xl focus:outline-none focus:border-amber-500"
                 >
                   <option value="all">All Universities</option>
                   {universities.map((u) => (
                     <option key={u.id} value={u.id}>{u.abbreviation || u.name}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedFaculty}
+                  onChange={(e) => {
+                    setSelectedFaculty(e.target.value);
+                    setSelectedDepartment('all');
+                    setCurrentPage(1);
+                  }}
+                  className="bg-slate-950 border border-slate-800 text-xs text-slate-200 py-2 px-3 rounded-xl focus:outline-none focus:border-amber-500"
+                >
+                  <option value="all">All Faculties</option>
+                  {availableFacultiesForFilter.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedDepartment}
+                  onChange={(e) => {
+                    setSelectedDepartment(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-slate-950 border border-slate-800 text-xs text-slate-200 py-2 px-3 rounded-xl focus:outline-none focus:border-amber-500"
+                >
+                  <option value="all">All Departments</option>
+                  {availableDepartmentsForFilter.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
 
@@ -1139,58 +1238,27 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
               Upload past question PDFs, Word documents, exam image scans, or paste raw material text to automatically extract, format, and audit questions.
             </p>
 
-            <div className="p-4 bg-slate-950/80 border border-indigo-500/30 rounded-2xl space-y-2">
+            <div className="p-4 bg-slate-950/80 border border-indigo-500/30 rounded-2xl space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
                   <GraduationCap className="w-4 h-4" />
-                  <span>Select Target Destination (University, Level & Course Required)</span>
+                  <span>Target Destination (University → Faculty → Department → Level → Semester → Course)</span>
                 </span>
                 <span className="text-[10px] text-slate-400 font-semibold bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
-                  Target Auto-Mapping
+                  Cascading Flow
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">1. Target University</label>
-                  <select
-                    value={qUniversityId}
-                    onChange={(e) => setQUniversityId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    {universities.map((u) => (
-                      <option key={u.id} value={u.id}>{u.abbreviation ? `${u.abbreviation} - ${u.name}` : u.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">2. Target Level</label>
-                  <select
-                    value={qLevel}
-                    onChange={(e) => setQLevel(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="100 Level">100 Level</option>
-                    <option value="200 Level">200 Level</option>
-                    <option value="300 Level">300 Level</option>
-                    <option value="400 Level">400 Level</option>
-                    <option value="500 Level">500 Level</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">3. Target Course</label>
-                  <select
-                    value={qCourseId}
-                    onChange={(e) => setQCourseId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    {courses.map((c) => (
-                      <option key={c.id} value={c.id}>{c.code} - {c.title}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              <AcademicHierarchySelector
+                values={smartHierarchy}
+                onChange={setSmartHierarchy}
+                universities={universities}
+                faculties={faculties}
+                departments={departments}
+                courses={courses}
+                mode="form"
+                layout="grid-3"
+                courseLabel="6. Target Course"
+              />
             </div>
 
             {/* Method Tabs */}
@@ -1594,58 +1662,21 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
             </div>
 
             <form onSubmit={handleSaveQuestionForm} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">1. Select University</label>
-                  <select
-                    value={qUniversityId}
-                    onChange={(e) => setQUniversityId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-amber-400 font-bold"
-                  >
-                    {universities.map((u) => (
-                      <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">2. Select Level</label>
-                  <select
-                    value={qLevel}
-                    onChange={(e) => setQLevel(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white"
-                  >
-                    {ACADEMIC_LEVELS.map((lvl) => (
-                      <option key={lvl} value={lvl}>{lvl}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">3. Select Semester</label>
-                  <select
-                    value={qSemester}
-                    onChange={(e) => setQSemester(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white"
-                  >
-                    {ACADEMIC_SEMESTERS.map((sem) => (
-                      <option key={sem} value={sem}>{sem}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-300 font-bold block mb-1">4. Select Course</label>
-                  <select
-                    value={qCourseId}
-                    onChange={(e) => setQCourseId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white font-medium"
-                  >
-                    {courses.map((c) => (
-                      <option key={c.id} value={c.id}>{c.code} - {c.title}</option>
-                    ))}
-                  </select>
-                </div>
+              <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+                <span className="text-[11px] font-bold text-amber-400 block">
+                  Academic Classification (University → Faculty → Department → Level → Semester → Course)
+                </span>
+                <AcademicHierarchySelector
+                  values={qHierarchy}
+                  onChange={setQHierarchy}
+                  universities={universities}
+                  faculties={faculties}
+                  departments={departments}
+                  courses={courses}
+                  mode="form"
+                  layout="grid-3"
+                  courseLabel="6. Course"
+                />
               </div>
 
               <div>
