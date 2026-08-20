@@ -89,8 +89,8 @@ export function questionToRow(q: Partial<Question> & { id: string }): DbRow {
     topic_id: toValidUuid(q.topicId) ?? null,
     topic_name: q.topicName ?? null,
     version_number: q.versionNumber ?? null,
-    faculty_id: (q as any).facultyId ?? (q as any).faculty_id ?? null,
-    created_by: q.createdBy ?? null,
+    faculty_id: toValidUuid((q as any).facultyId ?? (q as any).faculty_id) ?? null,
+    created_by: toValidUuid(q.createdBy) ?? null,
     last_modified_by: q.lastModifiedBy ?? null,
     version_history: q.versionHistory ?? null,
     quality_score: q.qualityScore ?? null,
@@ -257,6 +257,7 @@ export function materialToRow(m: Partial<StudyMaterial> & { id: string }): DbRow
     access_level: m.accessLevel ?? (m as any).access_level ?? null,
     file_size: m.fileSize ?? (m as any).file_size ?? null,
     total_downloads: m.totalDownloads ?? (m as any).total_downloads ?? 0,
+    created_by: toValidUuid((m as any).createdBy ?? (m as any).created_by) ?? null,
     uploaded_by: m.uploadedBy ?? (m as any).uploaded_by ?? null,
     upload_date: m.uploadDate ?? (m as any).upload_date ?? null,
     status: m.status ?? null,
@@ -499,7 +500,7 @@ export function adminToRow(a: {
   updatedDate?: string | null;
 }): DbRow {
   return {
-    id: a.id,
+    id: toValidUuid(a.id) || a.id,
     full_name: a.fullName ?? (a as any).full_name ?? '',
     username: a.username ?? '',
     email: a.email ?? '',
@@ -510,7 +511,7 @@ export function adminToRow(a: {
     last_login: a.lastLogin ?? null,
     login_count: a.loginCount ?? 0,
     avatar_url: a.avatarUrl ?? null,
-    created_by: a.createdBy ?? null,
+    created_by: toValidUuid(a.createdBy) ?? null,
     created_date: a.createdDate ?? new Date().toISOString(),
     updated_date: a.updatedDate ?? new Date().toISOString(),
   };
