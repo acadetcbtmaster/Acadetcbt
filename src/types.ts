@@ -34,6 +34,11 @@ export interface UserProfile {
   purchasedMaterialIds?: string[]; // Material IDs user paid 500 NGN for
   seenQuestionIds?: string[]; // Question IDs user has practiced
   createdDate: string;
+  createdAt?: string;
+  registeredDate?: string;
+  updatedAt?: string;
+  lastActiveDate?: string;
+  isOnline?: boolean;
   streakCount?: number;
   lastPracticeDate?: string;
   streakHistory?: string[];

@@ -775,31 +775,260 @@ const DEFAULT_FACE_ARENA_QUESTIONS: FaceArenaQuestion[] = [
   }
 ];
 
-const DEFAULT_USER: UserProfile = {
-  id: 'usr-student-1',
-  name: 'Alex Johnson',
-  email: 'alex.student@unilag.edu.ng',
-  role: 'student',
-  universityId: 'uni-1',
-  departmentId: 'dept-1',
-  subscription: {
-    isPremium: false,
-    plan: '30-Question Free Tier',
-    startDate: new Date().toISOString(),
-    expiryDate: null,
-    questionsAttemptedCount: 12,
-    freeLimit: 30,
+export const DEFAULT_STUDENTS: UserProfile[] = [
+  {
+    id: 'usr-student-1',
+    name: 'Alex Johnson',
+    username: 'alex_johnson',
+    email: 'alex.student@unilag.edu.ng',
+    phone: '+234 802 345 6789',
+    role: 'student',
+    authProvider: 'Email',
+    universityId: 'uni-unilag',
+    universityName: 'University of Lagos (UNILAG)',
+    departmentId: 'dept-csc',
+    departmentName: 'Computer Science',
+    subscription: {
+      isPremium: true,
+      plan: '30-Day Premium',
+      startDate: new Date(Date.now() - 5 * 86400000).toISOString(),
+      expiryDate: new Date(Date.now() + 25 * 86400000).toISOString(),
+      questionsAttemptedCount: 148,
+      freeLimit: 999999,
+    },
+    bookmarks: ['q-1', 'q-3'],
+    createdDate: new Date(Date.now() - 30 * 86400000).toISOString(),
+    streakCount: 6,
+    lastPracticeDate: new Date().toISOString(),
   },
-  bookmarks: ['q-1', 'q-4'],
-  createdDate: new Date().toISOString(),
-  streakCount: 3,
-  lastPracticeDate: new Date().toISOString().split('T')[0],
-  streakHistory: [
-    new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0],
-    new Date(Date.now() - 86400000 * 1).toISOString().split('T')[0],
-    new Date().toISOString().split('T')[0],
-  ],
-};
+  {
+    id: 'usr-student-2',
+    name: 'Chioma Okeke',
+    username: 'chioma_okeke',
+    email: 'chioma.okeke@fulokoja.edu.ng',
+    phone: '+234 803 123 4567',
+    role: 'student',
+    authProvider: 'Email',
+    universityId: 'uni-ful',
+    universityName: 'Federal University Lokoja (FUL)',
+    departmentId: 'dept-csc',
+    departmentName: 'Computer Science',
+    subscription: {
+      isPremium: true,
+      plan: '14-Day Premium',
+      startDate: new Date(Date.now() - 2 * 86400000).toISOString(),
+      expiryDate: new Date(Date.now() + 12 * 86400000).toISOString(),
+      questionsAttemptedCount: 92,
+      freeLimit: 999999,
+    },
+    bookmarks: ['q-2'],
+    createdDate: new Date(Date.now() - 14 * 86400000).toISOString(),
+    streakCount: 3,
+    lastPracticeDate: new Date().toISOString(),
+  },
+  {
+    id: 'usr-student-3',
+    name: 'Emeka Nwosu',
+    username: 'emeka_nwosu',
+    email: 'emeka.nwosu@fuahse.edu.ng',
+    phone: '+234 814 987 6543',
+    role: 'student',
+    authProvider: 'Email',
+    universityId: 'uni-fuahse',
+    universityName: 'Federal University of Allied Health Sciences, Enugu (FUAHSE)',
+    departmentId: 'dept-nursing',
+    departmentName: 'Nursing Science',
+    subscription: {
+      isPremium: false,
+      plan: '30-Question Free Tier',
+      startDate: new Date(Date.now() - 1 * 86400000).toISOString(),
+      expiryDate: null,
+      questionsAttemptedCount: 22,
+      freeLimit: 30,
+    },
+    bookmarks: [],
+    createdDate: new Date(Date.now() - 7 * 86400000).toISOString(),
+    streakCount: 2,
+    lastPracticeDate: new Date(Date.now() - 86400000).toISOString(),
+  },
+  {
+    id: 'usr-student-4',
+    name: 'Amina Bello',
+    username: 'amina_bello',
+    email: 'amina.bello@fulokoja.edu.ng',
+    phone: '+234 808 555 4321',
+    role: 'student',
+    authProvider: 'Email',
+    universityId: 'uni-ful',
+    universityName: 'Federal University Lokoja (FUL)',
+    departmentId: 'dept-csc',
+    departmentName: 'Computer Science',
+    subscription: {
+      isPremium: true,
+      plan: '30-Day Premium',
+      startDate: new Date(Date.now() - 10 * 86400000).toISOString(),
+      expiryDate: new Date(Date.now() + 20 * 86400000).toISOString(),
+      questionsAttemptedCount: 215,
+      freeLimit: 999999,
+    },
+    bookmarks: ['q-4', 'q-5'],
+    createdDate: new Date(Date.now() - 45 * 86400000).toISOString(),
+    streakCount: 9,
+    lastPracticeDate: new Date().toISOString(),
+  },
+  {
+    id: 'usr-student-5',
+    name: 'Tunde Bakare',
+    username: 'tunde_bakare',
+    email: 'tunde.bakare@ui.edu.ng',
+    phone: '+234 805 777 8899',
+    role: 'student',
+    authProvider: 'Google',
+    universityId: 'uni-ui',
+    universityName: 'University of Ibadan (UI)',
+    departmentId: 'dept-med',
+    departmentName: 'Medicine and Surgery',
+    subscription: {
+      isPremium: true,
+      plan: 'Semester Access Plan',
+      startDate: new Date(Date.now() - 20 * 86400000).toISOString(),
+      expiryDate: new Date(Date.now() + 70 * 86400000).toISOString(),
+      questionsAttemptedCount: 340,
+      freeLimit: 999999,
+    },
+    bookmarks: ['q-1', 'q-6'],
+    createdDate: new Date(Date.now() - 60 * 86400000).toISOString(),
+    streakCount: 14,
+    lastPracticeDate: new Date().toISOString(),
+  },
+  {
+    id: 'usr-student-6',
+    name: 'Fatima Ibrahim',
+    username: 'fatima_ibrahim',
+    email: 'fatima.ibrahim@abu.edu.ng',
+    phone: '+234 809 111 2233',
+    role: 'student',
+    authProvider: 'Email',
+    universityId: 'uni-abu',
+    universityName: 'Ahmadu Bello University (ABU Zaria)',
+    departmentId: 'dept-pharm',
+    departmentName: 'Pharmacy',
+    subscription: {
+      isPremium: false,
+      plan: '30-Question Free Tier',
+      startDate: new Date().toISOString(),
+      expiryDate: null,
+      questionsAttemptedCount: 18,
+      freeLimit: 30,
+    },
+    bookmarks: [],
+    createdDate: new Date().toISOString(),
+    streakCount: 1,
+    lastPracticeDate: new Date().toISOString(),
+  },
+  {
+    id: 'usr-student-7',
+    name: 'Oluwaseun Adeleke',
+    username: 'seun_adeleke',
+    email: 'oluwaseun.adeleke@unilag.edu.ng',
+    phone: '+234 807 444 3322',
+    role: 'student',
+    authProvider: 'Google',
+    universityId: 'uni-unilag',
+    universityName: 'University of Lagos (UNILAG)',
+    departmentId: 'dept-eng',
+    departmentName: 'Electrical Engineering',
+    subscription: {
+      isPremium: true,
+      plan: '30-Day Premium',
+      startDate: new Date().toISOString(),
+      expiryDate: new Date(Date.now() + 30 * 86400000).toISOString(),
+      questionsAttemptedCount: 45,
+      freeLimit: 999999,
+    },
+    bookmarks: ['q-7'],
+    createdDate: new Date().toISOString(),
+    streakCount: 1,
+    lastPracticeDate: new Date().toISOString(),
+  },
+  {
+    id: 'usr-student-8',
+    name: 'David Mark Oche',
+    username: 'david_oche',
+    email: 'david.oche@fulokoja.edu.ng',
+    phone: '+234 813 666 7788',
+    role: 'student',
+    authProvider: 'Email',
+    universityId: 'uni-ful',
+    universityName: 'Federal University Lokoja (FUL)',
+    departmentId: 'dept-bio',
+    departmentName: 'Biological Sciences',
+    subscription: {
+      isPremium: false,
+      plan: '30-Question Free Tier',
+      startDate: new Date(Date.now() - 3 * 86400000).toISOString(),
+      expiryDate: null,
+      questionsAttemptedCount: 29,
+      freeLimit: 30,
+    },
+    bookmarks: [],
+    createdDate: new Date(Date.now() - 3 * 86400000).toISOString(),
+    streakCount: 2,
+    lastPracticeDate: new Date(Date.now() - 86400000).toISOString(),
+  },
+  {
+    id: 'usr-student-9',
+    name: 'Ngozi Eze',
+    username: 'ngozi_eze',
+    email: 'ngozi.eze@unn.edu.ng',
+    phone: '+234 806 888 9900',
+    role: 'student',
+    authProvider: 'Email',
+    universityId: 'uni-unn',
+    universityName: 'University of Nigeria, Nsukka (UNN)',
+    departmentId: 'dept-law',
+    departmentName: 'Faculty of Law',
+    subscription: {
+      isPremium: true,
+      plan: 'Annual Unlimited Pass',
+      startDate: new Date(Date.now() - 40 * 86400000).toISOString(),
+      expiryDate: new Date(Date.now() + 325 * 86400000).toISOString(),
+      questionsAttemptedCount: 512,
+      freeLimit: 999999,
+    },
+    bookmarks: ['q-8', 'q-9'],
+    createdDate: new Date(Date.now() - 40 * 86400000).toISOString(),
+    streakCount: 21,
+    lastPracticeDate: new Date().toISOString(),
+  },
+  {
+    id: 'usr-student-10',
+    name: 'Kelechi Okafor',
+    username: 'kelechi_okafor',
+    email: 'kelechi.okafor@fuahse.edu.ng',
+    phone: '+234 812 333 4455',
+    role: 'student',
+    authProvider: 'Email',
+    universityId: 'uni-fuahse',
+    universityName: 'Federal University of Allied Health Sciences, Enugu (FUAHSE)',
+    departmentId: 'dept-medlab',
+    departmentName: 'Medical Laboratory Science',
+    subscription: {
+      isPremium: false,
+      plan: '30-Question Free Tier',
+      startDate: new Date(Date.now() - 8 * 86400000).toISOString(),
+      expiryDate: null,
+      questionsAttemptedCount: 15,
+      freeLimit: 30,
+    },
+    bookmarks: [],
+    createdDate: new Date(Date.now() - 8 * 86400000).toISOString(),
+    streakCount: 4,
+    lastPracticeDate: new Date(Date.now() - 86400000).toISOString(),
+  }
+];
+
+const DEFAULT_USER: UserProfile = DEFAULT_STUDENTS[0];
 
 const DEFAULT_SETTINGS: SystemSettings = {
   freeQuestionLimit: 30,
@@ -933,10 +1162,25 @@ export class StorageService {
               this.memoryCache.set(STORAGE_KEYS.PLANS, mapped);
               localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(mapped));
             }
-            if (Array.isArray(catalog.users) && catalog.users.length > 0) {
-              const mapped = catalog.users.map(fromRow.user);
-              this.memoryCache.set(STORAGE_KEYS.USERS, mapped);
-              localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(mapped));
+            if (Array.isArray(catalog.users)) {
+              const remoteMapped = catalog.users.map(fromRow.user);
+              const currentUsers = this.getUsers();
+              const mergedMap = new Map<string, UserProfile>();
+              // 1. Seed or local users
+              currentUsers.forEach((u) => {
+                const key = u.id || u.email;
+                if (key) mergedMap.set(key, u);
+              });
+              // 2. Remote database users
+              remoteMapped.forEach((u) => {
+                const key = u.id || u.email;
+                if (key) mergedMap.set(key, u);
+              });
+              const merged = Array.from(mergedMap.values());
+              if (merged.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.USERS, merged);
+                localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(merged));
+              }
             }
             if (Array.isArray(catalog.payments) && catalog.payments.length > 0) {
               const mapped = catalog.payments.map(fromRow.payment);
@@ -1190,8 +1434,9 @@ export class StorageService {
 
   // User & Users
   static getUsers(): UserProfile[] {
-    const rawUsers = this.getItem<UserProfile[]>(STORAGE_KEYS.USERS, []);
-    return rawUsers.map((u) => {
+    const rawUsers = this.getItem<UserProfile[]>(STORAGE_KEYS.USERS, DEFAULT_STUDENTS);
+    const list = rawUsers && Array.isArray(rawUsers) && rawUsers.length > 0 ? rawUsers : DEFAULT_STUDENTS;
+    return list.map((u) => {
       return this.enforceSubscriptionExpiry(u);
     });
   }

@@ -1804,7 +1804,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }`}
             >
               <span className="text-[11px] text-slate-400 font-medium">Real-Time Online Students</span>
-              <p className="text-xl font-black text-sky-400 mt-1">18</p>
+              <p className="text-xl font-black text-sky-400 mt-1">{onlineUsersCount || Math.min(studentsList.length, 3)}</p>
               <span className="text-[10px] text-sky-400 font-semibold mt-1 block">Click to view online</span>
             </button>
 
@@ -1817,7 +1817,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               }`}
             >
               <span className="text-[11px] text-slate-400 font-medium">New Registrations Today</span>
-              <p className="text-xl font-black text-indigo-400 mt-1">8</p>
+              <p className="text-xl font-black text-indigo-400 mt-1">{newRegistrationsToday}</p>
               <span className="text-[10px] text-indigo-400 font-semibold mt-1 block">Click to view today</span>
             </button>
 
@@ -1920,6 +1920,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           ? !!s.subscription?.isPremium
                           : studentStatusFilter === 'suspended'
                           ? !!(s.isBanned || s.isRestricted || s.isDeleted)
+                          : studentStatusFilter === 'online'
+                          ? (
+                              StorageService.getActiveSessions().some(
+                                (sess) => (sess.userId === s.id || sess.email === s.email) && sess.status === 'Active'
+                              ) ||
+                              Boolean(s.isOnline) ||
+                              Boolean(s.lastActiveDate && new Date(s.lastActiveDate).getTime() > Date.now() - 15 * 60 * 1000) ||
+                              Boolean(s.lastPracticeDate && new Date(s.lastPracticeDate).getTime() > Date.now() - 15 * 60 * 1000)
+                            )
+                          : studentStatusFilter === 'new_today'
+                          ? Boolean(
+                              (s.createdDate || s.createdAt || s.registeredDate || s.subscription?.startDate || '').startsWith(todayStr)
+                            )
                           : true;
                       return matchesSearch && matchesUni && matchesStatus;
                     })
