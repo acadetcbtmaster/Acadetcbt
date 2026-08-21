@@ -93,6 +93,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [deptSearchQuery, setDeptSearchQuery] = useState<string>('');
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState<boolean>(false);
   const deptDropdownRef = useRef<HTMLDivElement>(null);
+  const termsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setFacultyGroups(StorageService.getSignupFacultyGroups());
@@ -375,9 +376,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const touchRegField = (field: string) => {
     setRegTouched((prev) => ({ ...prev, [field]: true }));
   };
-
-  // Terms Container Ref for Error Focusing
-  const termsContainerRef = useRef<HTMLDivElement>(null);
 
   // Focus placement helper for registration errors
   const focusFirstRegError = (errors: Record<string, string>) => {

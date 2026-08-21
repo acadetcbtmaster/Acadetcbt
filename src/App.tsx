@@ -736,6 +736,12 @@ export default function App() {
             onUpdateUniversities={(data) => {
               setUniversities(data);
             }}
+            onUpdateFaculties={(data) => {
+              setFaculties(data);
+            }}
+            onUpdateDepartments={(data) => {
+              setDepartments(data);
+            }}
             onUpdateCourses={(data) => {
               setCourses(data);
             }}
@@ -865,26 +871,28 @@ export default function App() {
       )}
 
       {/* Auth Modal */}
-      <AuthModal
-        isOpen={authModalOpen}
-        initialMode={authModalMode}
-        onClose={() => setAuthModalOpen(false)}
-        universities={universities}
-        departments={departments}
-        onLoginSuccess={(user, message) => {
-          handleUpdateUser(user);
-          const target = user.role === 'admin' ? 'admin' : 'dashboard';
-          setActiveTab(target);
-          setAuthModalOpen(false);
-          if (message) {
-            setRegistrationMessage(message);
-            setTimeout(() => setRegistrationMessage(null), 8000);
-          }
-        }}
-      />
+      {authModalOpen && (
+        <AuthModal
+          isOpen={authModalOpen}
+          initialMode={authModalMode}
+          onClose={() => setAuthModalOpen(false)}
+          universities={universities}
+          departments={departments}
+          onLoginSuccess={(user, message) => {
+            handleUpdateUser(user);
+            const target = user.role === 'admin' ? 'admin' : 'dashboard';
+            setActiveTab(target);
+            setAuthModalOpen(false);
+            if (message) {
+              setRegistrationMessage(message);
+              setTimeout(() => setRegistrationMessage(null), 8000);
+            }
+          }}
+        />
+      )}
 
       {/* Subscription Modal */}
-      {currentUser && (
+      {subModalOpen && currentUser && (
         <SubscriptionModal
           isOpen={subModalOpen}
           onClose={() => setSubModalOpen(false)}
@@ -896,7 +904,7 @@ export default function App() {
       )}
 
       {/* Edit Profile Modal */}
-      {currentUser && (
+      {editProfileModalOpen && currentUser && (
         <EditProfileModal
           isOpen={editProfileModalOpen}
           user={currentUser}
@@ -906,35 +914,43 @@ export default function App() {
       )}
 
       {/* Free Trial Alert Threshold Notification Modal */}
-      <TrialAlertModal
-        isOpen={trialAlertState.isOpen}
-        alertType={trialAlertState.type}
-        questionsUsed={trialAlertState.questionsUsed}
-        freeLimit={trialAlertState.freeLimit}
-        onClose={() => setTrialAlertState((prev) => ({ ...prev, isOpen: false }))}
-        onOpenSubscribe={() => setSubModalOpen(true)}
-      />
+      {trialAlertState.isOpen && (
+        <TrialAlertModal
+          isOpen={trialAlertState.isOpen}
+          alertType={trialAlertState.type}
+          questionsUsed={trialAlertState.questionsUsed}
+          freeLimit={trialAlertState.freeLimit}
+          onClose={() => setTrialAlertState((prev) => ({ ...prev, isOpen: false }))}
+          onOpenSubscribe={() => setSubModalOpen(true)}
+        />
+      )}
 
       {/* About Acadet Modal */}
-      <AboutModal
-        isOpen={aboutModalOpen}
-        onClose={() => setAboutModalOpen(false)}
-        onOpenFounder={() => handleNavigate('founder')}
-      />
+      {aboutModalOpen && (
+        <AboutModal
+          isOpen={aboutModalOpen}
+          onClose={() => setAboutModalOpen(false)}
+          onOpenFounder={() => handleNavigate('founder')}
+        />
+      )}
 
       {/* Features PDF Modal */}
-      <FeaturesPdfModal
-        isOpen={featuresPdfModalOpen}
-        onClose={() => setFeaturesPdfModalOpen(false)}
-      />
+      {featuresPdfModalOpen && (
+        <FeaturesPdfModal
+          isOpen={featuresPdfModalOpen}
+          onClose={() => setFeaturesPdfModalOpen(false)}
+        />
+      )}
 
       {/* Notification Center Modal */}
-      <NotificationCenterModal
-        isOpen={isNotifCenterOpen}
-        onClose={() => setIsNotifCenterOpen(false)}
-        userId={currentUser?.id}
-        userRole={currentUser?.role}
-      />
+      {isNotifCenterOpen && (
+        <NotificationCenterModal
+          isOpen={isNotifCenterOpen}
+          onClose={() => setIsNotifCenterOpen(false)}
+          userId={currentUser?.id}
+          userRole={currentUser?.role}
+        />
+      )}
 
       {/* MenCore AI Assistant Widget (Powered by Menmex) */}
       <MenCoreWidget

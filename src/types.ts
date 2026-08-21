@@ -57,12 +57,24 @@ export interface Faculty {
   id: string;
   universityId: string;
   name: string;
+  code?: string;
+  description?: string;
+  deanName?: string;
+  status?: 'Active' | 'Disabled';
+  createdAt?: string;
 }
 
 export interface Department {
   id: string;
   facultyId: string;
   name: string;
+  code?: string;
+  universityId?: string;
+  description?: string;
+  headOfDepartment?: string;
+  durationYears?: number;
+  status?: 'Active' | 'Disabled';
+  createdAt?: string;
 }
 
 export interface Course {

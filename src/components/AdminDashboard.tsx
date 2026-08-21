@@ -180,6 +180,8 @@ interface AdminDashboardProps {
   settings: SystemSettings;
   onUpdateQuestions: (qs: Question[]) => void;
   onUpdateUniversities: (data: University[]) => void;
+  onUpdateFaculties?: (data: Faculty[]) => void;
+  onUpdateDepartments?: (data: Department[]) => void;
   onUpdateCourses: (data: Course[]) => void;
   onUpdateTopics: (data: Topic[]) => void;
   onUpdateSettings: (settings: SystemSettings) => void;
@@ -200,6 +202,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   settings,
   onUpdateQuestions,
   onUpdateUniversities,
+  onUpdateFaculties,
+  onUpdateDepartments,
   onUpdateCourses,
   onUpdateTopics,
   onUpdateSettings,
@@ -4043,9 +4047,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <MenCoreManagementModule />
       )}
 
-      {/* --- Sign-Up Faculties & Departments Catalog Interface --- */}
+      {/* --- Sign-Up & Academic Faculties & Departments Manual Manager --- */}
       {activeCategory === 'signup_departments' && (
-        <DepartmentManagementModule />
+        <DepartmentManagementModule
+          universities={universities}
+          faculties={faculties}
+          departments={departments}
+          courses={courses}
+          onUpdateUniversities={onUpdateUniversities}
+          onUpdateFaculties={onUpdateFaculties}
+          onUpdateDepartments={onUpdateDepartments}
+        />
       )}
 
       {/* --- Face Arena Weekly Quiz Challenge Management --- */}
