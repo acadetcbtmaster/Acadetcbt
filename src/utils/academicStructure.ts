@@ -91,27 +91,36 @@ export function getFacultiesForUniversity(
   // 2. Specific institutional tailored faculties
   if (universityId === 'uni-fuahse' || universityId.includes('fuahse')) {
     return [
-      { id: `fac-${universityId}-1`, universityId, name: 'Faculty of Allied Health Sciences' },
-      { id: `fac-${universityId}-2`, universityId, name: 'Faculty of Clinical Sciences & Medicine' },
-      { id: `fac-${universityId}-3`, universityId, name: 'Faculty of Basic Medical Sciences' },
-      { id: `fac-${universityId}-4`, universityId, name: 'Faculty of Dentistry & Oral Health' },
-      { id: `fac-${universityId}-5`, universityId, name: 'Faculty of Public Health & Health Information' },
+      { id: 'fac-fuahse-1', universityId, name: 'Faculty of Allied Health Sciences' },
+      { id: 'fac-fuahse-2', universityId, name: 'Faculty of Clinical Sciences & Medicine' },
+      { id: 'fac-fuahse-3', universityId, name: 'Faculty of Basic Medical Sciences' },
+      { id: 'fac-fuahse-4', universityId, name: 'Faculty of Dentistry & Oral Health' },
+      { id: 'fac-fuahse-5', universityId, name: 'Faculty of Public Health & Health Information' },
     ];
   }
 
   if (universityId === 'uni-ful' || universityId.includes('ful')) {
     return [
-      { id: `fac-${universityId}-1`, universityId, name: 'Faculty of Science & Computing' },
-      { id: `fac-${universityId}-2`, universityId, name: 'Faculty of Arts & Humanities' },
-      { id: `fac-${universityId}-3`, universityId, name: 'Faculty of Social & Management Sciences' },
-      { id: `fac-${universityId}-4`, universityId, name: 'Faculty of Education' },
-      { id: `fac-${universityId}-5`, universityId, name: 'Faculty of Agriculture' },
+      { id: 'fac-ful-1', universityId, name: 'Faculty of Science & Computing' },
+      { id: 'fac-ful-2', universityId, name: 'Faculty of Arts & Humanities' },
+      { id: 'fac-ful-3', universityId, name: 'Faculty of Social Sciences' },
+      { id: 'fac-ful-4', universityId, name: 'Faculty of Education' },
+      { id: 'fac-ful-5', universityId, name: 'Faculty of Agriculture' },
+    ];
+  }
+
+  if (universityId === 'uni-1' || universityId === 'uni-2') {
+    return [
+      { id: 'fac-1', universityId, name: 'Faculty of Science' },
+      { id: 'fac-2', universityId, name: 'Faculty of Arts' },
+      { id: 'fac-3', universityId, name: 'Faculty of Social Sciences' },
+      { id: 'fac-4', universityId, name: 'Faculty of Management Sciences' },
+      { id: 'fac-5', universityId, name: 'Faculty of Education' },
     ];
   }
 
   // 3. Return comprehensive standard Nigerian faculties for any chosen institution
   return DEFAULT_FACULTY_DEPARTMENTS.map((group, idx) => {
-    // Clean leading numbers like "1. Faculty of..." -> "Faculty of..."
     const cleanName = group.name.replace(/^\d+\.\s*/, '');
     return {
       id: `fac-${universityId}-${idx + 1}`,
@@ -132,7 +141,6 @@ export function getDepartmentsForFaculty(
 ): Department[] {
   if (!facultyId || facultyId === 'all') {
     if (registeredDepartments.length > 0) return registeredDepartments;
-    // Flatten default departments
     const list: Department[] = [];
     DEFAULT_FACULTY_DEPARTMENTS.forEach((fg, fIdx) => {
       fg.departments.forEach((deptName, dIdx) => {
@@ -160,72 +168,71 @@ export function getDepartmentsForFaculty(
   const facultyName = (facultyObj?.name || '').toLowerCase();
 
   // 3. Institution-specific quick fallbacks
-  if (universityId === 'uni-fuahse' || (universityId && universityId.includes('fuahse'))) {
-    if (facultyName.includes('allied') || facultyName.includes('health')) {
-      return FUAHSE_DEPARTMENTS.slice(0, 10).map((name, idx) => ({
-        id: `dept-fuahse-ah-${idx + 1}`,
-        facultyId,
-        name,
-      }));
-    }
+  if (
+    universityId === 'uni-fuahse' ||
+    (universityId && universityId.includes('fuahse')) ||
+    facultyId === 'fac-fuahse-1' ||
+    facultyName.includes('allied') ||
+    facultyName.includes('health')
+  ) {
     return FUAHSE_DEPARTMENTS.map((name, idx) => ({
       id: `dept-fuahse-${idx + 1}`,
-      facultyId,
+      facultyId: facultyId || 'fac-fuahse-1',
       name,
     }));
   }
 
-  if (universityId === 'uni-ful' || (universityId && universityId.includes('ful'))) {
-    if (facultyName.includes('science') || facultyName.includes('computing')) {
+  if (
+    universityId === 'uni-ful' ||
+    (universityId && universityId.includes('ful')) ||
+    facultyId?.startsWith('fac-ful')
+  ) {
+    if (facultyId === 'fac-ful-1' || facultyName.includes('science') || facultyName.includes('computing')) {
       return [
-        'Computer Science',
-        'Cyber Security',
-        'Software Engineering',
-        'Information Technology',
-        'Mathematics',
-        'Physics',
-        'Chemistry',
-        'Biochemistry',
-        'Biology',
-        'Microbiology',
-        'Geology',
-        'Statistics',
-      ].map((name, idx) => ({
-        id: `dept-ful-sci-${idx + 1}`,
-        facultyId,
-        name,
-      }));
+        { id: 'dept-ful-1', facultyId: facultyId || 'fac-ful-1', name: 'General Studies Unit' },
+        { id: 'dept-ful-2', facultyId: facultyId || 'fac-ful-1', name: 'Mathematics' },
+        { id: 'dept-ful-3', facultyId: facultyId || 'fac-ful-1', name: 'Physics' },
+        { id: 'dept-ful-4', facultyId: facultyId || 'fac-ful-1', name: 'Computer Science' },
+        { id: 'dept-ful-5', facultyId: facultyId || 'fac-ful-1', name: 'Chemistry' },
+        { id: 'dept-ful-sci-6', facultyId: facultyId || 'fac-ful-1', name: 'Biochemistry' },
+        { id: 'dept-ful-sci-7', facultyId: facultyId || 'fac-ful-1', name: 'Microbiology' },
+        { id: 'dept-ful-sci-8', facultyId: facultyId || 'fac-ful-1', name: 'Geology' },
+        { id: 'dept-ful-sci-9', facultyId: facultyId || 'fac-ful-1', name: 'Cyber Security' },
+        { id: 'dept-ful-sci-10', facultyId: facultyId || 'fac-ful-1', name: 'Software Engineering' },
+      ];
     }
-    if (facultyName.includes('social') || facultyName.includes('management')) {
+    if (facultyId === 'fac-ful-2' || facultyName.includes('arts') || facultyName.includes('humanities')) {
       return [
-        'Economics',
-        'Accounting',
-        'Business Administration',
-        'Political Science',
-        'Sociology',
-        'Geography',
-      ].map((name, idx) => ({
-        id: `dept-ful-soc-${idx + 1}`,
-        facultyId,
-        name,
-      }));
+        { id: 'dept-ful-6', facultyId: facultyId || 'fac-ful-2', name: 'History and International Studies' },
+        { id: 'dept-ful-art-2', facultyId: facultyId || 'fac-ful-2', name: 'English & Literary Studies' },
+        { id: 'dept-ful-art-3', facultyId: facultyId || 'fac-ful-2', name: 'Philosophy' },
+        { id: 'dept-ful-art-4', facultyId: facultyId || 'fac-ful-2', name: 'Religious Studies' },
+      ];
     }
-    if (facultyName.includes('arts') || facultyName.includes('humanities')) {
+    if (facultyId === 'fac-ful-3' || facultyName.includes('social')) {
       return [
-        'English',
-        'History and International Studies',
-        'Library and Information Science',
-        'Philosophy',
-        'Religious Studies',
-      ].map((name, idx) => ({
-        id: `dept-ful-art-${idx + 1}`,
-        facultyId,
-        name,
-      }));
+        { id: 'dept-ful-7', facultyId: facultyId || 'fac-ful-3', name: 'Economics' },
+        { id: 'dept-ful-8', facultyId: facultyId || 'fac-ful-3', name: 'Sociology' },
+        { id: 'dept-ful-soc-3', facultyId: facultyId || 'fac-ful-3', name: 'Political Science' },
+        { id: 'dept-ful-soc-4', facultyId: facultyId || 'fac-ful-3', name: 'Accounting' },
+      ];
     }
   }
 
-  // 4. Match against DEFAULT_FACULTY_DEPARTMENTS groups
+  // 4. UNILAG / UI Standard
+  if (facultyId === 'fac-1' || facultyName.includes('science')) {
+    return [
+      { id: 'dept-1', facultyId, name: 'Computer Science' },
+      { id: 'dept-2', facultyId, name: 'General Studies' },
+      { id: 'dept-3', facultyId, name: 'Mathematics' },
+      { id: 'dept-4', facultyId, name: 'Physics' },
+      { id: 'dept-5', facultyId, name: 'Chemistry' },
+      { id: 'dept-6', facultyId, name: 'Biochemistry' },
+      { id: 'dept-7', facultyId, name: 'Microbiology' },
+    ];
+  }
+
+  // 5. Match against DEFAULT_FACULTY_DEPARTMENTS groups
   const matchedGroup = DEFAULT_FACULTY_DEPARTMENTS.find((g) => {
     const cleanGName = g.name.toLowerCase();
     const fWords = facultyName.split(/\s+/).filter((w) => w.length > 3 && w !== 'faculty');
@@ -240,7 +247,7 @@ export function getDepartmentsForFaculty(
     }));
   }
 
-  // 5. Fallback general departments
+  // 6. Fallback general departments
   return [
     'Computer Science & Information Technology',
     'General & Applied Sciences',
@@ -253,6 +260,35 @@ export function getDepartmentsForFaculty(
     name,
   }));
 }
+
+/**
+ * Discipline code prefix map for intelligent department matching
+ */
+const DISCIPLINE_PREFIX_MAP: Record<string, string[]> = {
+  'Medicine and Surgery': ['MED', 'SUR', 'CLN'],
+  'Nursing Science': ['NUR', 'NSC'],
+  'Radiography and Radiation Science': ['RAD', 'RSC'],
+  'Physiotherapy': ['PHT', 'PST'],
+  'Medical Laboratory Science': ['MLS', 'MLB'],
+  'Human Anatomy': ['ANA', 'ANT'],
+  'Human Physiology': ['PIO', 'PHS', 'PHYSIO'],
+  'Human Nutrition and Dietetics': ['NUT', 'HND'],
+  'Public Health': ['PBH', 'PUH', 'EHS'],
+  'Health Information Management': ['HIM', 'HIT'],
+  'Biomedical Engineering': ['BME', 'BIE'],
+  'General Studies Unit': ['GST', 'GES', 'GNS', 'GSE'],
+  'General Studies': ['GST', 'GES', 'GNS', 'GSE'],
+  'Mathematics': ['MTH', 'MAT'],
+  'Physics': ['PHY'],
+  'Computer Science': ['COS', 'CSC', 'CMP', 'CPT'],
+  'Chemistry': ['CHM', 'CHE'],
+  'History and International Studies': ['HIS'],
+  'Economics': ['ECO', 'ECN'],
+  'Sociology': ['SOC'],
+  'Biochemistry': ['BCH', 'BIO'],
+  'Microbiology': ['MCB', 'MIC'],
+  'Geology': ['GLY', 'GEO'],
+};
 
 /**
  * Filter courses with hierarchical precision:
@@ -280,8 +316,20 @@ export function getCoursesForHierarchy({
   if (!allCourses || allCourses.length === 0) return [];
 
   const selectedUniObj = allUniversities.find((u) => u.id === universityId);
+  const targetLevel = level && level !== 'all' ? normalizeLevel(level) : null;
+  const targetSemester = semester && semester !== 'all' ? normalizeSemester(semester) : null;
 
-  // 1. Strict Filter
+  // Resolve department details if available
+  let selectedDeptName = '';
+  if (departmentId && departmentId !== 'all') {
+    const allDepts = getDepartmentsForFaculty(facultyId, universityId);
+    const foundDept = allDepts.find((d) => d.id === departmentId);
+    if (foundDept) {
+      selectedDeptName = foundDept.name;
+    }
+  }
+
+  // 1. Strict Filter across complete hierarchy
   const filtered = allCourses.filter((c) => {
     // University match
     if (universityId && universityId !== 'all') {
@@ -297,28 +345,47 @@ export function getCoursesForHierarchy({
 
     // Faculty match
     if (facultyId && facultyId !== 'all') {
-      if (c.facultyId && c.facultyId !== facultyId) {
-        return false;
+      if (c.facultyId && c.facultyId === facultyId) {
+        // Direct match
+      } else if (c.facultyId && c.facultyId !== facultyId) {
+        // Check if course belongs to the selected university or department
+        if (!selectedDeptName || (c.departmentName && c.departmentName !== selectedDeptName)) {
+          return false;
+        }
       }
     }
 
     // Department match
     if (departmentId && departmentId !== 'all') {
-      if (c.departmentId && c.departmentId !== departmentId) {
+      const isDirectDeptIdMatch = c.departmentId === departmentId;
+      const isDeptNameMatch =
+        selectedDeptName &&
+        c.departmentName &&
+        (c.departmentName.toLowerCase().includes(selectedDeptName.toLowerCase()) ||
+          selectedDeptName.toLowerCase().includes(c.departmentName.toLowerCase()));
+
+      let isCodePrefixMatch = false;
+      if (selectedDeptName && c.code) {
+        const expectedPrefixes = DISCIPLINE_PREFIX_MAP[selectedDeptName] || [];
+        const cleanCode = c.code.toUpperCase();
+        isCodePrefixMatch = expectedPrefixes.some((p) => cleanCode.startsWith(p));
+      }
+
+      if (!isDirectDeptIdMatch && !isDeptNameMatch && !isCodePrefixMatch) {
         return false;
       }
     }
 
     // Level match
-    if (level && level !== 'all') {
-      if (c.level && normalizeLevel(c.level) !== normalizeLevel(level)) {
+    if (targetLevel) {
+      if (c.level && normalizeLevel(c.level) !== targetLevel) {
         return false;
       }
     }
 
     // Semester match
-    if (semester && semester !== 'all') {
-      if (c.semester && normalizeSemester(c.semester) !== normalizeSemester(semester)) {
+    if (targetSemester) {
+      if (c.semester && normalizeSemester(c.semester) !== targetSemester) {
         return false;
       }
     }
@@ -328,8 +395,65 @@ export function getCoursesForHierarchy({
 
   if (filtered.length > 0) return filtered;
 
-  // 2. Graceful Fallback: If strict matching yields 0, return all university courses matching level/semester or all university courses
+  // 2. Department & Semester Level Relaxed Filter (matches department and semester across university)
+  if (departmentId && departmentId !== 'all') {
+    const deptRelaxed = allCourses.filter((c) => {
+      // University match
+      if (universityId && universityId !== 'all') {
+        const uniMatch =
+          !c.universityId ||
+          c.universityId === universityId ||
+          (selectedUniObj &&
+            c.universityName &&
+            (c.universityName.toLowerCase().includes((selectedUniObj.abbreviation || '').toLowerCase()) ||
+              c.universityName.toLowerCase().includes((selectedUniObj.name || '').toLowerCase())));
+        if (!uniMatch) return false;
+      }
+
+      // Department name or code prefix match
+      const isDirectDeptIdMatch = c.departmentId === departmentId;
+      const isDeptNameMatch =
+        selectedDeptName &&
+        c.departmentName &&
+        (c.departmentName.toLowerCase().includes(selectedDeptName.toLowerCase()) ||
+          selectedDeptName.toLowerCase().includes(c.departmentName.toLowerCase()));
+
+      let isCodePrefixMatch = false;
+      if (selectedDeptName && c.code) {
+        const expectedPrefixes = DISCIPLINE_PREFIX_MAP[selectedDeptName] || [];
+        const cleanCode = c.code.toUpperCase();
+        isCodePrefixMatch = expectedPrefixes.some((p) => cleanCode.startsWith(p));
+      }
+
+      if (!isDirectDeptIdMatch && !isDeptNameMatch && !isCodePrefixMatch) return false;
+
+      // Check semester if specified
+      if (targetSemester && c.semester && normalizeSemester(c.semester) !== targetSemester) {
+        return false;
+      }
+
+      return true;
+    });
+
+    if (deptRelaxed.length > 0) return deptRelaxed;
+  }
+
+  // 3. Graceful Fallback: If strict matching yields 0 and fallback is enabled, return university courses matching semester/level
   if (includeAllFallback && universityId && universityId !== 'all') {
+    const uniSemesterCourses = allCourses.filter((c) => {
+      const uniMatch =
+        !c.universityId ||
+        c.universityId === universityId ||
+        (selectedUniObj &&
+          c.universityName &&
+          c.universityName.toLowerCase().includes((selectedUniObj.abbreviation || selectedUniObj.name).toLowerCase()));
+      if (!uniMatch) return false;
+      if (targetSemester && c.semester && normalizeSemester(c.semester) !== targetSemester) return false;
+      return true;
+    });
+
+    if (uniSemesterCourses.length > 0) return uniSemesterCourses;
+
     const uniCourses = allCourses.filter((c) => {
       return (
         !c.universityId ||
