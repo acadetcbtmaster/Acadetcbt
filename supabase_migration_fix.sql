@@ -1,5 +1,7 @@
 -- Idempotent persistence alignment for existing AcadeTCBT databases.
 
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS question TEXT;
+ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS question_text TEXT;
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Published';
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS level TEXT;
 ALTER TABLE public.questions ADD COLUMN IF NOT EXISTS semester TEXT;

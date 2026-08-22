@@ -2196,21 +2196,63 @@ function validateQuestionBatch(items: unknown[]): {
 
   items.forEach((rawItem, index) => {
     const item: QuestionPayload = rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem)
-      ? rawItem as QuestionPayload
+      ? { ...(rawItem as QuestionPayload) }
       : {};
-    const id = questionPayloadValue(item, 'id') || `<missing-id-${index + 1}>`;
+
+    // Auto-generate ID if missing
+    let id = questionPayloadValue(item, 'id');
+    if (!id) {
+      id = `q-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 7)}`;
+      item.id = id;
+    }
+
+    // Support array options if present: options: ['A', 'B', 'C', 'D']
+    if (Array.isArray(item.options) && item.options.length >= 2) {
+      if (!item.optionA && item.options[0]) item.optionA = String(item.options[0]);
+      if (!item.optionB && item.options[1]) item.optionB = String(item.options[1]);
+      if (!item.optionC && item.options[2]) item.optionC = String(item.options[2]);
+      if (!item.optionD && item.options[3]) item.optionD = String(item.options[3]);
+    }
+
     const missing: string[] = [];
-    if (!questionPayloadValue(item, 'id')) missing.push('id');
-    if (!questionPayloadValue(item, 'question', 'question_text')) missing.push('question text');
+    const questionText = questionPayloadValue(item, 'question', 'question_text', 'questionText', 'text', 'prompt', 'title');
+    if (!questionText) {
+      missing.push('question text');
+    } else {
+      item.question = questionText;
+    }
 
     const questionType = questionPayloadValue(item, 'questionType', 'question_type');
     const requiresMcqFields = !questionType || questionType === 'MCQ';
     if (requiresMcqFields) {
-      if (!questionPayloadValue(item, 'optionA', 'option_a')) missing.push('option A');
-      if (!questionPayloadValue(item, 'optionB', 'option_b')) missing.push('option B');
-      if (!questionPayloadValue(item, 'optionC', 'option_c')) missing.push('option C');
-      if (!questionPayloadValue(item, 'optionD', 'option_d')) missing.push('option D');
-      if (!questionPayloadValue(item, 'correctAnswer', 'correct_answer')) missing.push('correct answer');
+      const optA = questionPayloadValue(item, 'optionA', 'option_a', 'optA', 'opt_a', 'a');
+      const optB = questionPayloadValue(item, 'optionB', 'option_b', 'optB', 'opt_b', 'b');
+      const optC = questionPayloadValue(item, 'optionC', 'option_c', 'optC', 'opt_c', 'c');
+      const optD = questionPayloadValue(item, 'optionD', 'option_d', 'optD', 'opt_d', 'd');
+      const correct = questionPayloadValue(item, 'correctAnswer', 'correct_answer', 'correctAnswerLetter', 'answer', 'correct', 'ans');
+
+      if (!optA) missing.push('option A');
+      else item.optionA = optA;
+
+      if (!optB) missing.push('option B');
+      else item.optionB = optB;
+
+      if (!optC) missing.push('option C');
+      else item.optionC = optC;
+
+      if (!optD) missing.push('option D');
+      else item.optionD = optD;
+
+      if (!correct) {
+        missing.push('correct answer');
+      } else {
+        item.correctAnswer = correct.toUpperCase();
+      }
+    }
+
+    const exp = questionPayloadValue(item, 'explanation', 'exp', 'reason', 'solution');
+    if (exp && !item.explanation) {
+      item.explanation = exp;
     }
 
     if (missing.length > 0) {
@@ -3068,6 +3110,20 @@ app.delete("/api/catalog/questions/:id", requireAdminPermission('manage_question
   }
 });
 
+// Clear all courses
+app.post("/api/catalog/courses/clear-all", async (req, res) => {
+  try {
+    const supabase = getSupabaseAdminClient();
+    if (supabase) {
+      const { error } = await supabase.from("courses").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (error) return res.status(500).json({ success: false, error: error.message });
+    }
+    return res.json({ success: true, message: "All courses cleared from database." });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message || "Failed to clear courses." });
+  }
+});
+
 // Clear all questions
 app.post("/api/catalog/questions/clear-all", async (req, res) => {
   try {
@@ -3079,6 +3135,31 @@ app.post("/api/catalog/questions/clear-all", async (req, res) => {
     return res.json({ success: true, message: "All questions cleared from database." });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message || "Failed to clear questions." });
+  }
+});
+
+// Verify catalog counts (courses & questions)
+app.get("/api/catalog/verify-hierarchy", async (req, res) => {
+  try {
+    const supabase = getSupabaseAdminClient();
+    if (!supabase) {
+      return res.json({ success: true, coursesCount: 0, questionsCount: 0, facultiesCount: 0, departmentsCount: 0 });
+    }
+    const [coursesRes, questionsRes, facultiesRes, departmentsRes] = await Promise.all([
+      supabase.from("courses").select("id", { count: "exact", head: true }),
+      supabase.from("questions").select("id", { count: "exact", head: true }),
+      supabase.from("faculties").select("id", { count: "exact", head: true }),
+      supabase.from("departments").select("id", { count: "exact", head: true }),
+    ]);
+    return res.json({
+      success: true,
+      coursesCount: coursesRes.count ?? 0,
+      questionsCount: questionsRes.count ?? 0,
+      facultiesCount: facultiesRes.count ?? 0,
+      departmentsCount: departmentsRes.count ?? 0,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -291,8 +291,14 @@ const DISCIPLINE_PREFIX_MAP: Record<string, string[]> = {
 };
 
 /**
- * Filter courses with hierarchical precision:
- * University -> Faculty -> Department -> Level -> Semester -> Course
+ * Filter courses with strict hierarchical precision:
+ * FACULTY -> DEPARTMENT -> LEVEL -> SEMESTER -> COURSE
+ *
+ * Rules:
+ * - A course from another department or faculty must NEVER appear.
+ * - First Semester and Second Semester courses must NEVER be mixed.
+ * - 'All' respects the parent scope (e.g. All Departments in Faculty of Science only returns Science courses).
+ * - No loose cross-department fallback matching.
  */
 export function getCoursesForHierarchy({
   universityId,
@@ -300,9 +306,9 @@ export function getCoursesForHierarchy({
   departmentId,
   level,
   semester,
-  allCourses,
-  allUniversities = [],
-  includeAllFallback = false,
+  allCourses = [],
+  faculties = [],
+  departments = [],
 }: {
   universityId?: string;
   facultyId?: string;
@@ -311,79 +317,56 @@ export function getCoursesForHierarchy({
   semester?: string;
   allCourses: Course[];
   allUniversities?: University[];
+  faculties?: Faculty[];
+  departments?: Department[];
   includeAllFallback?: boolean;
 }): Course[] {
-  if (!allCourses || allCourses.length === 0) return [];
+  if (!Array.isArray(allCourses) || allCourses.length === 0) return [];
 
-  const selectedUniObj = allUniversities.find((u) => u.id === universityId);
-  const targetLevel = level && level !== 'all' ? normalizeLevel(level) : null;
-  const targetSemester = semester && semester !== 'all' ? normalizeSemester(semester) : null;
-
-  // Resolve department details if available
-  let selectedDeptName = '';
-  if (departmentId && departmentId !== 'all') {
-    const allDepts = getDepartmentsForFaculty(facultyId, universityId);
-    const foundDept = allDepts.find((d) => d.id === departmentId);
-    if (foundDept) {
-      selectedDeptName = foundDept.name;
+  // Determine allowed department IDs for the selected faculty if department is 'all'
+  let facultyDepartmentIds: Set<string> | null = null;
+  if (facultyId && facultyId !== 'all' && (!departmentId || departmentId === 'all') && Array.isArray(departments) && departments.length > 0) {
+    const matchingDepts = departments.filter((d) => d.facultyId === facultyId);
+    if (matchingDepts.length > 0) {
+      facultyDepartmentIds = new Set(matchingDepts.map((d) => d.id));
     }
   }
 
-  // 1. Strict Filter across complete hierarchy
-  const filtered = allCourses.filter((c) => {
-    // University match
+  const targetLevel = level && level !== 'all' ? normalizeLevel(level) : null;
+  const targetSemester = semester && semester !== 'all' ? normalizeSemester(semester) : null;
+
+  return allCourses.filter((c) => {
+    // 1. University Filter (if scoped)
     if (universityId && universityId !== 'all') {
-      const uniMatch =
-        !c.universityId ||
-        c.universityId === universityId ||
-        (selectedUniObj &&
-          c.universityName &&
-          (c.universityName.toLowerCase().includes((selectedUniObj.abbreviation || '').toLowerCase()) ||
-            c.universityName.toLowerCase().includes((selectedUniObj.name || '').toLowerCase())));
-      if (!uniMatch) return false;
-    }
-
-    // Faculty match
-    if (facultyId && facultyId !== 'all') {
-      if (c.facultyId && c.facultyId === facultyId) {
-        // Direct match
-      } else if (c.facultyId && c.facultyId !== facultyId) {
-        // Check if course belongs to the selected university or department
-        if (!selectedDeptName || (c.departmentName && c.departmentName !== selectedDeptName)) {
-          return false;
-        }
-      }
-    }
-
-    // Department match
-    if (departmentId && departmentId !== 'all') {
-      const isDirectDeptIdMatch = c.departmentId === departmentId;
-      const isDeptNameMatch =
-        selectedDeptName &&
-        c.departmentName &&
-        (c.departmentName.toLowerCase().includes(selectedDeptName.toLowerCase()) ||
-          selectedDeptName.toLowerCase().includes(c.departmentName.toLowerCase()));
-
-      let isCodePrefixMatch = false;
-      if (selectedDeptName && c.code) {
-        const expectedPrefixes = DISCIPLINE_PREFIX_MAP[selectedDeptName] || [];
-        const cleanCode = c.code.toUpperCase();
-        isCodePrefixMatch = expectedPrefixes.some((p) => cleanCode.startsWith(p));
-      }
-
-      if (!isDirectDeptIdMatch && !isDeptNameMatch && !isCodePrefixMatch) {
+      if (c.universityId && c.universityId !== universityId) {
         return false;
       }
     }
 
-    // Level match
+    // 2. Faculty Filter (Step 1)
+    if (facultyId && facultyId !== 'all') {
+      if (c.facultyId) {
+        if (c.facultyId !== facultyId) return false;
+      } else if (facultyDepartmentIds && c.departmentId) {
+        if (!facultyDepartmentIds.has(c.departmentId)) return false;
+      }
+    }
+
+    // 3. Department Filter (Step 2)
+    if (departmentId && departmentId !== 'all') {
+      if (c.departmentId && c.departmentId !== departmentId) {
+        return false;
+      }
+    }
+
+    // 4. Level Filter (Step 3)
     if (targetLevel) {
       if (c.level && normalizeLevel(c.level) !== targetLevel) {
         return false;
       }
     }
 
-    // Semester match
+    // 5. Semester Filter (Step 4) - Strictly isolated: 1st and 2nd semester NEVER mix
     if (targetSemester) {
       if (c.semester && normalizeSemester(c.semester) !== targetSemester) {
         return false;
@@ -392,81 +375,95 @@ export function getCoursesForHierarchy({
 
     return true;
   });
+}
 
-  if (filtered.length > 0) return filtered;
+/**
+ * Filter questions with strict hierarchical precision:
+ * FACULTY -> DEPARTMENT -> LEVEL -> SEMESTER -> COURSE -> QUESTIONS
+ */
+export function getQuestionsForHierarchy({
+  universityId,
+  facultyId,
+  departmentId,
+  level,
+  semester,
+  courseId,
+  questions = [],
+  courses = [],
+  departments = [],
+}: {
+  universityId?: string;
+  facultyId?: string;
+  departmentId?: string;
+  level?: string;
+  semester?: string;
+  courseId?: string;
+  questions?: any[];
+  courses?: Course[];
+  faculties?: Faculty[];
+  departments?: Department[];
+}): any[] {
+  if (!Array.isArray(questions) || questions.length === 0) return [];
 
-  // 2. Department & Semester Level Relaxed Filter (matches department and semester across university)
-  if (departmentId && departmentId !== 'all') {
-    const deptRelaxed = allCourses.filter((c) => {
-      // University match
-      if (universityId && universityId !== 'all') {
-        const uniMatch =
-          !c.universityId ||
-          c.universityId === universityId ||
-          (selectedUniObj &&
-            c.universityName &&
-            (c.universityName.toLowerCase().includes((selectedUniObj.abbreviation || '').toLowerCase()) ||
-              c.universityName.toLowerCase().includes((selectedUniObj.name || '').toLowerCase())));
-        if (!uniMatch) return false;
-      }
+  // Build course lookup for fast hierarchical resolution
+  const courseMap = new Map<string, Course>();
+  courses.forEach((c) => courseMap.set(c.id, c));
 
-      // Department name or code prefix match
-      const isDirectDeptIdMatch = c.departmentId === departmentId;
-      const isDeptNameMatch =
-        selectedDeptName &&
-        c.departmentName &&
-        (c.departmentName.toLowerCase().includes(selectedDeptName.toLowerCase()) ||
-          selectedDeptName.toLowerCase().includes(c.departmentName.toLowerCase()));
-
-      let isCodePrefixMatch = false;
-      if (selectedDeptName && c.code) {
-        const expectedPrefixes = DISCIPLINE_PREFIX_MAP[selectedDeptName] || [];
-        const cleanCode = c.code.toUpperCase();
-        isCodePrefixMatch = expectedPrefixes.some((p) => cleanCode.startsWith(p));
-      }
-
-      if (!isDirectDeptIdMatch && !isDeptNameMatch && !isCodePrefixMatch) return false;
-
-      // Check semester if specified
-      if (targetSemester && c.semester && normalizeSemester(c.semester) !== targetSemester) {
-        return false;
-      }
-
-      return true;
-    });
-
-    if (deptRelaxed.length > 0) return deptRelaxed;
+  let facultyDepartmentIds: Set<string> | null = null;
+  if (facultyId && facultyId !== 'all' && (!departmentId || departmentId === 'all') && Array.isArray(departments) && departments.length > 0) {
+    const matchingDepts = departments.filter((d) => d.facultyId === facultyId);
+    if (matchingDepts.length > 0) {
+      facultyDepartmentIds = new Set(matchingDepts.map((d) => d.id));
+    }
   }
 
-  // 3. Graceful Fallback: If strict matching yields 0 and fallback is enabled, return university courses matching semester/level
-  if (includeAllFallback && universityId && universityId !== 'all') {
-    const uniSemesterCourses = allCourses.filter((c) => {
-      const uniMatch =
-        !c.universityId ||
-        c.universityId === universityId ||
-        (selectedUniObj &&
-          c.universityName &&
-          c.universityName.toLowerCase().includes((selectedUniObj.abbreviation || selectedUniObj.name).toLowerCase()));
-      if (!uniMatch) return false;
-      if (targetSemester && c.semester && normalizeSemester(c.semester) !== targetSemester) return false;
-      return true;
-    });
+  const targetLevel = level && level !== 'all' ? normalizeLevel(level) : null;
+  const targetSemester = semester && semester !== 'all' ? normalizeSemester(semester) : null;
 
-    if (uniSemesterCourses.length > 0) return uniSemesterCourses;
+  return questions.filter((q) => {
+    const courseObj = q.courseId ? courseMap.get(q.courseId) : undefined;
+    const qFacultyId = q.facultyId || courseObj?.facultyId;
+    const qDeptId = q.departmentId || courseObj?.departmentId;
+    const qLevel = q.level || courseObj?.level;
+    const qSemester = q.semester || courseObj?.semester;
+    const qUniId = q.universityId || courseObj?.universityId;
 
-    const uniCourses = allCourses.filter((c) => {
-      return (
-        !c.universityId ||
-        c.universityId === universityId ||
-        (selectedUniObj &&
-          c.universityName &&
-          c.universityName.toLowerCase().includes((selectedUniObj.abbreviation || selectedUniObj.name).toLowerCase()))
-      );
-    });
-    if (uniCourses.length > 0) return uniCourses;
-  }
+    // 1. University filter
+    if (universityId && universityId !== 'all') {
+      if (qUniId && qUniId !== universityId) return false;
+    }
 
-  return filtered;
+    // 2. Faculty filter
+    if (facultyId && facultyId !== 'all') {
+      if (qFacultyId) {
+        if (qFacultyId !== facultyId) return false;
+      } else if (facultyDepartmentIds && qDeptId) {
+        if (!facultyDepartmentIds.has(qDeptId)) return false;
+      }
+    }
+
+    // 3. Department filter
+    if (departmentId && departmentId !== 'all') {
+      if (qDeptId && qDeptId !== departmentId) return false;
+    }
+
+    // 4. Level filter
+    if (targetLevel) {
+      if (qLevel && normalizeLevel(qLevel) !== targetLevel) return false;
+    }
+
+    // 5. Semester filter
+    if (targetSemester) {
+      if (qSemester && normalizeSemester(qSemester) !== targetSemester) return false;
+    }
+
+    // 6. Course filter
+    if (courseId && courseId !== 'all') {
+      if (q.courseId && q.courseId !== courseId) return false;
+    }
+
+    return true;
+  });
 }
 
 /**

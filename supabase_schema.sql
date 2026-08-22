@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS public.questions (
   year TEXT,
   topic TEXT,
   question TEXT NOT NULL,
+  question_text TEXT,
   option_a TEXT NOT NULL,
   option_b TEXT NOT NULL,
   option_c TEXT NOT NULL,

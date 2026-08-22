@@ -1116,14 +1116,9 @@ export class StorageService {
               }
             }
             if (Array.isArray(catalog.courses)) {
-              if (catalog.courses.length > 0) {
-                const mapped = catalog.courses.map(fromRow.course);
-                this.memoryCache.set(STORAGE_KEYS.COURSES, mapped);
-                localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(mapped));
-              } else {
-                const local = this.getCourses();
-                if (local.length > 0) syncCoursesToSupabase(local).catch(() => {});
-              }
+              const mapped = catalog.courses.map(fromRow.course);
+              this.memoryCache.set(STORAGE_KEYS.COURSES, mapped);
+              localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify(mapped));
             }
             if (Array.isArray(catalog.departments) && catalog.departments.length > 0) {
               const mapped = catalog.departments.map(fromRow.department);
@@ -1136,16 +1131,9 @@ export class StorageService {
               localStorage.setItem(STORAGE_KEYS.FACULTIES, safeStringify(mapped));
             }
             if (Array.isArray(catalog.questions)) {
-              if (catalog.questions.length > 0) {
-                const mapped = catalog.questions.map(fromRow.question);
-                this.memoryCache.set(STORAGE_KEYS.QUESTIONS, mapped);
-                localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(mapped));
-              } else {
-                const local = this.getQuestions();
-                if (local.length > 0) {
-                  syncQuestionsToSupabase(local).catch(() => {});
-                }
-              }
+              const mapped = catalog.questions.map(fromRow.question);
+              this.memoryCache.set(STORAGE_KEYS.QUESTIONS, mapped);
+              localStorage.setItem(STORAGE_KEYS.QUESTIONS, safeStringify(mapped));
             }
             if (Array.isArray(catalog.materials)) {
               if (catalog.materials.length > 0) {
@@ -1607,11 +1595,8 @@ export class StorageService {
 
   // Questions
   static getQuestions(): Question[] {
-    const list = this.getItem<Question[]>(STORAGE_KEYS.QUESTIONS, SEED_QUESTIONS);
-    if (!list || !Array.isArray(list) || list.length === 0) {
-      return SEED_QUESTIONS;
-    }
-    return list;
+    const list = this.getItem<Question[]>(STORAGE_KEYS.QUESTIONS, []);
+    return Array.isArray(list) ? list : [];
   }
 
   static async clearAllQuestions(): Promise<StorageWriteResult> {
@@ -1742,7 +1727,26 @@ export class StorageService {
   }
 
   static getCourses(): Course[] {
-    return this.getItem<Course[]>(STORAGE_KEYS.COURSES, SEED_COURSES);
+    const list = this.getItem<Course[]>(STORAGE_KEYS.COURSES, []);
+    return Array.isArray(list) ? list : [];
+  }
+
+  static async clearAllCourses(): Promise<StorageWriteResult> {
+    this.memoryCache.set(STORAGE_KEYS.COURSES, []);
+    try {
+      localStorage.setItem(STORAGE_KEYS.COURSES, safeStringify([]));
+    } catch {}
+
+    const result = await checkedFetch('/api/catalog/courses/clear-all', {
+      method: 'POST',
+      headers: this.getAdminAuthHeaders(),
+    });
+
+    try {
+      window.dispatchEvent(new CustomEvent('cbt_storage_change', { detail: { key: STORAGE_KEYS.COURSES, timestamp: Date.now() } }));
+    } catch {}
+
+    return result;
   }
 
   static async saveCourses(data: Course[]): Promise<StorageWriteResult> {
