@@ -204,6 +204,8 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
   const [uploadImagePreview, setUploadImagePreview] = useState<string | null>(null);
   const [isAnalyzingUpload, setIsAnalyzingUpload] = useState(false);
+  const [smartQuestionCount, setSmartQuestionCount] = useState<number>(10);
+  const [smartDifficulty, setSmartDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Medium');
   const [extractedQuestions, setExtractedQuestions] = useState<
     {
       id: string;
@@ -637,8 +639,8 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
         courseCode: selectedCourseObj?.code || 'GST101',
         courseTitle: selectedCourseObj?.title || 'General Course',
         topic: 'General Topic',
-        difficulty: 'Medium',
-        questionCount: 5,
+        difficulty: smartDifficulty,
+        questionCount: smartQuestionCount,
       };
 
       if (uploadMethod === 'file' && uploadedFile) {
@@ -1385,15 +1387,51 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
               </div>
             )}
 
+            {/* Smart Extraction Settings (Count & Difficulty) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">
+                  Extraction Target Count
+                </label>
+                <select
+                  value={smartQuestionCount}
+                  onChange={(e) => setSmartQuestionCount(Number(e.target.value))}
+                  className="w-full bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value={5}>5 Questions</option>
+                  <option value={10}>10 Questions</option>
+                  <option value={15}>15 Questions</option>
+                  <option value={20}>20 Questions</option>
+                  <option value={30}>30 Questions</option>
+                  <option value={50}>50 Questions (Comprehensive)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">
+                  Difficulty Level
+                </label>
+                <select
+                  value={smartDifficulty}
+                  onChange={(e) => setSmartDifficulty(e.target.value as any)}
+                  className="w-full bg-slate-900 border border-slate-800 p-2 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="Easy">Easy (Conceptual / Definitions)</option>
+                  <option value="Medium">Medium (Standard Exam Level)</option>
+                  <option value="Hard">Hard (Advanced / Analytical)</option>
+                </select>
+              </div>
+            </div>
+
             <button
               onClick={handleAnalyzeSmartUpload}
               disabled={isAnalyzingUpload || (uploadMethod === 'file' && !uploadedFile) || (uploadMethod === 'paste' && !pastedText.trim())}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
             >
               {isAnalyzingUpload ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Analyzing & Formatting Questions...</span>
+                  <span>Analyzing & Extracting Questions...</span>
                 </>
               ) : (
                 <>
@@ -1407,34 +1445,51 @@ export const QuestionManagementModule: React.FC<QuestionManagementModuleProps> =
           {/* Extracted Questions Preview Table */}
           {extractedQuestions.length > 0 && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 animate-in fade-in">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h4 className="text-sm font-extrabold text-white">Extracted Questions Review ({extractedQuestions.length} Items)</h4>
                   <p className="text-xs text-slate-400">Review auto-corrected text and duplicate checks before pushing to the review workflow.</p>
                 </div>
-                <button
-                  onClick={handleSaveExtractedQuestions}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center gap-2"
-                >
-                  <CheckCheck className="w-4 h-4" />
-                  <span>Import Extracted Questions</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setExtractedQuestions([])}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl border border-slate-700 transition-colors cursor-pointer"
+                  >
+                    Clear All
+                  </button>
+                  <button
+                    onClick={handleSaveExtractedQuestions}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-lg cursor-pointer flex items-center gap-2 transition-colors"
+                  >
+                    <CheckCheck className="w-4 h-4" />
+                    <span>Import Extracted Questions</span>
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-3">
                 {extractedQuestions.map((eq, i) => (
-                  <div key={eq.id} className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                  <div key={eq.id} className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2 relative group">
                     <div className="flex justify-between items-start gap-3">
                       <span className="font-bold text-amber-400 text-xs">#Q{i + 1}</span>
-                      {eq.isDuplicate ? (
-                        <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 text-[10px] font-bold rounded-full flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" /> Duplicate Detected ({eq.similarityScore}% Match)
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> Ready for Workflow
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {eq.isDuplicate ? (
+                          <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 text-[10px] font-bold rounded-full flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" /> Duplicate Detected ({eq.similarityScore}% Match)
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" /> Ready for Workflow
+                          </span>
+                        )}
+                        <button
+                          onClick={() => setExtractedQuestions((prev) => prev.filter((item) => item.id !== eq.id))}
+                          className="p-1 text-slate-500 hover:text-rose-400 rounded transition-colors"
+                          title="Remove this question"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
