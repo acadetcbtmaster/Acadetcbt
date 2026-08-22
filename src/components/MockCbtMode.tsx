@@ -1,8 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import confetti from 'canvas-confetti';
-import { UserProfile, Question, University, Course, TestSessionResult, SEED_QUESTIONS } from '../types';
-import { selectRandomQuestions } from '../utils/questionRandomizer';
-import { ACADEMIC_LEVELS, ACADEMIC_SEMESTERS, normalizeLevel, normalizeSemester } from '../utils/academicStructure';
+import { UserProfile, Question, University, Faculty, Department, Course, TestSessionResult, SEED_QUESTIONS } from '../types';
+import { selectRandomQuestions, shuffleArray } from '../utils/questionRandomizer';
+import {
+  ACADEMIC_LEVELS,
+  ACADEMIC_SEMESTERS,
+  getFacultiesForUniversity,
+  getDepartmentsForFaculty,
+  getCoursesForHierarchy,
+  normalizeLevel,
+  normalizeSemester,
+} from '../utils/academicStructure';
+import { AcademicHierarchySelector, AcademicHierarchyValues } from './common/AcademicHierarchySelector';
 import { CbtResultsView } from './CbtResultsView';
 import {
   Clock,
@@ -17,13 +26,18 @@ import {
   Sliders,
   Crown,
   X,
-  ArrowLeft
+  ArrowLeft,
+  GraduationCap,
+  Layers,
+  Building2,
 } from 'lucide-react';
 
 interface MockCbtModeProps {
   user: UserProfile;
   questions: Question[];
   universities: University[];
+  faculties?: Faculty[];
+  departments?: Department[];
   courses: Course[];
   onSaveResult: (result: TestSessionResult) => void;
   onOpenSubscribe: () => void;
@@ -35,6 +49,8 @@ export const MockCbtMode: React.FC<MockCbtModeProps> = ({
   user,
   questions,
   universities,
+  faculties = [],
+  departments = [],
   courses,
   onSaveResult,
   onOpenSubscribe,
@@ -44,46 +60,55 @@ export const MockCbtMode: React.FC<MockCbtModeProps> = ({
   // Step: 'config' | 'active' | 'result'
   const [step, setStep] = useState<'config' | 'active' | 'result'>('config');
 
-  // Config options (University -> Level -> Semester -> Course)
-  const [selectedUniId, setSelectedUniId] = useState<string>(universities[0]?.id || '');
-  const [selectedLevel, setSelectedLevel] = useState<string>('100 Level');
-  const [selectedSemester, setSelectedSemester] = useState<string>('First Semester');
-  const [selectedCourseId, setSelectedCourseId] = useState<string>(courses[0]?.id || '');
+  // Academic Hierarchy Flow: University -> Faculty -> Department -> Level -> Semester -> Course
+  const initialUniId = universities[0]?.id || 'uni-ful';
+  const initialFaculties = getFacultiesForUniversity(initialUniId, faculties);
+  const initialFacultyId = initialFaculties[0]?.id || '';
+  const initialDepts = getDepartmentsForFaculty(initialFacultyId, initialUniId, departments, initialFaculties);
+  const initialDeptId = initialDepts[0]?.id || '';
+
+  const [hierarchyValues, setHierarchyValues] = useState<AcademicHierarchyValues>({
+    universityId: initialUniId,
+    facultyId: initialFacultyId,
+    departmentId: initialDeptId,
+    level: '100 Level',
+    semester: 'First Semester',
+    courseId: courses[0]?.id || '',
+  });
+
+  const selectedUniId = hierarchyValues.universityId;
+  const selectedFacultyId = hierarchyValues.facultyId;
+  const selectedDeptId = hierarchyValues.departmentId;
+  const selectedLevel = hierarchyValues.level;
+  const selectedSemester = hierarchyValues.semester;
+  const selectedCourseId = hierarchyValues.courseId;
+
   const [timeLimitMinutes, setTimeLimitMinutes] = useState<number>(15);
   const [questionCount, setQuestionCount] = useState<number | 'unlimited'>(10);
 
-  // Filter available courses strictly by selected University -> Level -> Semester
-  const selectedUni = universities.find((u) => u.id === selectedUniId);
-  const availableCourses = React.useMemo(() => {
-    return courses.filter((c) => {
-      // 1. University match
-      const uniMatches = !c.universityId || c.universityId === selectedUniId || 
-        (selectedUni && c.universityName && c.universityName.toLowerCase().includes((selectedUni.abbreviation || selectedUni.name).toLowerCase()));
-      if (!uniMatches) return false;
-
-      // 2. Level match
-      if (c.level) {
-        if (normalizeLevel(c.level) !== normalizeLevel(selectedLevel)) return false;
-      }
-
-      // 3. Semester match
-      if (c.semester) {
-        if (normalizeSemester(c.semester) !== normalizeSemester(selectedSemester)) return false;
-      }
-
-      return true;
+  // Resolve courses strictly using hierarchy
+  const availableCourses = useMemo(() => {
+    return getCoursesForHierarchy({
+      universityId: selectedUniId,
+      facultyId: selectedFacultyId,
+      departmentId: selectedDeptId,
+      level: selectedLevel,
+      semester: selectedSemester,
+      allCourses: courses,
+      allUniversities: universities,
+      includeAllFallback: true,
     });
-  }, [courses, selectedUniId, selectedUni, selectedLevel, selectedSemester]);
+  }, [selectedUniId, selectedFacultyId, selectedDeptId, selectedLevel, selectedSemester, courses, universities]);
 
   useEffect(() => {
     if (availableCourses.length > 0) {
       if (!availableCourses.some((c) => c.id === selectedCourseId)) {
-        setSelectedCourseId(availableCourses[0].id);
+        setHierarchyValues((prev) => ({ ...prev, courseId: availableCourses[0].id }));
       }
     } else {
-      setSelectedCourseId('');
+      setHierarchyValues((prev) => ({ ...prev, courseId: '' }));
     }
-  }, [selectedUniId, selectedLevel, selectedSemester, availableCourses]);
+  }, [availableCourses, selectedCourseId]);
 
   // Exam session state
   const [examQuestions, setExamQuestions] = useState<Question[]>([]);
@@ -124,11 +149,14 @@ export const MockCbtMode: React.FC<MockCbtModeProps> = ({
       finalQuestions = fallback.selected.length > 0 ? fallback.selected : SEED_QUESTIONS.slice(0, typeof targetCount === 'number' ? targetCount : 10);
     }
 
-    setExamQuestions(finalQuestions);
+    // Always shuffle questions fresh on start
+    const shuffledExamQuestions = shuffleArray(finalQuestions);
+
+    setExamQuestions(shuffledExamQuestions);
     setCurrentIndex(0);
     setUserAnswers({});
     setMarkedForReview([]);
-    setSecondsRemaining(timeLimitMinutes * 60);
+    setSecondsRemaining(Math.max(1, timeLimitMinutes) * 60);
     setStep('active');
   };
 
@@ -365,86 +393,56 @@ export const MockCbtMode: React.FC<MockCbtModeProps> = ({
             </div>
           </div>
 
+          {/* Academic Hierarchy 6-Step Cascading Flow */}
+          <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80">
+            <AcademicHierarchySelector
+              universities={universities}
+              faculties={faculties}
+              departments={departments}
+              courses={courses}
+              values={hierarchyValues}
+              onChange={(newVals) => {
+                setHierarchyValues(newVals);
+              }}
+              layout="grid-2"
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            
-            {/* 1. University Selector */}
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">1. Select University</label>
-              <select
-                value={selectedUniId}
-                onChange={(e) => setSelectedUniId(e.target.value)}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500"
-              >
-                {universities.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 2. Level Selector */}
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">2. Select Level</label>
-              <select
-                value={selectedLevel}
-                onChange={(e) => setSelectedLevel(e.target.value)}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500 font-medium"
-              >
-                {ACADEMIC_LEVELS.map((lvl) => (
-                  <option key={lvl} value={lvl}>{lvl}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 3. Semester Selector */}
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">3. Select Semester</label>
-              <select
-                value={selectedSemester}
-                onChange={(e) => setSelectedSemester(e.target.value)}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500 font-medium"
-              >
-                {ACADEMIC_SEMESTERS.map((sem) => (
-                  <option key={sem} value={sem}>{sem}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 4. Course Selector */}
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">4. Select Course</label>
-              <select
-                value={selectedCourseId}
-                onChange={(e) => setSelectedCourseId(e.target.value)}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500 font-medium"
-                disabled={availableCourses.length === 0}
-              >
-                {availableCourses.length === 0 ? (
-                  <option value="">No courses available for selected Level & Semester</option>
-                ) : (
-                  availableCourses.map((c) => (
-                    <option key={c.id} value={c.id}>{c.code}: {c.title}</option>
-                  ))
-                )}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">Exam Duration</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[15, 30, 45].map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setTimeLimitMinutes(m)}
-                    className={`py-2.5 text-xs font-semibold rounded-xl border transition-all ${
-                      timeLimitMinutes === m
-                        ? 'bg-emerald-600 text-white border-emerald-500'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                    }`}
-                  >
-                    {m} Mins
-                  </button>
-                ))}
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">Exam Duration (Editable)</label>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={300}
+                    value={timeLimitMinutes || ''}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setTimeLimitMinutes(isNaN(val) ? 1 : Math.max(1, Math.min(300, val)));
+                    }}
+                    className="w-24 p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs font-bold text-white text-center focus:border-emerald-500 focus:outline-none"
+                    placeholder="Minutes"
+                  />
+                  <span className="text-xs text-slate-300 font-semibold">Minutes</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[10, 15, 30, 45, 60, 90, 120, 180].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setTimeLimitMinutes(m)}
+                      className={`py-1.5 text-[11px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                        timeLimitMinutes === m
+                          ? 'bg-emerald-600 text-white border-emerald-500'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                      }`}
+                    >
+                      {m}m
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

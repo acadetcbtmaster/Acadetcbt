@@ -17,7 +17,16 @@ import {
 } from '../types';
 import { StorageService, safeStringify, safeClone } from '../services/storage';
 import { ApiClient } from '../services/apiClient';
-import { ACADEMIC_LEVELS, ACADEMIC_SEMESTERS } from '../utils/academicStructure';
+import {
+  ACADEMIC_LEVELS,
+  ACADEMIC_SEMESTERS,
+  getFacultiesForUniversity,
+  getDepartmentsForFaculty,
+  getCoursesForHierarchy,
+  normalizeLevel,
+  normalizeSemester,
+  formatAcademicBreadcrumb,
+} from '../utils/academicStructure';
 import { AcademicHierarchySelector, AcademicHierarchyValues } from './common/AcademicHierarchySelector';
 import { QuestionManagementModule } from './admin/QuestionManagementModule';
 import { StudyMaterialsModule } from './admin/StudyMaterialsModule';
@@ -99,6 +108,7 @@ import {
   UserMinus,
   UserPlus,
   ShieldAlert,
+  Sliders,
   ShieldCheck,
   FileUp,
   ChevronDown,
@@ -334,18 +344,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [studentUniFilter, setStudentUniFilter] = useState('');
   const [studentStatusFilter, setStudentStatusFilter] = useState<'all' | 'premium' | 'online' | 'new_today' | 'suspended'>('all');
 
-  // Course Management State
-  const [courseSelectedUni, setCourseSelectedUni] = useState<string>('uni-ful');
-  const [newCourseCode, setNewCourseCode] = useState('');
-  const [newCourseTitle, setNewCourseTitle] = useState('');
-  const [newCourseLevel, setNewCourseLevel] = useState('100 Level');
-  const [newCourseSemester, setNewCourseSemester] = useState('First Semester');
-  const [newCourseModalOpen, setNewCourseModalOpen] = useState(false);
+  // Course Management State with Complete Hierarchy Support
+  const [courseUniFilter, setCourseUniFilter] = useState<string>('all');
+  const [courseFacultyFilter, setCourseFacultyFilter] = useState<string>('all');
+  const [courseDeptFilter, setCourseDeptFilter] = useState<string>('all');
+  const [courseLevelFilter, setCourseLevelFilter] = useState<string>('all');
+  const [courseSemesterFilter, setCourseSemesterFilter] = useState<string>('all');
   const [courseSearch, setCourseSearch] = useState('');
   const [courseStatusFilter, setCourseStatusFilter] = useState<'all' | 'active' | 'disabled'>('all');
-  const [courseUniFilter, setCourseUniFilter] = useState<string>('');
+
+  // Add New Course 6-Step Flow State
+  const [newCourseUniId, setNewCourseUniId] = useState<string>(universities[0]?.id || 'uni-ful');
+  const [newCourseFacultyId, setNewCourseFacultyId] = useState<string>('');
+  const [newCourseDeptId, setNewCourseDeptId] = useState<string>('');
+  const [newCourseLevel, setNewCourseLevel] = useState<string>('100 Level');
+  const [newCourseSemester, setNewCourseSemester] = useState<string>('First Semester');
+  const [newCourseCode, setNewCourseCode] = useState('');
+  const [newCourseTitle, setNewCourseTitle] = useState('');
+  const [newCourseModalOpen, setNewCourseModalOpen] = useState(false);
+
+  // Edit / View Course Modal State
   const [selectedCourseDetail, setSelectedCourseDetail] = useState<any | null>(null);
-  const [editingCourse, setEditingCourse] = useState<any | null>(null);
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [editCourseUniId, setEditCourseUniId] = useState<string>('');
+  const [editCourseFacultyId, setEditCourseFacultyId] = useState<string>('');
+  const [editCourseDeptId, setEditCourseDeptId] = useState<string>('');
+  const [editCourseLevel, setEditCourseLevel] = useState<string>('100 Level');
+  const [editCourseSemester, setEditCourseSemester] = useState<string>('First Semester');
+  const [editCourseCode, setEditCourseCode] = useState<string>('');
+  const [editCourseTitle, setEditCourseTitle] = useState<string>('');
   const [courseDependencyError, setCourseDependencyError] = useState<string | null>(null);
 
   // University Management State
@@ -581,27 +608,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setNewUniLocation('');
   };
 
-  // Add Course Handler
+  // Add Course Handler with 6-Step Academic Hierarchy Flow
   const handleAddCourseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCourseCode.trim() || !newCourseTitle.trim()) return;
 
-    const selectedUniObj = universities.find((u) => u.id === courseSelectedUni) || universities[0];
-    const uniId = selectedUniObj?.id || courseSelectedUni || 'uni-ful';
+    const selectedUniObj = universities.find((u) => u.id === newCourseUniId) || universities[0];
+    const uniId = selectedUniObj?.id || newCourseUniId || 'uni-ful';
     const uniName = selectedUniObj
       ? `${selectedUniObj.name} (${selectedUniObj.abbreviation})`
       : 'Federal University Lokoja (FUL)';
 
+    const availFaculties = getFacultiesForUniversity(uniId, faculties);
+    const selectedFacObj = availFaculties.find((f) => f.id === newCourseFacultyId) || availFaculties[0];
+    const facId = selectedFacObj?.id || 'fac-1';
+    const facName = selectedFacObj?.name || 'Faculty of Science';
+
+    const availDepts = getDepartmentsForFaculty(facId, uniId, departments, availFaculties);
+    const selectedDeptObj = availDepts.find((d) => d.id === newCourseDeptId) || availDepts[0];
+    const deptId = selectedDeptObj?.id || 'dept-1';
+    const deptName = selectedDeptObj?.name || 'Department of Computer Science';
+
     const newC: Course = {
       id: `crs-${Date.now()}`,
-      departmentId: 'dept-1',
       code: newCourseCode.trim().toUpperCase(),
       title: newCourseTitle.trim(),
+      universityId: uniId,
+      universityName: uniName,
+      facultyId: facId,
+      facultyName: facName,
+      departmentId: deptId,
+      departmentName: deptName,
       level: newCourseLevel,
       semester: newCourseSemester,
       session: '2025/2026',
-      universityId: uniId,
-      universityName: uniName,
       isDisabled: false,
     };
 
@@ -612,6 +652,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setNewCourseCode('');
     setNewCourseTitle('');
     setNewCourseModalOpen(false);
+  };
+
+  // Edit Course Details & Hierarchy Handler
+  const handleEditCourseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCourse || !editCourseCode.trim() || !editCourseTitle.trim()) return;
+
+    const selectedUniObj = universities.find((u) => u.id === editCourseUniId) || universities[0];
+    const uniId = selectedUniObj?.id || editCourseUniId;
+    const uniName = selectedUniObj
+      ? `${selectedUniObj.name} (${selectedUniObj.abbreviation})`
+      : editingCourse.universityName || 'Federal University Lokoja (FUL)';
+
+    const availFaculties = getFacultiesForUniversity(uniId, faculties);
+    const selectedFacObj = availFaculties.find((f) => f.id === editCourseFacultyId) || availFaculties[0];
+    const facId = selectedFacObj?.id || editingCourse.facultyId || 'fac-1';
+    const facName = selectedFacObj?.name || editingCourse.facultyName || 'Faculty of Science';
+
+    const availDepts = getDepartmentsForFaculty(facId, uniId, departments, availFaculties);
+    const selectedDeptObj = availDepts.find((d) => d.id === editCourseDeptId) || availDepts[0];
+    const deptId = selectedDeptObj?.id || editingCourse.departmentId || 'dept-1';
+    const deptName = selectedDeptObj?.name || editingCourse.departmentName || 'Department of Computer Science';
+
+    const updatedCourses = courses.map((c) => {
+      if (c.id === editingCourse.id) {
+        return {
+          ...c,
+          code: editCourseCode.trim().toUpperCase(),
+          title: editCourseTitle.trim(),
+          universityId: uniId,
+          universityName: uniName,
+          facultyId: facId,
+          facultyName: facName,
+          departmentId: deptId,
+          departmentName: deptName,
+          level: editCourseLevel,
+          semester: editCourseSemester,
+        };
+      }
+      return c;
+    });
+
+    onUpdateCourses(updatedCourses);
+    const result = await StorageService.saveCourses(updatedCourses);
+    if (!result.success) alert(`Local copy saved, but the database write failed: ${result.error}`);
+    setEditingCourse(null);
   };
 
   // Re-assign or assign university to course handler
@@ -3332,28 +3418,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          {/* 2. Top Management Bar */}
-          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-            <div className="flex flex-col sm:flex-row items-center gap-3 flex-1">
-              <div className="relative flex-1 w-full">
-                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search courses by code or title (e.g. CSC201)..."
-                  value={courseSearch}
-                  onChange={(e) => setCourseSearch(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                />
+          {/* 2. Hierarchical Filter & Management Bar */}
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <GraduationCap className="w-5 h-5 text-indigo-400" />
+                  Academic Course Management & Hierarchy
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Track, filter, and organize courses strictly through University → Faculty → Department → Level → Semester → Course flow.
+                </p>
               </div>
 
-              {/* Filter by University */}
-              <div className="w-full sm:w-64">
+              <button
+                onClick={() => {
+                  setNewCourseUniId(courseUniFilter !== 'all' ? courseUniFilter : (universities[0]?.id || 'uni-ful'));
+                  setNewCourseModalOpen(true);
+                }}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-600/20 whitespace-nowrap"
+                id="admin-add-course-btn"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add New Course Program</span>
+              </button>
+            </div>
+
+            {/* 5-Tier Cascading Filter Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-2 border-t border-slate-800/80">
+              {/* 1. University Filter */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">1. University</label>
                 <select
                   value={courseUniFilter}
-                  onChange={(e) => setCourseUniFilter(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-amber-400 font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
+                  onChange={(e) => {
+                    setCourseUniFilter(e.target.value);
+                    setCourseFacultyFilter('all');
+                    setCourseDeptFilter('all');
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-amber-400 font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
                 >
-                  <option value="">All Universities ({universities.length})</option>
+                  <option value="all">All Universities ({universities.length})</option>
                   {universities.map((uni: any) => (
                     <option key={uni.id} value={uni.id}>
                       {uni.name} ({uni.abbreviation})
@@ -3361,22 +3466,113 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   ))}
                 </select>
               </div>
+
+              {/* 2. Faculty Filter */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">2. Faculty</label>
+                <select
+                  value={courseFacultyFilter}
+                  onChange={(e) => {
+                    setCourseFacultyFilter(e.target.value);
+                    setCourseDeptFilter('all');
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-indigo-300 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="all">All Faculties</option>
+                  {getFacultiesForUniversity(courseUniFilter !== 'all' ? courseUniFilter : '', faculties).map((fac) => (
+                    <option key={fac.id} value={fac.id}>
+                      {fac.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 3. Department Filter */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">3. Department</label>
+                <select
+                  value={courseDeptFilter}
+                  onChange={(e) => setCourseDeptFilter(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-emerald-300 font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  <option value="all">All Departments</option>
+                  {getDepartmentsForFaculty(
+                    courseFacultyFilter !== 'all' ? courseFacultyFilter : '',
+                    courseUniFilter !== 'all' ? courseUniFilter : '',
+                    departments,
+                    faculties
+                  ).map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 4. Level Filter */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">4. Level</label>
+                <select
+                  value={courseLevelFilter}
+                  onChange={(e) => setCourseLevelFilter(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-slate-200 font-medium focus:outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="all">All Levels</option>
+                  {ACADEMIC_LEVELS.map((lvl) => (
+                    <option key={lvl} value={lvl}>
+                      {lvl}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 5. Semester Filter */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">5. Semester</label>
+                <select
+                  value={courseSemesterFilter}
+                  onChange={(e) => setCourseSemesterFilter(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-slate-200 font-medium focus:outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="all">All Semesters</option>
+                  {ACADEMIC_SEMESTERS.map((sem) => (
+                    <option key={sem} value={sem}>
+                      {sem}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            <button
-              onClick={() => {
-                if (courseUniFilter) {
-                  setCourseSelectedUni(courseUniFilter);
-                } else if (universities.length > 0) {
-                  setCourseSelectedUni(universities[0].id);
-                }
-                setNewCourseModalOpen(true);
-              }}
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-600/20 whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Course for Selected University</span>
-            </button>
+            {/* Search & Quick Reset Bar */}
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+              <div className="relative flex-1 w-full">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search courses by code or title (e.g. CSC201, BIO101)..."
+                  value={courseSearch}
+                  onChange={(e) => setCourseSearch(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {(courseUniFilter !== 'all' || courseFacultyFilter !== 'all' || courseDeptFilter !== 'all' || courseLevelFilter !== 'all' || courseSemesterFilter !== 'all' || courseSearch) && (
+                <button
+                  onClick={() => {
+                    setCourseUniFilter('all');
+                    setCourseFacultyFilter('all');
+                    setCourseDeptFilter('all');
+                    setCourseLevelFilter('all');
+                    setCourseSemesterFilter('all');
+                    setCourseSearch('');
+                  }}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl cursor-pointer whitespace-nowrap"
+                >
+                  Reset Filters
+                </button>
+              )}
+            </div>
           </div>
 
           {/* 3. Course Data Table */}
@@ -3386,7 +3582,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <thead className="bg-slate-950 text-slate-400 uppercase font-semibold text-[10px] tracking-wider border-b border-slate-800">
                   <tr>
                     <th className="p-4">Course Program & Code</th>
-                    <th className="p-4">Assigned University</th>
+                    <th className="p-4">Academic Hierarchy Path</th>
+                    <th className="p-4">Level & Semester</th>
                     <th className="p-4">Total Questions</th>
                     <th className="p-4">Status</th>
                     <th className="p-4 text-right">Actions</th>
@@ -3399,43 +3596,87 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         !courseSearch ||
                         c.code.toLowerCase().includes(courseSearch.toLowerCase()) ||
                         c.title.toLowerCase().includes(courseSearch.toLowerCase());
+                      
                       const matchesStatus =
                         courseStatusFilter === 'all'
                           ? true
                           : courseStatusFilter === 'active'
                           ? !c.isDisabled
                           : !!c.isDisabled;
+
+                      // 1. Uni Filter
                       const matchesUni =
-                        !courseUniFilter ||
+                        courseUniFilter === 'all' ||
                         c.universityId === courseUniFilter ||
-                        (c.universityName && c.universityName.includes(universities.find((u: any) => u.id === courseUniFilter)?.abbreviation || '___'));
-                      return matchesSearch && matchesStatus && matchesUni;
+                        (c.universityName && c.universityName.toLowerCase().includes(
+                          (universities.find((u: any) => u.id === courseUniFilter)?.abbreviation || '').toLowerCase()
+                        ));
+
+                      // 2. Faculty Filter
+                      const matchesFaculty =
+                        courseFacultyFilter === 'all' ||
+                        c.facultyId === courseFacultyFilter ||
+                        (c.facultyName && c.facultyName.toLowerCase().includes(
+                          (faculties.find((f: any) => f.id === courseFacultyFilter)?.name || '').toLowerCase()
+                        ));
+
+                      // 3. Dept Filter
+                      const matchesDept =
+                        courseDeptFilter === 'all' ||
+                        c.departmentId === courseDeptFilter ||
+                        (c.departmentName && c.departmentName.toLowerCase().includes(
+                          (departments.find((d: any) => d.id === courseDeptFilter)?.name || '').toLowerCase()
+                        ));
+
+                      // 4. Level Filter
+                      const matchesLevel =
+                        courseLevelFilter === 'all' ||
+                        !c.level ||
+                        normalizeLevel(c.level) === normalizeLevel(courseLevelFilter);
+
+                      // 5. Semester Filter
+                      const matchesSemester =
+                        courseSemesterFilter === 'all' ||
+                        !c.semester ||
+                        normalizeSemester(c.semester) === normalizeSemester(courseSemesterFilter);
+
+                      return matchesSearch && matchesStatus && matchesUni && matchesFaculty && matchesDept && matchesLevel && matchesSemester;
                     })
                     .map((course: any) => {
-                      const qCount = questions.filter((q: any) => q.courseId === course.id || q.courseId === course.code).length || 8;
+                      const qCount = questions.filter((q: any) => q.courseId === course.id || q.courseId === course.code).length;
                       const assignedUni = universities.find((u: any) => u.id === course.universityId);
 
                       return (
                         <tr key={course.id} className="hover:bg-slate-800/50 transition-colors">
                           <td className="p-4">
                             <p className="font-extrabold text-white text-xs">{course.title}</p>
-                            <p className="text-[10px] font-mono font-bold text-amber-400">{course.code}</p>
+                            <p className="text-[10px] font-mono font-bold text-amber-400 mt-0.5">{course.code}</p>
                           </td>
                           <td className="p-4">
-                            <select
-                              value={course.universityId || (assignedUni?.id || universities[0]?.id || '')}
-                              onChange={(e) => handleAssignUniversityToCourse(course.id, e.target.value)}
-                              className="bg-slate-950 border border-slate-800 text-amber-300 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-amber-500 cursor-pointer max-w-[240px]"
-                              title="Select university to assign to this course"
-                            >
-                              {universities.map((u: any) => (
-                                <option key={u.id} value={u.id}>
-                                  {u.name} ({u.abbreviation})
-                                </option>
-                              ))}
-                            </select>
+                            <div className="space-y-1 max-w-xs">
+                              <span className="inline-block px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 font-bold text-[10px] truncate max-w-full">
+                                {assignedUni ? `${assignedUni.name} (${assignedUni.abbreviation})` : (course.universityName || 'Federal University Lokoja')}
+                              </span>
+                              <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                                <span className="text-indigo-400 font-medium">{course.facultyName || 'Faculty of Science'}</span>
+                                <span className="text-slate-600">›</span>
+                                <span className="text-emerald-400 font-medium">{course.departmentName || 'Computer Science'}</span>
+                              </div>
+                            </div>
                           </td>
-                          <td className="p-4 font-bold text-slate-200">{qCount} Questions</td>
+                          <td className="p-4">
+                            <span className="inline-block px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold text-[10px] mr-1.5">
+                              {course.level || '100 Level'}
+                            </span>
+                            <span className="inline-block px-2 py-0.5 rounded bg-slate-800 text-indigo-300 font-semibold text-[10px]">
+                              {course.semester || 'First Semester'}
+                            </span>
+                          </td>
+                          <td className="p-4 font-bold text-slate-200">
+                            <span className="px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+                              {qCount} Questions
+                            </span>
+                          </td>
                           <td className="p-4">
                             <span
                               className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${
@@ -3447,12 +3688,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               {!course.isDisabled ? 'Active' : 'Disabled'}
                             </span>
                           </td>
-                          <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                          <td className="p-4 text-right space-x-1.5 whitespace-nowrap">
                             <button
-                              onClick={() => setSelectedCourseDetail(course)}
+                              onClick={() => {
+                                setEditingCourse(course);
+                                setEditCourseUniId(course.universityId || universities[0]?.id || 'uni-ful');
+                                setEditCourseFacultyId(course.facultyId || faculties[0]?.id || 'fac-1');
+                                setEditCourseDeptId(course.departmentId || departments[0]?.id || 'dept-1');
+                                setEditCourseLevel(course.level || '100 Level');
+                                setEditCourseSemester(course.semester || 'First Semester');
+                                setEditCourseCode(course.code || '');
+                                setEditCourseTitle(course.title || '');
+                              }}
                               className="px-2.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-300 font-bold rounded-lg cursor-pointer"
                             >
-                              View Details
+                              Edit Hierarchy
+                            </button>
+                            <button
+                              onClick={() => setSelectedCourseDetail(course)}
+                              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg cursor-pointer"
+                            >
+                              Details
                             </button>
                             <button
                               onClick={async () => {
@@ -3504,37 +3760,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <span className="text-[10px] font-bold text-amber-400 uppercase font-mono">{selectedCourseDetail.code}</span>
                     <h3 className="font-extrabold text-white text-base mt-0.5">{selectedCourseDetail.title}</h3>
                   </div>
-                  <button onClick={() => setSelectedCourseDetail(null)} className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-xl">✕</button>
+                  <button onClick={() => setSelectedCourseDetail(null)} className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-xl cursor-pointer">✕</button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                    <span className="text-slate-400 block font-medium mb-1">Assigned University</span>
-                    <select
-                      value={selectedCourseDetail.universityId || universities.find((u: any) => u.name.includes(selectedCourseDetail.universityName || ''))?.id || universities[0]?.id || ''}
-                      onChange={(e) => handleAssignUniversityToCourse(selectedCourseDetail.id, e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 text-amber-300 text-xs font-bold rounded-lg p-1.5 focus:outline-none focus:border-amber-500 cursor-pointer"
-                    >
-                      {universities.map((u: any) => (
-                        <option key={u.id} value={u.id}>
-                          {u.name} ({u.abbreviation})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                    <span className="text-slate-400 block font-medium">Total Questions</span>
-                    <p className="text-xs font-bold text-white mt-0.5">
-                      {questions.filter((q: any) => q.courseId === selectedCourseDetail.id || q.courseId === selectedCourseDetail.code).length} Questions
+                <div className="space-y-3 text-xs">
+                  {/* Complete Academic Breadcrumb Path */}
+                  <div className="p-3.5 bg-slate-950 rounded-xl border border-slate-800">
+                    <span className="text-[11px] text-slate-400 block font-semibold mb-1">Academic Program Flow Hierarchy</span>
+                    <p className="text-xs font-bold text-amber-300">
+                      {formatAcademicBreadcrumb({
+                        universityName: selectedCourseDetail.universityName,
+                        facultyName: selectedCourseDetail.facultyName,
+                        departmentName: selectedCourseDetail.departmentName,
+                        level: selectedCourseDetail.level,
+                        semester: selectedCourseDetail.semester,
+                        courseCode: selectedCourseDetail.code,
+                      })}
                     </p>
                   </div>
-                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                    <span className="text-slate-400 block font-medium">Avg Student Score</span>
-                    <p className="text-xs font-bold text-emerald-400 mt-0.5">74.2%</p>
-                  </div>
-                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                    <span className="text-slate-400 block font-medium">Course Status</span>
-                    <p className="text-xs font-bold text-emerald-400 mt-0.5">Active</p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block font-medium">Assigned University</span>
+                      <p className="text-xs font-bold text-white mt-0.5">
+                        {selectedCourseDetail.universityName || 'Federal University Lokoja'}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block font-medium">Total Questions</span>
+                      <p className="text-xs font-bold text-white mt-0.5">
+                        {questions.filter((q: any) => q.courseId === selectedCourseDetail.id || q.courseId === selectedCourseDetail.code).length} Questions
+                      </p>
+                    </div>
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block font-medium">Level & Semester</span>
+                      <p className="text-xs font-bold text-slate-200 mt-0.5">
+                        {selectedCourseDetail.level || '100 Level'} • {selectedCourseDetail.semester || 'First Semester'}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block font-medium">Course Status</span>
+                      <p className="text-xs font-bold text-emerald-400 mt-0.5">Active</p>
+                    </div>
                   </div>
                 </div>
 
@@ -3588,21 +3855,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-          {/* New Course Modal */}
+          {/* Add New Course Modal (6-Step Flow: University -> Faculty -> Department -> Level -> Semester -> Code & Title) */}
           {newCourseModalOpen && (
-            <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 space-y-4">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-bold text-white text-base">Add New Course</h3>
-                  <button onClick={() => setNewCourseModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
-                </div>
-                <form onSubmit={handleAddCourseSubmit} className="space-y-3">
+            <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+              <div className="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-3xl p-6 sm:p-7 space-y-5 shadow-2xl my-6">
+                <div className="flex justify-between items-center pb-3 border-b border-slate-800">
                   <div>
-                    <label className="text-xs text-slate-300">Select University to Assign Course</label>
+                    <h3 className="font-extrabold text-white text-base flex items-center gap-2">
+                      <Plus className="w-4 h-4 text-emerald-400" />
+                      Add New Course to Academic Hierarchy
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Enforce the exact 6-step academic flow for curriculum tracking.
+                    </p>
+                  </div>
+                  <button onClick={() => setNewCourseModalOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800 cursor-pointer">✕</button>
+                </div>
+
+                <form onSubmit={handleAddCourseSubmit} className="space-y-4">
+                  {/* Live Hierarchy Path Preview */}
+                  <div className="p-3 bg-slate-950 border border-indigo-500/30 rounded-xl">
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-indigo-400 block mb-1">Hierarchy Path Preview</span>
+                    <p className="text-xs font-medium text-slate-200 flex flex-wrap items-center gap-1">
+                      <span className="text-amber-400 font-bold">{universities.find(u => u.id === newCourseUniId)?.name || 'University'}</span>
+                      <span className="text-slate-600">›</span>
+                      <span className="text-indigo-300 font-semibold">{getFacultiesForUniversity(newCourseUniId, faculties).find(f => f.id === newCourseFacultyId)?.name || 'Faculty'}</span>
+                      <span className="text-slate-600">›</span>
+                      <span className="text-emerald-300 font-semibold">{getDepartmentsForFaculty(newCourseFacultyId, newCourseUniId, departments, faculties).find(d => d.id === newCourseDeptId)?.name || 'Department'}</span>
+                      <span className="text-slate-600">›</span>
+                      <span className="text-slate-300">{newCourseLevel}</span>
+                      <span className="text-slate-600">›</span>
+                      <span className="text-slate-300">{newCourseSemester}</span>
+                    </p>
+                  </div>
+
+                  {/* 1. University */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">1. Select University</label>
                     <select
-                      value={courseSelectedUni}
-                      onChange={(e) => setCourseSelectedUni(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-amber-400 font-bold focus:outline-none mt-1 cursor-pointer"
+                      value={newCourseUniId}
+                      onChange={(e) => {
+                        const newUni = e.target.value;
+                        setNewCourseUniId(newUni);
+                        const facs = getFacultiesForUniversity(newUni, faculties);
+                        const facId = facs[0]?.id || '';
+                        setNewCourseFacultyId(facId);
+                        const depts = getDepartmentsForFaculty(facId, newUni, departments, facs);
+                        setNewCourseDeptId(depts[0]?.id || '');
+                      }}
+                      className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-amber-400 font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
                       required
                     >
                       {universities.map((uni: any) => (
@@ -3613,13 +3914,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </select>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  {/* 2. Faculty & 3. Department Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-slate-300">Academic Level</label>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">2. Select Faculty</label>
+                      <select
+                        value={newCourseFacultyId}
+                        onChange={(e) => {
+                          const newFac = e.target.value;
+                          setNewCourseFacultyId(newFac);
+                          const depts = getDepartmentsForFaculty(newFac, newCourseUniId, departments, faculties);
+                          setNewCourseDeptId(depts[0]?.id || '');
+                        }}
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-indigo-300 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        required
+                      >
+                        {getFacultiesForUniversity(newCourseUniId, faculties).map((fac) => (
+                          <option key={fac.id} value={fac.id}>{fac.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">3. Select Department</label>
+                      <select
+                        value={newCourseDeptId}
+                        onChange={(e) => setNewCourseDeptId(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-emerald-300 font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
+                        required
+                      >
+                        {getDepartmentsForFaculty(newCourseFacultyId, newCourseUniId, departments, faculties).map((dept) => (
+                          <option key={dept.id} value={dept.id}>{dept.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 4. Level & 5. Semester Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">4. Academic Level</label>
                       <select
                         value={newCourseLevel}
                         onChange={(e) => setNewCourseLevel(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-slate-200 font-medium focus:outline-none mt-1 cursor-pointer"
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-slate-200 font-medium focus:outline-none focus:border-indigo-500 cursor-pointer"
                         required
                       >
                         {ACADEMIC_LEVELS.map((lvl) => (
@@ -3629,11 +3967,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div>
-                      <label className="text-xs text-slate-300">Semester</label>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">5. Semester</label>
                       <select
                         value={newCourseSemester}
                         onChange={(e) => setNewCourseSemester(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-slate-200 font-medium focus:outline-none mt-1 cursor-pointer"
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-slate-200 font-medium focus:outline-none focus:border-indigo-500 cursor-pointer"
                         required
                       >
                         {ACADEMIC_SEMESTERS.map((sem) => (
@@ -3642,34 +3980,202 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </select>
                     </div>
                   </div>
-                  <div>
-                    <label className="text-xs text-slate-300">Course Code</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. CSC201"
-                      value={newCourseCode}
-                      onChange={(e) => setNewCourseCode(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white focus:outline-none mt-1"
-                      required
-                    />
+
+                  {/* 6. Course Code & Title Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-1">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">6a. Course Code</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. CSC201"
+                        value={newCourseCode}
+                        onChange={(e) => setNewCourseCode(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-indigo-500"
+                        required
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">6b. Course Title</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Data Structures and Algorithms"
+                        value={newCourseTitle}
+                        onChange={(e) => setNewCourseTitle(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                        required
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-xs text-slate-300">Course Title</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Data Structures and Algorithms"
-                      value={newCourseTitle}
-                      onChange={(e) => setNewCourseTitle(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white focus:outline-none mt-1"
-                      required
-                    />
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewCourseModalOpen(false)}
+                      className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 cursor-pointer"
+                    >
+                      Save Course to Hierarchy
+                    </button>
                   </div>
-                  <button
-                    type="submit"
-                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
-                  >
-                    Save Course Program
-                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Course Hierarchy Modal */}
+          {editingCourse && (
+            <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+              <div className="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-3xl p-6 sm:p-7 space-y-5 shadow-2xl my-6">
+                <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+                  <div>
+                    <h3 className="font-extrabold text-white text-base flex items-center gap-2">
+                      <Sliders className="w-4 h-4 text-indigo-400" />
+                      Edit Course & Hierarchy Flow
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Re-assign university, faculty, department, level, semester, code, or title.
+                    </p>
+                  </div>
+                  <button onClick={() => setEditingCourse(null)} className="text-slate-400 hover:text-white p-1 rounded-lg bg-slate-800 cursor-pointer">✕</button>
+                </div>
+
+                <form onSubmit={handleEditCourseSubmit} className="space-y-4">
+                  {/* 1. University */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">1. University</label>
+                    <select
+                      value={editCourseUniId}
+                      onChange={(e) => {
+                        const newUni = e.target.value;
+                        setEditCourseUniId(newUni);
+                        const facs = getFacultiesForUniversity(newUni, faculties);
+                        const facId = facs[0]?.id || '';
+                        setEditCourseFacultyId(facId);
+                        const depts = getDepartmentsForFaculty(facId, newUni, departments, facs);
+                        setEditCourseDeptId(depts[0]?.id || '');
+                      }}
+                      className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-amber-400 font-bold focus:outline-none focus:border-amber-500 cursor-pointer"
+                      required
+                    >
+                      {universities.map((uni: any) => (
+                        <option key={uni.id} value={uni.id}>
+                          {uni.name} ({uni.abbreviation})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 2. Faculty & 3. Department Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">2. Faculty</label>
+                      <select
+                        value={editCourseFacultyId}
+                        onChange={(e) => {
+                          const newFac = e.target.value;
+                          setEditCourseFacultyId(newFac);
+                          const depts = getDepartmentsForFaculty(newFac, editCourseUniId, departments, faculties);
+                          setEditCourseDeptId(depts[0]?.id || '');
+                        }}
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-indigo-300 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        required
+                      >
+                        {getFacultiesForUniversity(editCourseUniId, faculties).map((fac) => (
+                          <option key={fac.id} value={fac.id}>{fac.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">3. Department</label>
+                      <select
+                        value={editCourseDeptId}
+                        onChange={(e) => setEditCourseDeptId(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-emerald-300 font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
+                        required
+                      >
+                        {getDepartmentsForFaculty(editCourseFacultyId, editCourseUniId, departments, faculties).map((dept) => (
+                          <option key={dept.id} value={dept.id}>{dept.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 4. Level & 5. Semester */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">4. Academic Level</label>
+                      <select
+                        value={editCourseLevel}
+                        onChange={(e) => setEditCourseLevel(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-slate-200 font-medium focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        required
+                      >
+                        {ACADEMIC_LEVELS.map((lvl) => (
+                          <option key={lvl} value={lvl}>{lvl}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">5. Semester</label>
+                      <select
+                        value={editCourseSemester}
+                        onChange={(e) => setEditCourseSemester(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-slate-200 font-medium focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        required
+                      >
+                        {ACADEMIC_SEMESTERS.map((sem) => (
+                          <option key={sem} value={sem}>{sem}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 6. Code & Title */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-1">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Course Code</label>
+                      <input
+                        type="text"
+                        value={editCourseCode}
+                        onChange={(e) => setEditCourseCode(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-indigo-500"
+                        required
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Course Title</label>
+                      <input
+                        type="text"
+                        value={editCourseTitle}
+                        onChange={(e) => setEditCourseTitle(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingCourse(null)}
+                      className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+                    >
+                      Update Course & Hierarchy
+                    </button>
+                  </div>
                 </form>
               </div>
             </div>

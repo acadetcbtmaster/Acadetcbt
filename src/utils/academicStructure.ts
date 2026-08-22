@@ -295,11 +295,17 @@ export function getCoursesForHierarchy({
       if (!uniMatch) return false;
     }
 
+    // Faculty match
+    if (facultyId && facultyId !== 'all') {
+      if (c.facultyId && c.facultyId !== facultyId) {
+        return false;
+      }
+    }
+
     // Department match
     if (departmentId && departmentId !== 'all') {
       if (c.departmentId && c.departmentId !== departmentId) {
-        // Also check if department name appears in course title or code
-        // If course has specific department assigned, honor it
+        return false;
       }
     }
 

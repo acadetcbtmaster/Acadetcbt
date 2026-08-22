@@ -635,6 +635,8 @@ export default function App() {
             user={currentUser}
             questions={questions}
             universities={universities}
+            faculties={faculties}
+            departments={departments}
             courses={courses}
             topics={topics}
             onUpdateUser={handleUpdateUser}
@@ -650,6 +652,8 @@ export default function App() {
             user={currentUser}
             questions={questions}
             universities={universities}
+            faculties={faculties}
+            departments={departments}
             courses={courses}
             onSaveResult={handleSaveResult}
             onOpenSubscribe={() => setSubModalOpen(true)}

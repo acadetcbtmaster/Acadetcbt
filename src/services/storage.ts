@@ -1208,11 +1208,15 @@ export class StorageService {
               { data: sbCourses },
               { data: sbQuestions },
               { data: sbPlans },
+              { data: sbUsers },
+              { data: sbPayments },
             ] = await Promise.all([
               supabase.from('universities').select('*').limit(200),
               supabase.from('courses').select('*').limit(500),
               supabase.from('questions').select('*').limit(2000),
               supabase.from('subscription_plans').select('*').limit(50),
+              supabase.from('users').select('*').limit(1000),
+              supabase.from('payments').select('*').limit(500),
             ]);
 
             if (sbUnis && sbUnis.length > 0) {
@@ -1240,6 +1244,33 @@ export class StorageService {
               const mappedPlans = sbPlans.map(fromRow.plan);
               this.memoryCache.set(STORAGE_KEYS.PLANS, mappedPlans);
               localStorage.setItem(STORAGE_KEYS.PLANS, safeStringify(mappedPlans));
+              syncedSuccessfully = true;
+            }
+
+            if (sbUsers && sbUsers.length > 0) {
+              const remoteMapped = sbUsers.map(fromRow.user);
+              const currentUsers = this.getUsers();
+              const mergedMap = new Map<string, UserProfile>();
+              currentUsers.forEach((u) => {
+                const key = u.id || u.email;
+                if (key) mergedMap.set(key, u);
+              });
+              remoteMapped.forEach((u) => {
+                const key = u.id || u.email;
+                if (key) mergedMap.set(key, u);
+              });
+              const merged = Array.from(mergedMap.values());
+              if (merged.length > 0) {
+                this.memoryCache.set(STORAGE_KEYS.USERS, merged);
+                localStorage.setItem(STORAGE_KEYS.USERS, safeStringify(merged));
+                syncedSuccessfully = true;
+              }
+            }
+
+            if (sbPayments && sbPayments.length > 0) {
+              const mappedPayments = sbPayments.map(fromRow.payment);
+              this.memoryCache.set(STORAGE_KEYS.TRANSACTIONS, mappedPayments);
+              localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeStringify(mappedPayments));
               syncedSuccessfully = true;
             }
           }

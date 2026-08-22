@@ -1,10 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import confetti from 'canvas-confetti';
-import { UserProfile, Question, University, Course, Topic, TestSessionResult, SEED_QUESTIONS } from '../types';
-import { selectRandomQuestions } from '../utils/questionRandomizer';
+import { UserProfile, Question, University, Faculty, Department, Course, Topic, TestSessionResult, SEED_QUESTIONS } from '../types';
+import { selectRandomQuestions, shuffleArray } from '../utils/questionRandomizer';
 import { safeStringify } from '../services/storage';
 import { ApiClient } from '../services/apiClient';
-import { ACADEMIC_LEVELS, ACADEMIC_SEMESTERS, normalizeLevel, normalizeSemester } from '../utils/academicStructure';
+import {
+  ACADEMIC_LEVELS,
+  ACADEMIC_SEMESTERS,
+  getFacultiesForUniversity,
+  getDepartmentsForFaculty,
+  getCoursesForHierarchy,
+  normalizeLevel,
+  normalizeSemester,
+  formatAcademicBreadcrumb,
+} from '../utils/academicStructure';
+import { AcademicHierarchySelector, AcademicHierarchyValues } from './common/AcademicHierarchySelector';
 import { CbtResultsView } from './CbtResultsView';
 import {
   BookOpen,
@@ -25,13 +35,19 @@ import {
   Grid,
   BarChart2,
   HelpCircle,
-  AlertTriangle
+  AlertTriangle,
+  Building2,
+  Layers,
+  GraduationCap,
+  Calendar,
 } from 'lucide-react';
 
 interface PracticeModeProps {
   user: UserProfile;
   questions: Question[];
   universities: University[];
+  faculties?: Faculty[];
+  departments?: Department[];
   courses: Course[];
   topics: Topic[];
   onUpdateUser: (updatedUser: UserProfile) => void;
@@ -45,6 +61,8 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
   user,
   questions,
   universities,
+  faculties = [],
+  departments = [],
   courses,
   topics,
   onUpdateUser,
@@ -56,11 +74,29 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
   // Step: 'config' | 'active' | 'completed'
   const [step, setStep] = useState<'config' | 'active' | 'completed'>('config');
 
-  // Configuration options (University -> Level -> Semester -> Course)
-  const [selectedUniId, setSelectedUniId] = useState<string>(universities[0]?.id || '');
-  const [selectedLevel, setSelectedLevel] = useState<string>('100 Level');
-  const [selectedSemester, setSelectedSemester] = useState<string>('First Semester');
-  const [selectedCourseId, setSelectedCourseId] = useState<string>(courses[0]?.id || '');
+  // Academic Hierarchy Flow: University -> Faculty -> Department -> Level -> Semester -> Course
+  const initialUniId = universities[0]?.id || 'uni-ful';
+  const initialFaculties = getFacultiesForUniversity(initialUniId, faculties);
+  const initialFacultyId = initialFaculties[0]?.id || '';
+  const initialDepts = getDepartmentsForFaculty(initialFacultyId, initialUniId, departments, initialFaculties);
+  const initialDeptId = initialDepts[0]?.id || '';
+
+  const [hierarchyValues, setHierarchyValues] = useState<AcademicHierarchyValues>({
+    universityId: initialUniId,
+    facultyId: initialFacultyId,
+    departmentId: initialDeptId,
+    level: '100 Level',
+    semester: 'First Semester',
+    courseId: courses[0]?.id || '',
+  });
+
+  const selectedUniId = hierarchyValues.universityId;
+  const selectedFacultyId = hierarchyValues.facultyId;
+  const selectedDeptId = hierarchyValues.departmentId;
+  const selectedLevel = hierarchyValues.level;
+  const selectedSemester = hierarchyValues.semester;
+  const selectedCourseId = hierarchyValues.courseId;
+
   const [selectedTopicId, setSelectedTopicId] = useState<string>('all');
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>('all');
   const [questionLimit, setQuestionLimit] = useState<number | 'unlimited'>(10);
@@ -91,38 +127,29 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
   // Completed result storage for Mock CBT analysis
   const [latestResult, setLatestResult] = useState<TestSessionResult | null>(null);
 
-  // Filter available courses strictly by selected University -> Level -> Semester
-  const selectedUni = universities.find((u) => u.id === selectedUniId);
-  const availableCourses = React.useMemo(() => {
-    return courses.filter((c) => {
-      // 1. University match
-      const uniMatches = !c.universityId || c.universityId === selectedUniId || 
-        (selectedUni && c.universityName && c.universityName.toLowerCase().includes((selectedUni.abbreviation || selectedUni.name).toLowerCase()));
-      if (!uniMatches) return false;
-
-      // 2. Level match
-      if (c.level) {
-        if (normalizeLevel(c.level) !== normalizeLevel(selectedLevel)) return false;
-      }
-
-      // 3. Semester match
-      if (c.semester) {
-        if (normalizeSemester(c.semester) !== normalizeSemester(selectedSemester)) return false;
-      }
-
-      return true;
+  // Resolve courses using strict hierarchy
+  const availableCourses = useMemo(() => {
+    return getCoursesForHierarchy({
+      universityId: selectedUniId,
+      facultyId: selectedFacultyId,
+      departmentId: selectedDeptId,
+      level: selectedLevel,
+      semester: selectedSemester,
+      allCourses: courses,
+      allUniversities: universities,
+      includeAllFallback: true,
     });
-  }, [courses, selectedUniId, selectedUni, selectedLevel, selectedSemester]);
+  }, [selectedUniId, selectedFacultyId, selectedDeptId, selectedLevel, selectedSemester, courses, universities]);
 
   React.useEffect(() => {
     if (availableCourses.length > 0) {
       if (!availableCourses.some((c) => c.id === selectedCourseId)) {
-        setSelectedCourseId(availableCourses[0].id);
+        setHierarchyValues((prev) => ({ ...prev, courseId: availableCourses[0].id }));
       }
     } else {
-      setSelectedCourseId('');
+      setHierarchyValues((prev) => ({ ...prev, courseId: '' }));
     }
-  }, [selectedUniId, selectedLevel, selectedSemester, availableCourses]);
+  }, [availableCourses, selectedCourseId]);
 
   const availableTopics = topics.filter((t) => t.courseId === selectedCourseId);
 
@@ -187,13 +214,16 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
       finalQuestions = fallback.selected.length > 0 ? fallback.selected : SEED_QUESTIONS.slice(0, typeof targetCount === 'number' ? targetCount : 10);
     }
 
-    setActiveQuestions(finalQuestions);
+    // Always shuffle questions each time a user starts practice/CBT mode
+    const shuffledQuestions = shuffleArray(finalQuestions);
+
+    setActiveQuestions(shuffledQuestions);
     setCurrentIndex(0);
     setUserAnswers({});
     setMarkedForReview([]);
     setAiExplanations({});
     setSessionStartTime(Date.now());
-    setSecondsRemaining(timeLimitMinutes * 60);
+    setSecondsRemaining(Math.max(1, timeLimitMinutes) * 60);
     setShowPalette(false);
     setCalculatorOpen(false);
     setConfirmFinishOpen(false);
@@ -207,7 +237,6 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
   // Answer Question
   const handleSelectAnswer = (option: 'A' | 'B' | 'C' | 'D') => {
     if (!currentQ) return;
-    if (practiceEngineMode === 'interactive' && selectedAns) return; // Answered already in interactive mode
 
     if (!isPremium && questionsAttempted >= freeLimit) {
       setShowPaywallModal(true);
@@ -617,79 +646,30 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
             </div>
           </div>
 
+          {/* Academic Hierarchy 6-Step Cascading Flow */}
+          <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80">
+            <AcademicHierarchySelector
+              universities={universities}
+              faculties={faculties}
+              departments={departments}
+              courses={courses}
+              values={hierarchyValues}
+              onChange={(newVals) => {
+                setHierarchyValues(newVals);
+                setSelectedTopicId('all');
+              }}
+              layout="grid-2"
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            
-            {/* 1. University Selector */}
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">1. Select University</label>
-              <select
-                value={selectedUniId}
-                onChange={(e) => setSelectedUniId(e.target.value)}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500"
-              >
-                {universities.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 2. Level Selector */}
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">2. Select Level</label>
-              <select
-                value={selectedLevel}
-                onChange={(e) => setSelectedLevel(e.target.value)}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500 font-medium"
-              >
-                {ACADEMIC_LEVELS.map((lvl) => (
-                  <option key={lvl} value={lvl}>{lvl}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 3. Semester Selector */}
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">3. Select Semester</label>
-              <select
-                value={selectedSemester}
-                onChange={(e) => setSelectedSemester(e.target.value)}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500 font-medium"
-              >
-                {ACADEMIC_SEMESTERS.map((sem) => (
-                  <option key={sem} value={sem}>{sem}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* 4. Course Selector */}
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">4. Select Course</label>
-              <select
-                value={selectedCourseId}
-                onChange={(e) => {
-                  setSelectedCourseId(e.target.value);
-                  setSelectedTopicId('all');
-                }}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500"
-                disabled={availableCourses.length === 0}
-              >
-                {availableCourses.length === 0 ? (
-                  <option value="">No courses found for selected Level & Semester</option>
-                ) : (
-                  availableCourses.map((c) => (
-                    <option key={c.id} value={c.id}>{c.code}: {c.title}</option>
-                  ))
-                )}
-              </select>
-            </div>
-
             {/* Topic Selector */}
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">Topic</label>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">Topic Focus</label>
               <select
                 value={selectedTopicId}
                 onChange={(e) => setSelectedTopicId(e.target.value)}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500"
+                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:border-indigo-500 cursor-pointer"
               >
                 <option value="all">All Topics in Course</option>
                 {availableTopics.map((t) => (
@@ -757,21 +737,38 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
               </div>
 
               {isTimed ? (
-                <div className="grid grid-cols-3 gap-2">
-                  {[10, 15, 30].map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setTimeLimitMinutes(m)}
-                      className={`py-2.5 text-xs font-semibold rounded-xl border transition-all ${
-                        timeLimitMinutes === m
-                          ? 'bg-indigo-600 text-white border-indigo-500'
-                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                      }`}
-                    >
-                      {m} Mins
-                    </button>
-                  ))}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={300}
+                      value={timeLimitMinutes || ''}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setTimeLimitMinutes(isNaN(val) ? 1 : Math.max(1, Math.min(300, val)));
+                      }}
+                      className="w-24 p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs font-bold text-white text-center focus:border-indigo-500 focus:outline-none"
+                      placeholder="Minutes"
+                    />
+                    <span className="text-xs text-slate-300 font-semibold">Minutes (Custom Editable)</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[5, 10, 15, 30, 45, 60, 90, 120].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setTimeLimitMinutes(m)}
+                        className={`py-1.5 text-[11px] font-semibold rounded-lg border transition-all cursor-pointer ${
+                          timeLimitMinutes === m
+                            ? 'bg-indigo-600 text-white border-indigo-500'
+                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                        }`}
+                      >
+                        {m}m
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <p className="text-[11px] text-slate-400 p-3 bg-slate-950 border border-slate-800 rounded-xl">
@@ -1021,33 +1018,20 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
               {(['A', 'B', 'C', 'D'] as const).map((optKey) => {
                 const optText = currentQ[`option${optKey}` as keyof Question] as string;
                 const isSelected = selectedAns === optKey;
-                const isCorrect = currentQ.correctAnswer === optKey;
 
-                let btnStyle = 'bg-slate-950 border-slate-800 text-slate-200 hover:border-indigo-500/50 hover:bg-slate-800/50';
-
-                // In interactive mode, show instant correct/wrong feedback upon answer selection
-                if (selectedAns && practiceEngineMode === 'interactive') {
-                  if (isCorrect) {
-                    btnStyle = 'bg-emerald-500/15 border-emerald-500 text-emerald-200 font-bold';
-                  } else if (isSelected) {
-                    btnStyle = 'bg-rose-500/15 border-rose-500 text-rose-200 font-bold';
-                  } else {
-                    btnStyle = 'bg-slate-950/50 border-slate-800/50 text-slate-500 opacity-60';
-                  }
-                } else if (isSelected) {
-                  btnStyle = 'bg-indigo-600/20 border-indigo-500 text-indigo-200 font-bold shadow-md';
-                }
+                const btnStyle = isSelected
+                  ? 'bg-indigo-600/20 border-indigo-500 text-indigo-200 font-bold shadow-md ring-1 ring-indigo-500/40'
+                  : 'bg-slate-950 border-slate-800 text-slate-200 hover:border-indigo-500/50 hover:bg-slate-800/50';
 
                 return (
                   <button
                     key={optKey}
                     onClick={() => handleSelectAnswer(optKey)}
-                    disabled={practiceEngineMode === 'interactive' && !!selectedAns}
                     className={`w-full text-left p-4 rounded-2xl border text-sm transition-all flex items-center justify-between cursor-pointer ${btnStyle}`}
                   >
                     <div className="flex items-center space-x-3">
                       <span className={`w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 ${
-                        isSelected || (selectedAns && isCorrect && practiceEngineMode === 'interactive')
+                        isSelected
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-800 text-slate-400'
                       }`}>
@@ -1056,49 +1040,13 @@ export const PracticeMode: React.FC<PracticeModeProps> = ({
                       <span>{optText}</span>
                     </div>
 
-                    {selectedAns && practiceEngineMode === 'interactive' && (
-                      <div>
-                        {isCorrect && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
-                        {isSelected && !isCorrect && <XCircle className="w-5 h-5 text-rose-400 shrink-0" />}
-                      </div>
+                    {isSelected && (
+                      <CheckCircle2 className="w-5 h-5 text-indigo-400 shrink-0" />
                     )}
                   </button>
                 );
               })}
             </div>
-
-            {/* Answer Explanation Card (shows immediately when answered in interactive mode or requested) */}
-            {selectedAns && (
-              <div className="p-5 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 text-xs text-slate-300 space-y-3 animate-in fade-in">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 font-bold text-indigo-300">
-                    <Sparkles className="w-4 h-4 text-indigo-400" />
-                    <span>Correct Answer Breakdown: <strong className="text-emerald-400 font-black">Option {currentQ.correctAnswer}</strong></span>
-                  </div>
-
-                  {!aiExplanations[currentQ.id] && (
-                    <button
-                      onClick={handleFetchAiExplanation}
-                      disabled={loadingAiExp}
-                      className="px-2.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 text-[11px] font-semibold rounded-lg border border-indigo-500/40 transition-colors flex items-center gap-1 cursor-pointer"
-                    >
-                      {loadingAiExp ? 'Generating Concept Breakdown...' : 'Deep AI Breakdown'}
-                    </button>
-                  )}
-                </div>
-
-                <p className="leading-relaxed text-slate-200">
-                  {currentQ.explanation}
-                </p>
-
-                {aiExplanations[currentQ.id] && (
-                  <div className="pt-3 border-t border-indigo-500/20 text-slate-200 leading-relaxed bg-slate-900/60 p-3 rounded-xl">
-                    <span className="font-bold text-purple-300 block mb-1">SMART Concept Analysis:</span>
-                    {aiExplanations[currentQ.id]}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Navigation Buttons */}
             <div className="flex items-center justify-between pt-4 border-t border-slate-800">
